@@ -40,12 +40,10 @@ Create an AGD file when:
 ### Creating AGD Files
 
 **ALWAYS use the Write tool** to create AGD files. This ensures:
-
 1. PreToolUse hook validates tags before creation
 2. Invalid AGD creation is blocked automatically
 
 Before creating an AGD:
-
 1. Read `.agents/config.json` to check available tags
 2. If you need a new tag, add it to config.json first
 3. Then create the AGD file using Write tool
@@ -138,3 +136,20 @@ Index files are auto-generated. Search them with `grep`, do not read entirely.
 ### Adding New Tags
 
 **Always confirm with user before adding new tags to config.json.** Do not add tags without explicit approval.
+
+### AGD vs References
+
+- **AGD** (`decisions/`): Only record **decisions**, not documentation
+- **References** (`references/`): Reference documents, research materials, technical notes
+
+Examples:
+- ✅ AGD: "Choose Go as implementation language" (decision)
+- ✅ Reference: "Apple Containerization setup process" (documentation)
+- ❌ Do not create AGDs for documentation
+
+### AGD Relationship Maintenance
+
+When creating or updating an AGD:
+1. Search for existing AGDs with the same tag: `grep '#tagname' .agents/INDEX-TAGS.md`
+2. Check if their updated_by/obsoleted_by fields need to be updated
+3. Maintain bidirectional relationship links (new AGD's updates/obsoletes fields, old AGD's updated_by/obsoleted_by fields)

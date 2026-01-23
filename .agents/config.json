@@ -1,4 +1,4 @@
 {
-  "tags": ["file-isolation", "network-isolation", "nix", "cross-container", "macos", "linux", "tooling", "security", "cli", "config"],
+  "tags": ["file-isolation", "network-isolation", "nix", "cross-container", "macos", "linux", "tooling", "security", "cli", "config", "naming"],
   "disableAutoUpdateScripts": []
 }
