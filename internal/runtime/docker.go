@@ -72,6 +72,14 @@ func (d *Docker) Up(ctx context.Context, cfg *config.Config, projectDir string, 
 	// Mount project directory
 	args = append(args, "-v", fmt.Sprintf("%s:%s", projectDir, cfg.Workdir))
 
+	// Add resource limits if configured
+	if cfg.Resources.Memory != "" {
+		args = append(args, "-m", cfg.Resources.Memory)
+	}
+	if cfg.Resources.CPUs > 0 {
+		args = append(args, "--cpus", fmt.Sprintf("%d", cfg.Resources.CPUs))
+	}
+
 	// Add image
 	args = append(args, cfg.Image)
 

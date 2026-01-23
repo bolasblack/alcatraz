@@ -97,7 +97,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 		// Check for configuration drift
 		if st.Config != nil {
-			drift := st.DetectConfigDrift(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter))
+			drift := st.DetectConfigDrift(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter, cfg.Resources.Memory, cfg.Resources.CPUs))
 			if drift != nil && drift.HasDrift() {
 				fmt.Println("⚠️  Configuration drift detected:")
 				if drift.Old.Image != drift.New.Image {
@@ -108,6 +108,12 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				}
 				if drift.Old.Runtime != drift.New.Runtime {
 					fmt.Printf("  Runtime: %s → %s\n", drift.Old.Runtime, drift.New.Runtime)
+				}
+				if drift.Old.Memory != drift.New.Memory {
+					fmt.Printf("  Resources.memory: %s → %s\n", drift.Old.Memory, drift.New.Memory)
+				}
+				if drift.Old.CPUs != drift.New.CPUs {
+					fmt.Printf("  Resources.cpus: %d → %d\n", drift.Old.CPUs, drift.New.CPUs)
 				}
 				fmt.Println("")
 				fmt.Println("Run 'alca up -f' to rebuild with new configuration.")

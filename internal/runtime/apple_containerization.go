@@ -169,6 +169,14 @@ func (d *AppleContainerization) Up(ctx context.Context, cfg *config.Config, proj
 	// Mount project directory
 	args = append(args, "--mount", fmt.Sprintf("type=bind,source=%s,target=%s", projectDir, cfg.Workdir))
 
+	// Add resource limits if configured
+	if cfg.Resources.Memory != "" {
+		args = append(args, "-m", cfg.Resources.Memory)
+	}
+	if cfg.Resources.CPUs > 0 {
+		args = append(args, "-c", fmt.Sprintf("%d", cfg.Resources.CPUs))
+	}
+
 	// Add image
 	args = append(args, cfg.Image)
 

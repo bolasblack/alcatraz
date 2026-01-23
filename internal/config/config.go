@@ -14,6 +14,12 @@ type Commands struct {
 	Enter string `toml:"enter,omitempty"`
 }
 
+// Resources defines container resource limits.
+type Resources struct {
+	Memory string `toml:"memory,omitempty"` // e.g. "4g", "512m"
+	CPUs   int    `toml:"cpus,omitempty"`   // e.g. 2, 4
+}
+
 // RuntimeType defines the container runtime selection mode.
 // See AGD-012 for runtime config design decisions.
 type RuntimeType string
@@ -33,11 +39,12 @@ const (
 
 // Config represents the Alcatraz container configuration.
 type Config struct {
-	Image    string      `toml:"image"`
-	Workdir  string      `toml:"workdir,omitempty"`
-	Runtime  RuntimeType `toml:"runtime,omitempty"`
-	Commands Commands    `toml:"commands,omitempty"`
-	Mounts   []string    `toml:"mounts,omitempty"`
+	Image     string      `toml:"image"`
+	Workdir   string      `toml:"workdir,omitempty"`
+	Runtime   RuntimeType `toml:"runtime,omitempty"`
+	Commands  Commands    `toml:"commands,omitempty"`
+	Mounts    []string    `toml:"mounts,omitempty"`
+	Resources Resources   `toml:"resources,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.

@@ -3,4 +3,8 @@ workdir = "/workspace"
 runtime = "auto"
 
 [commands]
-  enter = "[ -f flake.nix ] && exec nix develop"
+enter = "[ -f flake.nix ] && exec nix develop"
+
+[resources]
+memory = "16g"
+cpus = 8

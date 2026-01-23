@@ -87,7 +87,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// Check for configuration drift
 	needsRebuild := false
 	if st.Config != nil {
-		drift := st.DetectConfigDrift(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter))
+		drift := st.DetectConfigDrift(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter, cfg.Resources.Memory, cfg.Resources.CPUs))
 		if drift != nil && drift.HasDrift() {
 			if !upForce {
 				// Show drift and ask for confirmation
@@ -106,6 +106,12 @@ func runUp(cmd *cobra.Command, args []string) error {
 				}
 				if drift.Old.CmdUp != drift.New.CmdUp {
 					fmt.Printf("  Commands.up: changed\n")
+				}
+				if drift.Old.Memory != drift.New.Memory {
+					fmt.Printf("  Resources.memory: %s → %s\n", drift.Old.Memory, drift.New.Memory)
+				}
+				if drift.Old.CPUs != drift.New.CPUs {
+					fmt.Printf("  Resources.cpus: %d → %d\n", drift.Old.CPUs, drift.New.CPUs)
 				}
 				fmt.Print("Rebuild container with new configuration? [y/N] ")
 
@@ -137,7 +143,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	// Update state with current config
-	st.UpdateConfig(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter))
+	st.UpdateConfig(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter, cfg.Resources.Memory, cfg.Resources.CPUs))
 	if err := state.Save(cwd, st); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}

@@ -52,10 +52,12 @@ type ConfigSnapshot struct {
 	Mounts   []string `json:"mounts,omitempty"`
 	CmdUp    string   `json:"cmd_up,omitempty"`
 	CmdEnter string   `json:"cmd_enter,omitempty"`
+	Memory   string   `json:"memory,omitempty"`
+	CPUs     int      `json:"cpus,omitempty"`
 }
 
 // NewConfigSnapshot creates a snapshot from config values.
-func NewConfigSnapshot(image, workdir, runtime string, mounts []string, cmdUp, cmdEnter string) *ConfigSnapshot {
+func NewConfigSnapshot(image, workdir, runtime string, mounts []string, cmdUp, cmdEnter, memory string, cpus int) *ConfigSnapshot {
 	return &ConfigSnapshot{
 		Image:    image,
 		Workdir:  workdir,
@@ -63,6 +65,8 @@ func NewConfigSnapshot(image, workdir, runtime string, mounts []string, cmdUp, c
 		Mounts:   mounts,
 		CmdUp:    cmdUp,
 		CmdEnter: cmdEnter,
+		Memory:   memory,
+		CPUs:     cpus,
 	}
 }
 
@@ -199,6 +203,8 @@ func (d *ConfigDrift) HasDrift() bool {
 		Mounts   []string
 		CmdUp    string
 		CmdEnter string
+		Memory   string
+		CPUs     int
 	}
 	_ = fields(*old)
 
@@ -207,6 +213,8 @@ func (d *ConfigDrift) HasDrift() bool {
 		old.Workdir != new.Workdir ||
 		old.Runtime != new.Runtime ||
 		old.CmdUp != new.CmdUp ||
+		old.Memory != new.Memory ||
+		old.CPUs != new.CPUs ||
 		!equalStringSlices(old.Mounts, new.Mounts) {
 		return true
 	}

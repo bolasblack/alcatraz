@@ -103,7 +103,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 	}
 
 	// Update state with current config
-	st.UpdateConfig(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter))
+	st.UpdateConfig(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter, cfg.Resources.Memory, cfg.Resources.CPUs))
 	if err := state.Save(cwd, st); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
