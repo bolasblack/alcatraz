@@ -8,6 +8,7 @@ import (
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
+	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -58,9 +59,26 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Runtime: %s\n", rt.Name())
 	fmt.Println("")
 
+	// Load state
+	st, err := state.Load(cwd)
+	if err != nil {
+		fmt.Printf("State: Error loading state: %v\n", err)
+		return nil
+	}
+
+	if st == nil {
+		fmt.Println("State: Not created")
+		fmt.Println("")
+		fmt.Println("Run 'alca up' to create the container.")
+		return nil
+	}
+
+	fmt.Printf("Project ID: %s\n", st.ProjectID)
+	fmt.Println("")
+
 	// Get container status
 	ctx := context.Background()
-	status, err := rt.Status(ctx, cwd)
+	status, err := rt.Status(ctx, cwd, st)
 	if err != nil {
 		fmt.Println("Container: Error getting status")
 		return nil
@@ -76,6 +94,27 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  Started: %s\n", status.StartedAt)
 		}
 		fmt.Println("")
+
+		// Check for configuration drift
+		if st.Config != nil {
+			drift := st.DetectConfigDrift(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter))
+			if drift != nil && drift.HasDrift() {
+				fmt.Println("⚠️  Configuration drift detected:")
+				if drift.Old.Image != drift.New.Image {
+					fmt.Printf("  Image: %s → %s\n", drift.Old.Image, drift.New.Image)
+				}
+				if drift.Old.Workdir != drift.New.Workdir {
+					fmt.Printf("  Workdir: %s → %s\n", drift.Old.Workdir, drift.New.Workdir)
+				}
+				if drift.Old.Runtime != drift.New.Runtime {
+					fmt.Printf("  Runtime: %s → %s\n", drift.Old.Runtime, drift.New.Runtime)
+				}
+				fmt.Println("")
+				fmt.Println("Run 'alca up -f' to rebuild with new configuration.")
+				fmt.Println("")
+			}
+		}
+
 		fmt.Println("Run 'alca run <command>' to execute commands.")
 	case runtime.StateStopped:
 		fmt.Println("Container: Stopped")

@@ -8,6 +8,7 @@ import (
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
+	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -41,9 +42,20 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Using runtime: %s\n", rt.Name())
 
+	// Load state
+	st, err := state.Load(cwd)
+	if err != nil {
+		return fmt.Errorf("failed to load state: %w", err)
+	}
+
+	if st == nil {
+		fmt.Println("No state file found. Container may not exist.")
+		return nil
+	}
+
 	// Stop container
 	ctx := context.Background()
-	if err := rt.Down(ctx, cwd); err != nil {
+	if err := rt.Down(ctx, cwd, st); err != nil {
 		return fmt.Errorf("failed to stop container: %w", err)
 	}
 

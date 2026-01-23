@@ -3,3 +3,6 @@ zhistory
 vendor
 out
 result
+.alca
+docs/commands/*
+!docs/commands/.gitkeep

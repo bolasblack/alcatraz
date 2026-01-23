@@ -2,16 +2,14 @@ package runtime
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/bolasblack/alcatraz/internal/config"
+	"github.com/bolasblack/alcatraz/internal/state"
 )
 
 // Docker implements the Runtime interface using the Docker CLI.
@@ -34,11 +32,11 @@ func (d *Docker) Available() bool {
 }
 
 // Up creates and starts a Docker container.
-func (d *Docker) Up(ctx context.Context, cfg *config.Config, projectDir string, progressOut io.Writer) error {
-	name := containerName(projectDir)
+func (d *Docker) Up(ctx context.Context, cfg *config.Config, projectDir string, st *state.State, progressOut io.Writer) error {
+	name := st.ContainerName
 
 	// Check if container already exists
-	status, err := d.Status(ctx, projectDir)
+	status, err := d.Status(ctx, projectDir, st)
 	if err == nil && status.State == StateRunning {
 		progress(progressOut, "→ Container already running: %s\n", name)
 		return nil // Already running
@@ -46,8 +44,8 @@ func (d *Docker) Up(ctx context.Context, cfg *config.Config, projectDir string, 
 
 	// Remove existing stopped container if any
 	if status.State == StateStopped {
-		progress(progressOut, "→ Removing stopped container: %s\n", name)
-		if err := d.removeContainer(ctx, name); err != nil {
+		progress(progressOut, "→ Removing stopped container: %s\n", status.Name)
+		if err := d.removeContainer(ctx, status.Name); err != nil {
 			return fmt.Errorf("failed to remove stopped container: %w", err)
 		}
 	}
@@ -59,6 +57,11 @@ func (d *Docker) Up(ctx context.Context, cfg *config.Config, projectDir string, 
 		"run", "-d",
 		"--name", name,
 		"-w", cfg.Workdir,
+	}
+
+	// Add labels for container identity
+	for key, value := range st.ContainerLabels(projectDir) {
+		args = append(args, "--label", fmt.Sprintf("%s=%s", key, value))
 	}
 
 	// Add mounts
@@ -98,8 +101,18 @@ func (d *Docker) Up(ctx context.Context, cfg *config.Config, projectDir string, 
 }
 
 // Down stops and removes the Docker container.
-func (d *Docker) Down(ctx context.Context, projectDir string) error {
-	containerName := containerName(projectDir)
+func (d *Docker) Down(ctx context.Context, projectDir string, st *state.State) error {
+	// Find the container first
+	status, err := d.Status(ctx, projectDir, st)
+	if err != nil {
+		return fmt.Errorf("failed to get container status: %w", err)
+	}
+
+	if status.State == StateNotFound {
+		return nil // Nothing to stop
+	}
+
+	containerName := status.Name
 
 	// Stop the container
 	stopCmd := exec.CommandContext(ctx, "docker", "stop", containerName)
@@ -115,8 +128,18 @@ func (d *Docker) Down(ctx context.Context, projectDir string) error {
 }
 
 // Exec runs a command inside the Docker container.
-func (d *Docker) Exec(ctx context.Context, projectDir string, command []string) error {
-	containerName := containerName(projectDir)
+func (d *Docker) Exec(ctx context.Context, projectDir string, st *state.State, command []string) error {
+	// Find the container first
+	status, err := d.Status(ctx, projectDir, st)
+	if err != nil {
+		return fmt.Errorf("failed to get container status: %w", err)
+	}
+
+	if status.State != StateRunning {
+		return ErrNotRunning
+	}
+
+	containerName := status.Name
 
 	// Run in workdir, non-interactive
 	args := []string{"exec", "-w", "/workspace", containerName}
@@ -129,9 +152,23 @@ func (d *Docker) Exec(ctx context.Context, projectDir string, command []string) 
 }
 
 // Status returns the current status of the Docker container.
-func (d *Docker) Status(ctx context.Context, projectDir string) (ContainerStatus, error) {
-	containerName := containerName(projectDir)
+func (d *Docker) Status(ctx context.Context, projectDir string, st *state.State) (ContainerStatus, error) {
+	if st == nil {
+		return ContainerStatus{State: StateNotFound}, nil
+	}
 
+	// Try to find by label first
+	status, err := d.findContainerByLabel(ctx, st.ProjectID)
+	if err == nil && status.State != StateNotFound {
+		return status, nil
+	}
+
+	// Also try by container name from state
+	return d.inspectContainer(ctx, st.ContainerName)
+}
+
+// inspectContainer gets container status by name.
+func (d *Docker) inspectContainer(ctx context.Context, containerName string) (ContainerStatus, error) {
 	cmd := exec.CommandContext(ctx, "docker", "inspect",
 		"--format", "{{.State.Status}}|{{.Id}}|{{.Name}}|{{.Config.Image}}|{{.State.StartedAt}}",
 		containerName)
@@ -147,21 +184,42 @@ func (d *Docker) Status(ctx context.Context, projectDir string) (ContainerStatus
 		return ContainerStatus{State: StateUnknown}, nil
 	}
 
-	state := StateUnknown
+	st := StateUnknown
 	switch parts[0] {
 	case "running":
-		state = StateRunning
+		st = StateRunning
 	case "exited", "stopped":
-		state = StateStopped
+		st = StateStopped
 	}
 
 	return ContainerStatus{
-		State:     state,
+		State:     st,
 		ID:        parts[1],
 		Name:      strings.TrimPrefix(parts[2], "/"),
 		Image:     parts[3],
 		StartedAt: parts[4],
 	}, nil
+}
+
+// findContainerByLabel finds a container by its project label.
+func (d *Docker) findContainerByLabel(ctx context.Context, projectID string) (ContainerStatus, error) {
+	labelFilter := fmt.Sprintf("label=%s=%s", state.LabelProjectID, projectID)
+	cmd := exec.CommandContext(ctx, "docker", "ps", "-a",
+		"--filter", labelFilter,
+		"--format", "{{.Names}}")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return ContainerStatus{State: StateNotFound}, nil
+	}
+
+	name := strings.TrimSpace(string(output))
+	if name == "" {
+		return ContainerStatus{State: StateNotFound}, nil
+	}
+
+	// Get full status
+	return d.inspectContainer(ctx, name)
 }
 
 // removeContainer removes a container by name.
@@ -179,8 +237,8 @@ func (d *Docker) removeContainer(ctx context.Context, name string) error {
 
 // Reload re-applies configuration by recreating the container.
 // This is an experimental feature that stops and restarts the container with updated mounts.
-func (d *Docker) Reload(ctx context.Context, cfg *config.Config, projectDir string) error {
-	status, err := d.Status(ctx, projectDir)
+func (d *Docker) Reload(ctx context.Context, cfg *config.Config, projectDir string, st *state.State) error {
+	status, err := d.Status(ctx, projectDir, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -190,25 +248,87 @@ func (d *Docker) Reload(ctx context.Context, cfg *config.Config, projectDir stri
 	}
 
 	// Stop and remove existing container
-	if err := d.Down(ctx, projectDir); err != nil {
+	if err := d.Down(ctx, projectDir, st); err != nil {
 		return fmt.Errorf("failed to stop container for reload: %w", err)
 	}
 
 	// Start new container with updated configuration (silent reload)
-	if err := d.Up(ctx, cfg, projectDir, nil); err != nil {
+	if err := d.Up(ctx, cfg, projectDir, st, nil); err != nil {
 		return fmt.Errorf("failed to restart container: %w", err)
 	}
 
 	return nil
 }
 
-// containerName generates a unique container name based on project directory.
-// Format: alca-{first 12 chars of sha256 hash}
-func containerName(projectDir string) string {
-	absPath, err := filepath.Abs(projectDir)
+// ListContainers returns all containers managed by alca.
+func (d *Docker) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
+	// Find all containers with alca.project.id label
+	cmd := exec.CommandContext(ctx, "docker", "ps", "-a",
+		"--filter", "label="+state.LabelProjectID,
+		"--format", "{{.Names}}")
+
+	output, err := cmd.Output()
 	if err != nil {
-		absPath = projectDir
+		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
-	hash := sha256.Sum256([]byte(absPath))
-	return "alca-" + hex.EncodeToString(hash[:])[:12]
+
+	names := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(names) == 1 && names[0] == "" {
+		return []ContainerInfo{}, nil
+	}
+
+	var containers []ContainerInfo
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		info, err := d.getContainerInfo(ctx, name)
+		if err != nil {
+			continue // Skip containers we can't inspect
+		}
+		containers = append(containers, info)
+	}
+
+	return containers, nil
 }
+
+// getContainerInfo gets detailed container information including labels.
+func (d *Docker) getContainerInfo(ctx context.Context, name string) (ContainerInfo, error) {
+	// Get container details with labels
+	format := fmt.Sprintf("{{.State.Status}}|{{.Created}}|{{.Config.Image}}|{{index .Config.Labels \"%s\"}}|{{index .Config.Labels \"%s\"}}",
+		state.LabelProjectID, state.LabelProjectPath)
+
+	cmd := exec.CommandContext(ctx, "docker", "inspect", "--format", format, name)
+	output, err := cmd.Output()
+	if err != nil {
+		return ContainerInfo{}, fmt.Errorf("failed to inspect container: %w", err)
+	}
+
+	parts := strings.Split(strings.TrimSpace(string(output)), "|")
+	if len(parts) < 5 {
+		return ContainerInfo{}, fmt.Errorf("unexpected inspect output")
+	}
+
+	st := StateUnknown
+	switch parts[0] {
+	case "running":
+		st = StateRunning
+	case "exited", "stopped":
+		st = StateStopped
+	}
+
+	return ContainerInfo{
+		Name:        name,
+		State:       st,
+		CreatedAt:   parts[1],
+		Image:       parts[2],
+		ProjectID:   parts[3],
+		ProjectPath: parts[4],
+	}, nil
+}
+
+// RemoveContainer removes a container by name.
+func (d *Docker) RemoveContainer(ctx context.Context, name string) error {
+	return d.removeContainer(ctx, name)
+}
+

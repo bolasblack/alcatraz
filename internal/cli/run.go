@@ -9,6 +9,7 @@ import (
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
+	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -51,10 +52,20 @@ func runRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to select runtime: %w", err)
 	}
 
+	// Load state
+	st, err := state.Load(cwd)
+	if err != nil {
+		return fmt.Errorf("failed to load state: %w", err)
+	}
+
+	if st == nil {
+		return fmt.Errorf("no state file found: run 'alca up' first")
+	}
+
 	ctx := context.Background()
 
 	// Check if container is running
-	status, err := rt.Status(ctx, cwd)
+	status, err := rt.Status(ctx, cwd, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -71,7 +82,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		userCmd, userCmd)
 
 	execCmd := []string{"sh", "-c", wrappedCmd}
-	if err := rt.Exec(ctx, cwd, execCmd); err != nil {
+	if err := rt.Exec(ctx, cwd, st, execCmd); err != nil {
 		return fmt.Errorf("failed to execute command: %w", err)
 	}
 

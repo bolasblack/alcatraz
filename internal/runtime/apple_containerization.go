@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/bolasblack/alcatraz/internal/config"
+	"github.com/bolasblack/alcatraz/internal/state"
 )
 
 // AppleContainerizationState represents the setup state of Apple Containerization.
@@ -121,11 +122,11 @@ func (d *AppleContainerization) UnavailableReason() string {
 }
 
 // Up creates and starts a container using Apple Containerization.
-func (d *AppleContainerization) Up(ctx context.Context, cfg *config.Config, projectDir string, progressOut io.Writer) error {
-	name := containerName(projectDir)
+func (d *AppleContainerization) Up(ctx context.Context, cfg *config.Config, projectDir string, st *state.State, progressOut io.Writer) error {
+	name := st.ContainerName
 
 	// Check if container already exists
-	status, err := d.Status(ctx, projectDir)
+	status, err := d.Status(ctx, projectDir, st)
 	if err == nil && status.State == StateRunning {
 		progress(progressOut, "→ Container already running: %s\n", name)
 		return nil // Already running
@@ -133,8 +134,8 @@ func (d *AppleContainerization) Up(ctx context.Context, cfg *config.Config, proj
 
 	// Remove existing stopped container if any
 	if status.State == StateStopped {
-		progress(progressOut, "→ Removing stopped container: %s\n", name)
-		if err := d.removeContainer(ctx, name); err != nil {
+		progress(progressOut, "→ Removing stopped container: %s\n", status.Name)
+		if err := d.removeContainer(ctx, status.Name); err != nil {
 			return fmt.Errorf("failed to remove stopped container: %w", err)
 		}
 	}
@@ -146,6 +147,11 @@ func (d *AppleContainerization) Up(ctx context.Context, cfg *config.Config, proj
 	args := []string{
 		"run", "-d",
 		"--name", name,
+	}
+
+	// Add labels for container identity
+	for key, value := range st.ContainerLabels(projectDir) {
+		args = append(args, "--label", fmt.Sprintf("%s=%s", key, value))
 	}
 
 	// Add mounts using Apple's mount syntax (type=bind,source=...,target=...)
@@ -192,11 +198,21 @@ func (d *AppleContainerization) Up(ctx context.Context, cfg *config.Config, proj
 }
 
 // Down stops and removes the container.
-func (d *AppleContainerization) Down(ctx context.Context, projectDir string) error {
-	name := containerName(projectDir)
+func (d *AppleContainerization) Down(ctx context.Context, projectDir string, st *state.State) error {
+	// Find the container first
+	status, err := d.Status(ctx, projectDir, st)
+	if err != nil {
+		return fmt.Errorf("failed to get container status: %w", err)
+	}
+
+	if status.State == StateNotFound {
+		return nil // Nothing to stop
+	}
+
+	containerName := status.Name
 
 	// Stop the container
-	stopCmd := exec.CommandContext(ctx, "container", "stop", name)
+	stopCmd := exec.CommandContext(ctx, "container", "stop", containerName)
 	if output, err := stopCmd.CombinedOutput(); err != nil {
 		// Ignore error if container is not running
 		if !strings.Contains(string(output), "not found") &&
@@ -206,15 +222,25 @@ func (d *AppleContainerization) Down(ctx context.Context, projectDir string) err
 	}
 
 	// Remove the container
-	return d.removeContainer(ctx, name)
+	return d.removeContainer(ctx, containerName)
 }
 
 // Exec runs a command inside the container.
-func (d *AppleContainerization) Exec(ctx context.Context, projectDir string, command []string) error {
-	name := containerName(projectDir)
+func (d *AppleContainerization) Exec(ctx context.Context, projectDir string, st *state.State, command []string) error {
+	// Find the container first
+	status, err := d.Status(ctx, projectDir, st)
+	if err != nil {
+		return fmt.Errorf("failed to get container status: %w", err)
+	}
+
+	if status.State != StateRunning {
+		return ErrNotRunning
+	}
+
+	containerName := status.Name
 
 	// For non-interactive exec, don't use -it
-	args := []string{"exec", name}
+	args := []string{"exec", containerName}
 	args = append(args, command...)
 
 	cmd := exec.CommandContext(ctx, "container", args...)
@@ -239,9 +265,23 @@ type containerInspectResult struct {
 }
 
 // Status returns the current status of the container.
-func (d *AppleContainerization) Status(ctx context.Context, projectDir string) (ContainerStatus, error) {
-	name := containerName(projectDir)
+func (d *AppleContainerization) Status(ctx context.Context, projectDir string, st *state.State) (ContainerStatus, error) {
+	if st == nil {
+		return ContainerStatus{State: StateNotFound}, nil
+	}
 
+	// Try to find by label first
+	status, err := d.findContainerByLabel(ctx, st.ProjectID)
+	if err == nil && status.State != StateNotFound {
+		return status, nil
+	}
+
+	// Also try by container name from state
+	return d.findContainerByName(ctx, st.ContainerName)
+}
+
+// findContainerByName finds a container by its name.
+func (d *AppleContainerization) findContainerByName(ctx context.Context, name string) (ContainerStatus, error) {
 	// Try to get container info using list command with JSON format
 	cmd := exec.CommandContext(ctx, "container", "list", "--all", "--format", "json")
 	output, err := cmd.Output()
@@ -272,26 +312,64 @@ func (d *AppleContainerization) Status(ctx context.Context, projectDir string) (
 	}
 
 	// Parse state
-	state := StateUnknown
+	st := StateUnknown
 	switch strings.ToLower(found.State) {
 	case "running":
-		state = StateRunning
+		st = StateRunning
 	case "stopped", "exited":
-		state = StateStopped
+		st = StateStopped
 	}
 
 	return ContainerStatus{
-		State: state,
+		State: st,
 		ID:    found.ID,
 		Name:  name,
 		Image: found.Image,
 	}, nil
 }
 
+// findContainerByLabel finds a container by its project label.
+func (d *AppleContainerization) findContainerByLabel(ctx context.Context, projectID string) (ContainerStatus, error) {
+	// Apple container CLI doesn't support --filter, list all and filter in code
+	cmd := exec.CommandContext(ctx, "container", "list", "--all", "--format", "json")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return ContainerStatus{State: StateNotFound}, nil
+	}
+
+	var containers []containerListItemWithLabels
+	if err := json.Unmarshal(output, &containers); err != nil {
+		return ContainerStatus{State: StateNotFound}, nil
+	}
+
+	// Find container with matching project ID
+	for _, c := range containers {
+		if c.Configuration.Labels[state.LabelProjectID] == projectID {
+			st := StateUnknown
+			switch strings.ToLower(c.Status) {
+			case "running":
+				st = StateRunning
+			case "stopped", "exited":
+				st = StateStopped
+			}
+
+			return ContainerStatus{
+				State: st,
+				ID:    c.Configuration.ID,
+				Name:  c.Configuration.ID,
+				Image: c.Configuration.Image.Reference,
+			}, nil
+		}
+	}
+
+	return ContainerStatus{State: StateNotFound}, nil
+}
+
 // Reload re-applies configuration by recreating the container.
 // This is an experimental feature that stops and restarts the container with updated mounts.
-func (d *AppleContainerization) Reload(ctx context.Context, cfg *config.Config, projectDir string) error {
-	status, err := d.Status(ctx, projectDir)
+func (d *AppleContainerization) Reload(ctx context.Context, cfg *config.Config, projectDir string, st *state.State) error {
+	status, err := d.Status(ctx, projectDir, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -301,12 +379,12 @@ func (d *AppleContainerization) Reload(ctx context.Context, cfg *config.Config, 
 	}
 
 	// Stop and remove existing container
-	if err := d.Down(ctx, projectDir); err != nil {
+	if err := d.Down(ctx, projectDir, st); err != nil {
 		return fmt.Errorf("failed to stop container for reload: %w", err)
 	}
 
 	// Start new container with updated configuration (silent reload)
-	if err := d.Up(ctx, cfg, projectDir, nil); err != nil {
+	if err := d.Up(ctx, cfg, projectDir, st, nil); err != nil {
 		return fmt.Errorf("failed to restart container: %w", err)
 	}
 
@@ -325,4 +403,64 @@ func (d *AppleContainerization) removeContainer(ctx context.Context, name string
 		return fmt.Errorf("container rm failed: %w: %s", err, string(output))
 	}
 	return nil
+}
+
+// containerListItemWithLabels matches the actual Apple Containerization JSON structure.
+type containerListItemWithLabels struct {
+	Status        string `json:"status"`
+	Configuration struct {
+		ID     string `json:"id"`
+		Image  struct {
+			Reference string `json:"reference"`
+		} `json:"image"`
+		Labels map[string]string `json:"labels"`
+	} `json:"configuration"`
+}
+
+// ListContainers returns all containers managed by alca.
+func (d *AppleContainerization) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
+	// List all containers (Apple container CLI doesn't support --filter)
+	cmd := exec.CommandContext(ctx, "container", "list", "--all", "--format", "json")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	var containers []containerListItemWithLabels
+	if err := json.Unmarshal(output, &containers); err != nil {
+		return []ContainerInfo{}, nil
+	}
+
+	// Filter by alca.project.id label in code
+	var result []ContainerInfo
+	for _, c := range containers {
+		// Skip containers without alca label
+		if c.Configuration.Labels[state.LabelProjectID] == "" {
+			continue
+		}
+
+		st := StateUnknown
+		switch strings.ToLower(c.Status) {
+		case "running":
+			st = StateRunning
+		case "stopped", "exited":
+			st = StateStopped
+		}
+
+		result = append(result, ContainerInfo{
+			Name:        c.Configuration.ID,
+			State:       st,
+			Image:       c.Configuration.Image.Reference,
+			ProjectID:   c.Configuration.Labels[state.LabelProjectID],
+			ProjectPath: c.Configuration.Labels[state.LabelProjectPath],
+		})
+	}
+
+	return result, nil
+}
+
+// RemoveContainer removes a container by name.
+func (d *AppleContainerization) RemoveContainer(ctx context.Context, name string) error {
+	return d.removeContainer(ctx, name)
 }

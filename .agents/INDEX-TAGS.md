@@ -15,3 +15,6 @@ decisions/AGD-009_cli-design.md: #cli, #config
 decisions/AGD-010_runtime-naming-convention.md: #naming, #macos
 decisions/AGD-011_container-runtime-fallback-strategy.md: #macos, #cli, #config
 decisions/AGD-012_runtime-config-setting.md: #config, #cli
+decisions/AGD-013_no-always-rebuild-flag.md: #cli, #state
+decisions/AGD-014_list-cleanup-commands.md: #cli, #state
+decisions/AGD-015_struct-field-exhaustiveness-check.md: #patterns

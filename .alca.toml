@@ -1,0 +1,6 @@
+image = "nixos/nix"
+workdir = "/workspace"
+runtime = "auto"
+
+[commands]
+  enter = "[ -f flake.nix ] && exec nix develop"

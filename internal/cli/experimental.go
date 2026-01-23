@@ -8,6 +8,7 @@ import (
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
+	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -70,9 +71,19 @@ func runReload(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Using runtime: %s\n", rt.Name())
 
+	// Load state
+	st, err := state.Load(cwd)
+	if err != nil {
+		return fmt.Errorf("failed to load state: %w", err)
+	}
+
+	if st == nil {
+		return fmt.Errorf("no state file found: run 'alca up' first")
+	}
+
 	// Check current status
 	ctx := context.Background()
-	status, err := rt.Status(ctx, cwd)
+	status, err := rt.Status(ctx, cwd, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -84,11 +95,17 @@ func runReload(cmd *cobra.Command, args []string) error {
 	fmt.Println("Reloading configuration...")
 
 	// Reload the container
-	if err := rt.Reload(ctx, &cfg, cwd); err != nil {
+	if err := rt.Reload(ctx, &cfg, cwd, st); err != nil {
 		if err == runtime.ErrNotRunning {
 			return fmt.Errorf("container is not running: run 'alca up' first")
 		}
 		return fmt.Errorf("failed to reload container: %w", err)
+	}
+
+	// Update state with current config
+	st.UpdateConfig(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter))
+	if err := state.Save(cwd, st); err != nil {
+		return fmt.Errorf("failed to save state: %w", err)
 	}
 
 	fmt.Println("Configuration reloaded successfully.")
