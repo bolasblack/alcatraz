@@ -2,7 +2,7 @@
 """
 Validate AGD (Agent-centric Governance Decision) files.
 
-DO NOT MODIFY THIS FILE - it will be automatically updated from the skill directory.
+Managed by: agent-centric skill (auto-updated, do not edit manually)
 To disable auto-update, add this filename to disableAutoUpdateScripts in config.json.
 
 Usage:
@@ -11,6 +11,10 @@ Usage:
 
 Called by PostToolUse hook after Write/Edit operations.
 Reads hook input from stdin to determine if validation is needed.
+
+Exit codes:
+- 0: Valid, all AGD files pass validation
+- 2: Invalid, validation errors found (blocking - Claude will process)
 """
 
 import json
@@ -123,7 +127,7 @@ def main():
         print("\n📋 To fix reference errors:", file=sys.stderr)
         print("   Check that referenced AGD files exist", file=sys.stderr)
         print("=" * 50, file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)
 
     sys.exit(0)
 

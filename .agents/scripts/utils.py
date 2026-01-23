@@ -2,7 +2,7 @@
 """
 Shared utilities for Agent Centric framework.
 
-DO NOT MODIFY THIS FILE - it will be automatically updated from the skill directory.
+Managed by: agent-centric skill (auto-updated, do not edit manually)
 To disable auto-update, add this filename to disableAutoUpdateScripts in config.json.
 """
 
@@ -40,7 +40,7 @@ def get_project_dir() -> Path:
     if len(sys.argv) >= 2:
         return Path(sys.argv[1])
     print("Error: CLAUDE_PROJECT_DIR not set", file=sys.stderr)
-    sys.exit(1)
+    sys.exit(2)
 
 
 def load_config(config_path: Path) -> dict | None:

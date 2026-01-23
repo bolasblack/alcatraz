@@ -2,7 +2,7 @@
 """
 Generate index files for the Agent Centric framework.
 
-DO NOT MODIFY THIS FILE - it will be automatically updated from the skill directory.
+Managed by: agent-centric skill (auto-updated, do not edit manually)
 To disable auto-update, add this filename to disableAutoUpdateScripts in config.json.
 
 Usage:

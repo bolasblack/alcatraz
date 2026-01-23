@@ -8,3 +8,7 @@ decisions/AGD-002_linux-isolation-solution.md: #linux, #file-isolation, #network
 decisions/AGD-003_nix-flake-distribution.md: #nix
 decisions/AGD-004_cross-container-communication.md: #cross-container
 decisions/AGD-005_defer-network-isolation.md: #network-isolation
+decisions/AGD-006_implementation-language-go.md: #tooling
+decisions/AGD-007_security-threat-model.md: #security
+decisions/AGD-008_firewall-crash-safety.md: #network-isolation
+decisions/AGD-009_cli-design.md: #cli, #config
