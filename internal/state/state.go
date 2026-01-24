@@ -153,20 +153,27 @@ func (s *State) ContainerLabels(projectDir string) map[string]string {
 	}
 }
 
-// ConfigDrift represents configuration changes between state and current config.
-type ConfigDrift struct {
-	Old *config.Config
-	New *config.Config
+// DriftChanges describes specific configuration changes that require rebuild.
+type DriftChanges struct {
+	Image     *[2]string // [old, new] if changed
+	Workdir   *[2]string
+	Runtime   *[2]string
+	CommandUp *[2]string
+	Memory    *[2]string
+	CPUs      *[2]int
+	Mounts    bool
+	Envs      bool
 }
 
-// HasDrift returns true if configuration has changed in ways that require rebuild.
+// DetectConfigDrift compares the state's config with the given config.
+// Returns nil if no drift or if state has no config.
 // See AGD-015 for the struct field exhaustiveness check pattern used here.
-func (d *ConfigDrift) HasDrift() bool {
-	if d == nil || d.Old == nil || d.New == nil {
-		return false
+func (s *State) DetectConfigDrift(current *config.Config) *DriftChanges {
+	if s.Config == nil {
+		return nil
 	}
 
-	old, new := d.Old, d.New
+	old, new := s.Config, current
 
 	// Compile-time check: must match config.Config fields exactly.
 	// If Config adds a field, this line fails to compile,
@@ -201,34 +208,48 @@ func (d *ConfigDrift) HasDrift() bool {
 		break // Only need to check one value for type compatibility
 	}
 
-	// Fields that trigger rebuild:
-	if old.Image != new.Image ||
-		old.Workdir != new.Workdir ||
-		old.Runtime != new.Runtime ||
-		old.Commands.Up != new.Commands.Up ||
-		old.Resources.Memory != new.Resources.Memory ||
-		old.Resources.CPUs != new.Resources.CPUs ||
-		!equalStringSlices(old.Mounts, new.Mounts) ||
-		envLiteralsDrift(old.Envs, new.Envs) {
-		return true
+	var changes DriftChanges
+	hasAny := false
+
+	if old.Image != new.Image {
+		changes.Image = &[2]string{old.Image, new.Image}
+		hasAny = true
+	}
+	if old.Workdir != new.Workdir {
+		changes.Workdir = &[2]string{old.Workdir, new.Workdir}
+		hasAny = true
+	}
+	if old.Runtime != new.Runtime {
+		changes.Runtime = &[2]string{string(old.Runtime), string(new.Runtime)}
+		hasAny = true
+	}
+	if old.Commands.Up != new.Commands.Up {
+		changes.CommandUp = &[2]string{old.Commands.Up, new.Commands.Up}
+		hasAny = true
+	}
+	if old.Resources.Memory != new.Resources.Memory {
+		changes.Memory = &[2]string{old.Resources.Memory, new.Resources.Memory}
+		hasAny = true
+	}
+	if old.Resources.CPUs != new.Resources.CPUs {
+		changes.CPUs = &[2]int{old.Resources.CPUs, new.Resources.CPUs}
+		hasAny = true
+	}
+	if !equalStringSlices(old.Mounts, new.Mounts) {
+		changes.Mounts = true
+		hasAny = true
+	}
+	if envLiteralsDrift(old.Envs, new.Envs) {
+		changes.Envs = true
+		hasAny = true
 	}
 	// Commands.Enter: intentionally excluded, doesn't require rebuild
 	// EnvValue.OverrideOnEnter: intentionally excluded, only affects enter behavior
 
-	return false
-}
-
-// DetectConfigDrift compares the state's config with the given config.
-// Returns nil if no drift or if state has no config.
-func (s *State) DetectConfigDrift(current *config.Config) *ConfigDrift {
-	if s.Config == nil {
+	if !hasAny {
 		return nil
 	}
-	drift := &ConfigDrift{Old: s.Config, New: current}
-	if drift.HasDrift() {
-		return drift
-	}
-	return nil
+	return &changes
 }
 
 // UpdateConfig updates the config in the state.

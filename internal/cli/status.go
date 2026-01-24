@@ -98,23 +98,32 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		// Check for configuration drift
 		runtimeChanged := st.Runtime != rt.Name()
 		drift := st.DetectConfigDrift(&cfg)
-		if (drift != nil && drift.HasDrift()) || runtimeChanged {
+		if drift != nil || runtimeChanged {
 			fmt.Println("⚠️  Configuration drift detected:")
 			if runtimeChanged {
 				fmt.Printf("  Runtime: %s → %s\n", st.Runtime, rt.Name())
 			}
 			if drift != nil {
-				if drift.Old.Image != drift.New.Image {
-					fmt.Printf("  Image: %s → %s\n", drift.Old.Image, drift.New.Image)
+				if drift.Image != nil {
+					fmt.Printf("  Image: %s → %s\n", drift.Image[0], drift.Image[1])
 				}
-				if drift.Old.Workdir != drift.New.Workdir {
-					fmt.Printf("  Workdir: %s → %s\n", drift.Old.Workdir, drift.New.Workdir)
+				if drift.Workdir != nil {
+					fmt.Printf("  Workdir: %s → %s\n", drift.Workdir[0], drift.Workdir[1])
 				}
-				if drift.Old.Resources.Memory != drift.New.Resources.Memory {
-					fmt.Printf("  Resources.memory: %s → %s\n", drift.Old.Resources.Memory, drift.New.Resources.Memory)
+				if drift.Memory != nil {
+					fmt.Printf("  Resources.memory: %s → %s\n", drift.Memory[0], drift.Memory[1])
 				}
-				if drift.Old.Resources.CPUs != drift.New.Resources.CPUs {
-					fmt.Printf("  Resources.cpus: %d → %d\n", drift.Old.Resources.CPUs, drift.New.Resources.CPUs)
+				if drift.CPUs != nil {
+					fmt.Printf("  Resources.cpus: %d → %d\n", drift.CPUs[0], drift.CPUs[1])
+				}
+				if drift.Mounts {
+					fmt.Printf("  Mounts: changed\n")
+				}
+				if drift.CommandUp != nil {
+					fmt.Printf("  Commands.up: changed\n")
+				}
+				if drift.Envs {
+					fmt.Printf("  Envs: changed\n")
 				}
 			}
 			fmt.Println("")
