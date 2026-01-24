@@ -119,6 +119,13 @@
  &lt;td&gt;-&lt;/td&gt;
  &lt;td&gt;CPU limit (e.g., 2, 4)&lt;/td&gt;
  &lt;/tr&gt;
+ &lt;tr&gt;
+ &lt;td&gt;&lt;code&gt;envs&lt;/code&gt;&lt;/td&gt;
+ &lt;td&gt;table&lt;/td&gt;
+ &lt;td&gt;No&lt;/td&gt;
+ &lt;td&gt;See below&lt;/td&gt;
+ &lt;td&gt;Environment variables for the container&lt;/td&gt;
+ &lt;/tr&gt;
  &lt;/tbody&gt;
 &lt;/table&gt;
 &lt;h3 id="image"&gt;image&lt;a class="anchor" href="#image"&gt;#&lt;/a&gt;&lt;/h3&gt;
