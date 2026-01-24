@@ -1,0 +1,15 @@
+{
+  "name": "Alcatraz",
+  "short_name": "Alcatraz",
+  "start_url": "/alcatraz/",
+  "scope": "/alcatraz/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/alcatraz/favicon.svg",
+      "sizes": "512x512"
+    }
+  ]
+}
