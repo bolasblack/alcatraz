@@ -1,0 +1,34 @@
+baseURL: "https://bolasblack.github.io/alcatraz/"
+languageCode: en
+title: Alcatraz
+
+resourceDir: .hugo/resources
+themesDir: .hugo/themes
+assetDir: .hugo/assets
+staticDir: .hugo/static
+layoutDir: .hugo/layouts
+publishDir: .hugo/output
+contentDir: docs
+
+theme: hugo-book
+
+enableRobotsTXT: true
+enableGitInfo: true
+
+params:
+  BookSection: /
+  BookToC: true
+  BookMenuBundle: /menu
+  BookRepo: https://github.com/bolasblack/alcatraz
+  BookEditPath: edit/master/docs
+
+markup:
+  highlight:
+    noClasses: true
+    style: monokailight
+    lineNos: false
+    codeFences: true
+    guessSyntax: true
+  goldmark:
+    renderer:
+      unsafe: true

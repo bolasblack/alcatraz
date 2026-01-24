@@ -18,3 +18,4 @@ decisions/AGD-012_runtime-config-setting.md: #config, #cli
 decisions/AGD-013_no-always-rebuild-flag.md: #cli, #state
 decisions/AGD-014_list-cleanup-commands.md: #cli, #state
 decisions/AGD-015_struct-field-exhaustiveness-check.md: #patterns
+decisions/AGD-016_dynamic-tty-detection-for-exec.md: #cli

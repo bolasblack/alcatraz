@@ -1,0 +1,57 @@
+// Reduce spacing between consecutive columns blocks (home page only)
+.page-home {
+  .book-columns {
+    ul {
+      margin: 0;
+
+      h3 {
+        margin: 16px 0;
+      }
+    }
+  }
+}
+
+// Code copy button - minimal, elegant design
+.highlight {
+  position: relative;
+}
+
+.code-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.15s, background 0.15s;
+  color: #75715e; // matches monokailight comment color
+
+  svg {
+    display: block;
+  }
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: #272822;
+  }
+
+  &:active {
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  &.copied {
+    color: #4a9c5d;
+  }
+
+  .highlight:hover & {
+    opacity: 1;
+  }
+}

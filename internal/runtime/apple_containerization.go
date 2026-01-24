@@ -12,6 +12,7 @@ import (
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/state"
+	"golang.org/x/term"
 )
 
 // AppleContainerizationState represents the setup state of Apple Containerization.
@@ -156,10 +157,14 @@ func (d *AppleContainerization) Up(ctx context.Context, cfg *config.Config, proj
 
 	// Add mounts using Apple's mount syntax (type=bind,source=...,target=...)
 	for _, mount := range cfg.Mounts {
-		// Convert Docker-style mount (/src:/dst) to Apple format
-		parts := strings.SplitN(mount, ":", 2)
-		if len(parts) == 2 {
-			args = append(args, "--mount", fmt.Sprintf("type=bind,source=%s,target=%s", parts[0], parts[1]))
+		// Convert Docker-style mount (/src:/dst or /src:/dst:ro) to Apple format
+		parts := strings.SplitN(mount, ":", 3)
+		if len(parts) >= 2 {
+			mountSpec := fmt.Sprintf("type=bind,source=%s,target=%s", parts[0], parts[1])
+			if len(parts) == 3 && parts[2] == "ro" {
+				mountSpec += ",readonly=true"
+			}
+			args = append(args, "--mount", mountSpec)
 		} else {
 			// Pass through if already in correct format
 			args = append(args, "--mount", mount)
@@ -247,11 +252,15 @@ func (d *AppleContainerization) Exec(ctx context.Context, projectDir string, st 
 
 	containerName := status.Name
 
-	// For non-interactive exec, don't use -it
-	args := []string{"exec", containerName}
+	args := []string{"exec", "-i"}
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		args = append(args, "-t")
+	}
+	args = append(args, containerName)
 	args = append(args, command...)
 
 	cmd := exec.CommandContext(ctx, "container", args...)
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

@@ -10,14 +10,14 @@ import (
 
 // Commands defines the lifecycle commands for the container.
 type Commands struct {
-	Up    string `toml:"up,omitempty"`
-	Enter string `toml:"enter,omitempty"`
+	Up    string `toml:"up,omitempty" jsonschema:"description=Command to run when starting the container"`
+	Enter string `toml:"enter,omitempty" jsonschema:"description=Command to run when entering an existing container"`
 }
 
 // Resources defines container resource limits.
 type Resources struct {
-	Memory string `toml:"memory,omitempty"` // e.g. "4g", "512m"
-	CPUs   int    `toml:"cpus,omitempty"`   // e.g. 2, 4
+	Memory string `toml:"memory,omitempty" jsonschema:"description=Memory limit (e.g. 4g or 512m)"`
+	CPUs   int    `toml:"cpus,omitempty" jsonschema:"description=Number of CPUs to allocate"`
 }
 
 // RuntimeType defines the container runtime selection mode.
@@ -32,19 +32,16 @@ const (
 
 	// RuntimeDocker forces Docker regardless of other available runtimes.
 	RuntimeDocker RuntimeType = "docker"
-
-	// RuntimeAppleContainerization forces Apple Containerization (macOS 26+).
-	RuntimeAppleContainerization RuntimeType = "apple-containerization"
 )
 
 // Config represents the Alcatraz container configuration.
 type Config struct {
-	Image     string      `toml:"image"`
-	Workdir   string      `toml:"workdir,omitempty"`
-	Runtime   RuntimeType `toml:"runtime,omitempty"`
-	Commands  Commands    `toml:"commands,omitempty"`
-	Mounts    []string    `toml:"mounts,omitempty"`
-	Resources Resources   `toml:"resources,omitempty"`
+	Image     string      `toml:"image" jsonschema:"required,description=Container image to use"`
+	Workdir   string      `toml:"workdir,omitempty" jsonschema:"description=Working directory inside container"`
+	Runtime   RuntimeType `toml:"runtime,omitempty" jsonschema:"enum=auto,enum=docker,description=Container runtime selection"`
+	Commands  Commands    `toml:"commands,omitempty" jsonschema:"description=Lifecycle commands"`
+	Mounts    []string    `toml:"mounts,omitempty" jsonschema:"description=Additional bind mounts (source:target[:ro])"`
+	Resources Resources   `toml:"resources,omitempty" jsonschema:"description=Container resource limits"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -79,13 +76,21 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
-// SaveConfig writes the configuration to the given path.
+// SchemaComment is the TOML comment that references the JSON Schema for editor autocomplete.
+const SchemaComment = "#:schema https://raw.githubusercontent.com/bolasblack/alcatraz/refs/heads/master/alca-config.schema.json\n\n"
+
+// SaveConfig writes the configuration to the given path with schema comment header.
 func SaveConfig(path string, cfg Config) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+
+	// Write schema comment for editor autocomplete support
+	if _, err := f.WriteString(SchemaComment); err != nil {
+		return err
+	}
 
 	encoder := toml.NewEncoder(f)
 	return encoder.Encode(cfg)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/state"
+	"golang.org/x/term"
 )
 
 // Podman implements the Runtime interface using the Podman CLI.
@@ -151,11 +152,15 @@ func (p *Podman) Exec(ctx context.Context, projectDir string, st *state.State, c
 
 	containerName := status.Name
 
-	// For non-interactive exec, don't use -it
-	args := []string{"exec", containerName}
+	args := []string{"exec", "-i"}
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		args = append(args, "-t")
+	}
+	args = append(args, containerName)
 	args = append(args, command...)
 
 	cmd := exec.CommandContext(ctx, "podman", args...)
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

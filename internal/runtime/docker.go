@@ -10,6 +10,7 @@ import (
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/state"
+	"golang.org/x/term"
 )
 
 // Docker implements the Runtime interface using the Docker CLI.
@@ -149,11 +150,15 @@ func (d *Docker) Exec(ctx context.Context, projectDir string, st *state.State, c
 
 	containerName := status.Name
 
-	// Run in workdir, non-interactive
-	args := []string{"exec", "-w", "/workspace", containerName}
+	args := []string{"exec", "-i"}
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		args = append(args, "-t")
+	}
+	args = append(args, "-w", "/workspace", containerName)
 	args = append(args, command...)
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

@@ -29,20 +29,12 @@ func SelectRuntimeWithOutput(cfg *config.Config, progressOut io.Writer) (Runtime
 	runtimeType := cfg.NormalizeRuntime()
 
 	// Handle explicit runtime configuration
-	switch runtimeType {
-	case config.RuntimeDocker:
+	if runtimeType == config.RuntimeDocker {
 		docker := NewDocker()
 		if !docker.Available() {
 			return nil, fmt.Errorf("Docker not available (configured runtime=docker)")
 		}
 		return docker, nil
-
-	case config.RuntimeAppleContainerization:
-		apple := NewAppleContainerization()
-		if !apple.Available() {
-			return nil, fmt.Errorf("Apple Containerization not available: %s", apple.UnavailableReason())
-		}
-		return apple, nil
 	}
 
 	// Auto-detect mode

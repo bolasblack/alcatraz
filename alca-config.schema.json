@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/Config",
+  "$defs": {
+    "Commands": {
+      "properties": {
+        "up": {
+          "type": "string",
+          "description": "Command to run when starting the container"
+        },
+        "enter": {
+          "type": "string",
+          "description": "Command to run when entering an existing container"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Config": {
+      "properties": {
+        "image": {
+          "type": "string",
+          "description": "Container image to use"
+        },
+        "workdir": {
+          "type": "string",
+          "description": "Working directory inside container"
+        },
+        "runtime": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "docker"
+          ],
+          "description": "Container runtime selection"
+        },
+        "commands": {
+          "$ref": "#/$defs/Commands",
+          "description": "Lifecycle commands"
+        },
+        "mounts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Additional bind mounts (source:target[:ro])"
+        },
+        "resources": {
+          "$ref": "#/$defs/Resources",
+          "description": "Container resource limits"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "image"
+      ]
+    },
+    "Resources": {
+      "properties": {
+        "memory": {
+          "type": "string",
+          "description": "Memory limit (e.g. 4g or 512m)"
+        },
+        "cpus": {
+          "type": "integer",
+          "description": "Number of CPUs to allocate"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    }
+  },
+  "title": "Alcatraz Configuration",
+  "description": "Configuration schema for .alca.toml"
+}

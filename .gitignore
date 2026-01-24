@@ -4,5 +4,13 @@ vendor
 out
 result
 .alca
+
 docs/commands/*
-!docs/commands/.gitkeep
+!docs/commands/_index.md
+
+.hugo_build.lock
+.hugo/*
+!.hugo/assets
+!.hugo/static
+!.hugo/layouts
+

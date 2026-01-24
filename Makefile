@@ -1,9 +1,9 @@
-.PHONY: build test clean docs docs-markdown docs-man vendor update-vendor-hash
+.PHONY: build test clean docs docs-markdown docs-man docs-html docs-serve vendor update-vendor-hash schema
 
 OUT_DIR := out
 BIN_DIR := $(OUT_DIR)/bin
 
-build: $(BIN_DIR)/alca
+build: schema $(BIN_DIR)/alca
 
 $(BIN_DIR)/alca: $(shell find . -name '*.go' -type f)
 	@mkdir -p $(BIN_DIR)
@@ -15,7 +15,7 @@ test:
 clean:
 	rm -rf $(OUT_DIR)
 
-# Vendor management
+# ========= Vendor management =========
 vendor:
 	go mod tidy
 	go mod vendor
@@ -37,7 +37,7 @@ update-vendor-hash: vendor
 		exit 1; \
 	fi
 
-# Documentation generation
+# ========= Documentation generation =========
 docs: docs-markdown docs-man
 
 docs-markdown:
@@ -45,3 +45,22 @@ docs-markdown:
 
 docs-man:
 	go run ./cmd/gendocs man
+
+# ========= Hugo HTML documentation =========
+HUGO_BOOK_VERSION ?= v13
+HUGO_THEME_DIR := .hugo/themes/hugo-book
+
+$(HUGO_THEME_DIR):
+	@mkdir -p "$(HUGO_THEME_DIR)"
+	git clone --depth 1 --branch $(HUGO_BOOK_VERSION) https://github.com/alex-shpak/hugo-book.git $(HUGO_THEME_DIR)
+	@rm -rf $(HUGO_THEME_DIR)/.git
+
+docs-html: $(HUGO_THEME_DIR)
+	hugo --minify
+
+docs-serve: $(HUGO_THEME_DIR)
+	hugo server --buildDrafts
+
+# ========= JSON Schema generation =========
+schema:
+	go run ./cmd/genschema alca-config.schema.json

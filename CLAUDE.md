@@ -1,5 +1,9 @@
 See [.agents/CLAUDE.md](.agents/CLAUDE.md) for the Agent Centric framework.
 
+## Config Struct Schema Regeneration
+
+When modifying the `Config` struct in `internal/config/config.go`, run `make schema` to regenerate `alca-config.schema.json`. This ensures editor autocomplete stays in sync with the config structure.
+
 ## Code Patterns
 
 Project-wide code patterns that should be followed. See AGDs tagged with `#patterns`.
