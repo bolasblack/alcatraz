@@ -30,6 +30,7 @@ Alcatraz uses TOML format for configuration. The configuration file should be na
 | `mounts`           | array  | No       | `[]`                                     | Additional mount points                        |
 | `resources.memory` | string | No       | -                                        | Memory limit (e.g., "4g", "512m")              |
 | `resources.cpus`   | int    | No       | -                                        | CPU limit (e.g., 2, 4)                         |
+| `envs`             | table  | No       | See below                                | Environment variables for the container        |
 
 ### image
 
@@ -151,6 +152,61 @@ cpus = 4
 - **Default**: None (no limit, uses runtime default)
 - **Examples**: `1`, `2`, `4`, `8`
 
+### envs
+
+Environment variables for the container. See [AGD-017](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-017_env-config-design.md) for design rationale.
+
+```toml
+[envs]
+# Static value - set at container creation
+NIXPKGS_ALLOW_UNFREE = "1"
+
+# Read from host environment at container creation
+MY_TOKEN = "${MY_TOKEN}"
+
+# Read from host and refresh on each `alca run`
+EDITOR = { value = "${EDITOR}", override_on_enter = true }
+```
+
+- **Type**: table (key-value pairs)
+- **Required**: No
+- **Value formats**:
+  - `"string"` - Static value or `${VAR}` reference, set at container creation
+  - `{ value = "...", override_on_enter = true }` - Also refresh on each `alca run`
+
+#### Variable Expansion
+
+Use `${VAR}` to read from host environment. Only simple syntax is supported:
+
+```toml
+[envs]
+# Valid
+TERM = "${TERM}"
+MY_VAR = "${MY_CUSTOM_VAR}"
+
+# Invalid - will error
+GREETING = "hello${NAME}"    # Complex interpolation not supported
+```
+
+#### Default Environment Variables
+
+The following are passed by default with `override_on_enter = true`:
+
+| Variable | Description |
+|----------|-------------|
+| `TERM` | Terminal type |
+| `COLORTERM` | Color terminal capability |
+| `LANG` | Default locale |
+| `LC_ALL` | Override all locale settings |
+| `LC_COLLATE` | Collation order |
+| `LC_CTYPE` | Character classification |
+| `LC_MESSAGES` | Message language |
+| `LC_MONETARY` | Monetary formatting |
+| `LC_NUMERIC` | Numeric formatting |
+| `LC_TIME` | Date/time formatting |
+
+User-defined values override these defaults.
+
 ## Runtime-Specific Notes
 
 ### Docker / Podman
@@ -203,4 +259,9 @@ mounts = [
 [resources]
 memory = "16g"
 cpus = 8
+
+# Environment variables
+[envs]
+NIXPKGS_ALLOW_UNFREE = "1"
+EDITOR = { value = "${EDITOR}", override_on_enter = true }
 ```

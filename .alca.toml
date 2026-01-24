@@ -2,11 +2,25 @@
 
 image = "nixos/nix"
 workdir = "/workspace"
-runtime = "auto"
+runtime = "docker"
+
+mounts = [
+  ".alca.cache/nix:/nix-cache",
+  ".alca.cache/go:/root/go",
+  ".alca.cache/mise:/root/.local/share/mise",
+]
 
 [commands]
-enter = "[ -f flake.nix ] && exec nix develop"
+enter = "[ -f flake.nix ] && exec nix develop --store /nix-cache --command"
 
 [resources]
 memory = "16g"
 cpus = 8
+
+[envs]
+NIXPKGS_ALLOW_UNFREE = "1"
+NIX_CONFIG = """
+extra-experimental-features = nix-command flakes
+"""
+TERM = "${TERM}"
+LC_LANG = { value = "${LC_LANG}", override_on_enter = true }

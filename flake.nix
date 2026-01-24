@@ -15,7 +15,10 @@
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        };
 
         alca = pkgs.buildGoModule {
           pname = "alca";
@@ -24,7 +27,7 @@
           src = ./.;
 
           # First build with empty hash to get the correct one
-          vendorHash = "sha256-u1bQu1In9hX+1bmUMJcUc/x/ZBJnVNymCNLXUk3YwAU=";
+          vendorHash = "sha256-Bu6c5jMNkDgMX/MuCc22+x/ScDqGhfdS2YS1e9yQM28=";
 
           # Build binaries
           subPackages = [
@@ -58,15 +61,18 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            go
-            gopls
-            golangci-lint
+            bashInteractive
+            ncurses
+            coreutils
+            findutils
+            gnugrep
+            mise
             alca
           ];
 
           shellHook = ''
+            export TERMINFO_DIRS="${pkgs.ncurses}/share/terminfo"
             echo "Alcatraz development environment"
-            echo "Go version: $(go version)"
           '';
         };
       }

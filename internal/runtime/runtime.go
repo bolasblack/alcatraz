@@ -76,7 +76,8 @@ type Runtime interface {
 
 	// Exec runs a command inside the container for the given project directory.
 	// The state provides container identity for lookup.
-	Exec(ctx context.Context, projectDir string, st *state.State, command []string) error
+	// The config provides environment variables with override_on_enter support.
+	Exec(ctx context.Context, cfg *config.Config, projectDir string, st *state.State, command []string) error
 
 	// Status returns the current status of the container for the given project directory.
 	// The state provides container identity for lookup. If state is nil, uses legacy name lookup.

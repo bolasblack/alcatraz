@@ -48,6 +48,13 @@
         "resources": {
           "$ref": "#/$defs/Resources",
           "description": "Container resource limits"
+        },
+        "envs": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EnvValue"
+          },
+          "type": "object",
+          "description": "Environment variables for the container"
         }
       },
       "additionalProperties": false,
@@ -55,6 +62,29 @@
       "required": [
         "image"
       ]
+    },
+    "EnvValue": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Static value or ${VAR} reference"
+        },
+        {
+          "properties": {
+            "value": {
+              "type": "string",
+              "description": "The value or ${VAR} reference"
+            },
+            "override_on_enter": {
+              "type": "boolean",
+              "description": "Also set at docker exec time"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object"
+        }
+      ],
+      "description": "Environment variable value (string or object with override_on_enter)"
     },
     "Resources": {
       "properties": {

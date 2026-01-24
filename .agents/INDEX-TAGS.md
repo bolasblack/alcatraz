@@ -19,3 +19,6 @@ decisions/AGD-013_no-always-rebuild-flag.md: #cli, #state
 decisions/AGD-014_list-cleanup-commands.md: #cli, #state
 decisions/AGD-015_struct-field-exhaustiveness-check.md: #patterns
 decisions/AGD-016_dynamic-tty-detection-for-exec.md: #cli
+decisions/AGD-017_env-config-design.md: #config, #cli
+decisions/AGD-018_manual-config-docs-maintenance.md: #tooling, #config
+decisions/AGD-019_config-drift-detection-for-envs.md: #config, #state

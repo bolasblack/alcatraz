@@ -3,7 +3,9 @@ zhistory
 vendor
 out
 result
+
 .alca
+.alca.cache
 
 docs/commands/*
 !docs/commands/_index.md

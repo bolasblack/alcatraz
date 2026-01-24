@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -74,32 +76,41 @@ func runRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("container is not running: run 'alca up' first")
 	}
 
-	// Build command with flake.nix detection
-	// If flake.nix exists, wrap command with nix develop --command
-	userCmd := shellQuoteArgs(args)
-	wrappedCmd := fmt.Sprintf(
-		"if [ -f flake.nix ]; then nix --extra-experimental-features 'nix-command flakes' develop --command sh -c %s; else sh -c %s; fi",
-		userCmd, userCmd)
+	// Build command with optional enter prefix
+	// If commands.enter is set, use it as command wrapper/prefix
+	var execCmd []string
+	if cfg.Commands.Enter != "" {
+		// Enter may contain shell syntax (&&, |, etc.), so wrap with sh -c
+		// Quote each arg to preserve spaces and special characters
+		quotedArgs := make([]string, len(args))
+		for i, arg := range args {
+			quotedArgs[i] = shellQuote(arg)
+		}
+		fullCmd := cfg.Commands.Enter + " " + strings.Join(quotedArgs, " ")
+		execCmd = []string{"sh", "-c", fullCmd}
+	} else {
+		// Run command directly
+		execCmd = args
+	}
 
-	execCmd := []string{"sh", "-c", wrappedCmd}
-	if err := rt.Exec(ctx, cwd, st, execCmd); err != nil {
+	err = rt.Exec(ctx, &cfg, cwd, st, execCmd)
+	if err != nil {
+		// Pass through exit codes instead of reporting as error
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.ExitCode())
+		}
 		return fmt.Errorf("failed to execute command: %w", err)
 	}
 
 	return nil
 }
 
-// shellQuoteArgs quotes arguments for safe shell execution.
-func shellQuoteArgs(args []string) string {
-	if len(args) == 0 {
-		return "''"
-	}
-	// Join args and wrap in single quotes, escaping existing quotes
-	var quoted []string
-	for _, arg := range args {
-		// Escape single quotes by ending quote, adding escaped quote, starting new quote
-		escaped := strings.ReplaceAll(arg, "'", "'\"'\"'")
-		quoted = append(quoted, escaped)
-	}
-	return "'" + strings.Join(quoted, " ") + "'"
+// shellQuote quotes a string for safe use in shell commands.
+// It wraps the string in single quotes and escapes internal single quotes.
+func shellQuote(s string) string {
+	// Replace ' with '\'' (end quote, escaped quote, start quote)
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
+
+

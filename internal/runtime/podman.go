@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/state"
@@ -82,6 +83,14 @@ func (p *Podman) Up(ctx context.Context, cfg *config.Config, projectDir string, 
 		args = append(args, "--cpus", fmt.Sprintf("%d", cfg.Resources.CPUs))
 	}
 
+	// Add environment variables (all merged envs at container creation)
+	for key, env := range cfg.MergedEnvs() {
+		expanded := env.Expand(os.Getenv)
+		if expanded != "" {
+			args = append(args, "-e", key+"="+expanded)
+		}
+	}
+
 	// Add image
 	args = append(args, cfg.Image)
 
@@ -139,7 +148,10 @@ func (p *Podman) Down(ctx context.Context, projectDir string, st *state.State) e
 }
 
 // Exec runs a command inside the Podman container.
-func (p *Podman) Exec(ctx context.Context, projectDir string, st *state.State, command []string) error {
+// For interactive commands, this uses syscall.Exec to replace the current process,
+// ensuring proper signal handling (Ctrl+C, etc.) and TTY behavior.
+// See AGD-017 for environment variable design.
+func (p *Podman) Exec(ctx context.Context, cfg *config.Config, projectDir string, st *state.State, command []string) error {
 	// Find the container first
 	status, err := p.Status(ctx, projectDir, st)
 	if err != nil {
@@ -152,18 +164,36 @@ func (p *Podman) Exec(ctx context.Context, projectDir string, st *state.State, c
 
 	containerName := status.Name
 
-	args := []string{"exec", "-i"}
+	args := []string{"podman", "exec", "-i"}
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		args = append(args, "-t")
 	}
-	args = append(args, containerName)
+
+	// Add environment variables with override_on_enter=true
+	for key, env := range cfg.MergedEnvs() {
+		if env.OverrideOnEnter {
+			expanded := env.Expand(os.Getenv)
+			if expanded != "" {
+				args = append(args, "-e", key+"="+expanded)
+			}
+		}
+	}
+
+	args = append(args, "-w", cfg.Workdir, containerName)
 	args = append(args, command...)
 
-	cmd := exec.CommandContext(ctx, "podman", args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	podmanPath, err := exec.LookPath("podman")
+	if err != nil {
+		return fmt.Errorf("podman not found: %w", err)
+	}
+
+	// Debug output
+	if os.Getenv("ALCA_DEBUG") != "" {
+		fmt.Fprintf(os.Stderr, "→ Executing: %s\n", strings.Join(args, " "))
+	}
+
+	// Replace current process with podman exec for proper signal handling
+	return syscall.Exec(podmanPath, args, os.Environ())
 }
 
 // Status returns the current status of the Podman container.

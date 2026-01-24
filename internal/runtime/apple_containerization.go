@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/state"
@@ -182,6 +183,14 @@ func (d *AppleContainerization) Up(ctx context.Context, cfg *config.Config, proj
 		args = append(args, "-c", fmt.Sprintf("%d", cfg.Resources.CPUs))
 	}
 
+	// Add environment variables (all merged envs at container creation)
+	for key, env := range cfg.MergedEnvs() {
+		expanded := env.Expand(os.Getenv)
+		if expanded != "" {
+			args = append(args, "-e", key+"="+expanded)
+		}
+	}
+
 	// Add image
 	args = append(args, cfg.Image)
 
@@ -239,7 +248,10 @@ func (d *AppleContainerization) Down(ctx context.Context, projectDir string, st 
 }
 
 // Exec runs a command inside the container.
-func (d *AppleContainerization) Exec(ctx context.Context, projectDir string, st *state.State, command []string) error {
+// For interactive commands, this uses syscall.Exec to replace the current process,
+// ensuring proper signal handling (Ctrl+C, etc.) and TTY behavior.
+// See AGD-017 for environment variable design.
+func (d *AppleContainerization) Exec(ctx context.Context, cfg *config.Config, projectDir string, st *state.State, command []string) error {
 	// Find the container first
 	status, err := d.Status(ctx, projectDir, st)
 	if err != nil {
@@ -252,18 +264,36 @@ func (d *AppleContainerization) Exec(ctx context.Context, projectDir string, st 
 
 	containerName := status.Name
 
-	args := []string{"exec", "-i"}
+	args := []string{"container", "exec", "-i"}
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		args = append(args, "-t")
 	}
-	args = append(args, containerName)
+
+	// Add environment variables with override_on_enter=true
+	for key, env := range cfg.MergedEnvs() {
+		if env.OverrideOnEnter {
+			expanded := env.Expand(os.Getenv)
+			if expanded != "" {
+				args = append(args, "-e", key+"="+expanded)
+			}
+		}
+	}
+
+	args = append(args, "-w", cfg.Workdir, containerName)
 	args = append(args, command...)
 
-	cmd := exec.CommandContext(ctx, "container", args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	containerPath, err := exec.LookPath("container")
+	if err != nil {
+		return fmt.Errorf("container CLI not found: %w", err)
+	}
+
+	// Debug output
+	if os.Getenv("ALCA_DEBUG") != "" {
+		fmt.Fprintf(os.Stderr, "→ Executing: %s\n", strings.Join(args, " "))
+	}
+
+	// Replace current process with container exec for proper signal handling
+	return syscall.Exec(containerPath, args, os.Environ())
 }
 
 // containerListItem represents a container in the list output.

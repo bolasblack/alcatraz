@@ -60,30 +60,36 @@ Create `.alca.toml` in your project root:
 ```toml
 image = "nixos/nix"
 workdir = "/workspace"
-runtime = "auto"  # auto, docker, podman, apple
+runtime = "auto"  # auto, docker
 mounts = [".:/workspace"]
 
 [commands]
 up = "sleep infinity"
 enter = "nix develop"
+
+[resources]
+memory = "4g"
+cpus = 2
 ```
 
-| Field            | Description                                             |
-| ---------------- | ------------------------------------------------------- |
-| `image`          | Container image                                         |
-| `workdir`        | Working directory inside container                      |
-| `runtime`        | Container runtime (`auto`, `docker`, `podman`, `apple`) |
-| `mounts`         | Volume mounts (default: current dir to workdir)         |
-| `commands.up`    | Command to keep container running                       |
-| `commands.enter` | Command to run on `alca run`                            |
+| Field              | Description                                     |
+| ------------------ | ----------------------------------------------- |
+| `image`            | Container image                                 |
+| `workdir`          | Working directory inside container              |
+| `runtime`          | Container runtime (`auto`, `docker`)            |
+| `mounts`           | Volume mounts (default: current dir to workdir) |
+| `commands.up`      | Command to keep container running               |
+| `commands.enter`   | Command to run on `alca run`                    |
+| `resources.memory` | Memory limit (e.g. `4g`, `512m`)                |
+| `resources.cpus`   | Number of CPUs to allocate                      |
 
 ## Supported Runtimes
 
 | Runtime                | Platform     | Notes                            |
 | ---------------------- | ------------ | -------------------------------- |
 | Docker                 | Linux, macOS | Recommended                      |
-| Podman                 | Linux, macOS | Rootless support                 |
-| Apple Containerization | macOS 15+    | Native, requires `container` CLI |
+| Podman                 | Linux        | Auto-detected on Linux           |
+| Apple Containerization | macOS 26+    | Native, requires `container` CLI |
 
 Runtime is auto-detected by default. Set `runtime` in config to override.
 

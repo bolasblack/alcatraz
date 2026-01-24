@@ -201,6 +201,17 @@ func All() []Runtime {
 	}
 }
 
+// ByName returns a runtime instance by its display name.
+// Returns nil if the name is not recognized.
+func ByName(name string) Runtime {
+	for _, rt := range All() {
+		if rt.Name() == name {
+			return rt
+		}
+	}
+	return nil
+}
+
 // Available returns all currently available runtimes on this system.
 func Available() []Runtime {
 	var available []Runtime

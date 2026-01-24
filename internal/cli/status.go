@@ -96,29 +96,30 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Println("")
 
 		// Check for configuration drift
-		if st.Config != nil {
-			drift := st.DetectConfigDrift(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter, cfg.Resources.Memory, cfg.Resources.CPUs))
-			if drift != nil && drift.HasDrift() {
-				fmt.Println("⚠️  Configuration drift detected:")
+		runtimeChanged := st.Runtime != rt.Name()
+		drift := st.DetectConfigDrift(&cfg)
+		if (drift != nil && drift.HasDrift()) || runtimeChanged {
+			fmt.Println("⚠️  Configuration drift detected:")
+			if runtimeChanged {
+				fmt.Printf("  Runtime: %s → %s\n", st.Runtime, rt.Name())
+			}
+			if drift != nil {
 				if drift.Old.Image != drift.New.Image {
 					fmt.Printf("  Image: %s → %s\n", drift.Old.Image, drift.New.Image)
 				}
 				if drift.Old.Workdir != drift.New.Workdir {
 					fmt.Printf("  Workdir: %s → %s\n", drift.Old.Workdir, drift.New.Workdir)
 				}
-				if drift.Old.Runtime != drift.New.Runtime {
-					fmt.Printf("  Runtime: %s → %s\n", drift.Old.Runtime, drift.New.Runtime)
+				if drift.Old.Resources.Memory != drift.New.Resources.Memory {
+					fmt.Printf("  Resources.memory: %s → %s\n", drift.Old.Resources.Memory, drift.New.Resources.Memory)
 				}
-				if drift.Old.Memory != drift.New.Memory {
-					fmt.Printf("  Resources.memory: %s → %s\n", drift.Old.Memory, drift.New.Memory)
+				if drift.Old.Resources.CPUs != drift.New.Resources.CPUs {
+					fmt.Printf("  Resources.cpus: %d → %d\n", drift.Old.Resources.CPUs, drift.New.Resources.CPUs)
 				}
-				if drift.Old.CPUs != drift.New.CPUs {
-					fmt.Printf("  Resources.cpus: %d → %d\n", drift.Old.CPUs, drift.New.CPUs)
-				}
-				fmt.Println("")
-				fmt.Println("Run 'alca up -f' to rebuild with new configuration.")
-				fmt.Println("")
 			}
+			fmt.Println("")
+			fmt.Println("Run 'alca up -f' to rebuild with new configuration.")
+			fmt.Println("")
 		}
 
 		fmt.Println("Run 'alca run <command>' to execute commands.")

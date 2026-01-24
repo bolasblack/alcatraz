@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/google/uuid"
 )
 
@@ -38,37 +40,11 @@ type State struct {
 	CreatedAt time.Time `json:"created_at"`
 	// Runtime is the runtime used for this project (docker, podman, apple).
 	Runtime string `json:"runtime"`
-	// Config stores the configuration snapshot at container creation time.
+	// Config stores the configuration at container creation time.
 	// Used for detecting configuration drift.
-	Config *ConfigSnapshot `json:"config,omitempty"`
+	Config *config.Config `json:"config,omitempty"`
 }
 
-// ConfigSnapshot captures the configuration at container creation time.
-// See ConfigDrift.HasDrift() for which fields trigger rebuild.
-type ConfigSnapshot struct {
-	Image    string   `json:"image"`
-	Workdir  string   `json:"workdir"`
-	Runtime  string   `json:"runtime"`
-	Mounts   []string `json:"mounts,omitempty"`
-	CmdUp    string   `json:"cmd_up,omitempty"`
-	CmdEnter string   `json:"cmd_enter,omitempty"`
-	Memory   string   `json:"memory,omitempty"`
-	CPUs     int      `json:"cpus,omitempty"`
-}
-
-// NewConfigSnapshot creates a snapshot from config values.
-func NewConfigSnapshot(image, workdir, runtime string, mounts []string, cmdUp, cmdEnter, memory string, cpus int) *ConfigSnapshot {
-	return &ConfigSnapshot{
-		Image:    image,
-		Workdir:  workdir,
-		Runtime:  runtime,
-		Mounts:   mounts,
-		CmdUp:    cmdUp,
-		CmdEnter: cmdEnter,
-		Memory:   memory,
-		CPUs:     cpus,
-	}
-}
 
 // StateFilePath returns the path to the state file for the given project directory.
 func StateFilePath(projectDir string) string {
@@ -179,8 +155,8 @@ func (s *State) ContainerLabels(projectDir string) map[string]string {
 
 // ConfigDrift represents configuration changes between state and current config.
 type ConfigDrift struct {
-	Old *ConfigSnapshot
-	New *ConfigSnapshot
+	Old *config.Config
+	New *config.Config
 }
 
 // HasDrift returns true if configuration has changed in ways that require rebuild.
@@ -192,40 +168,59 @@ func (d *ConfigDrift) HasDrift() bool {
 
 	old, new := d.Old, d.New
 
-	// Compile-time check: must match ConfigSnapshot fields exactly.
-	// If ConfigSnapshot adds a field, this line fails to compile,
+	// Compile-time check: must match config.Config fields exactly.
+	// If Config adds a field, this line fails to compile,
 	// forcing you to update 'fields' and decide whether to compare it.
 	// See AGD-015 for pattern details.
 	type fields struct {
-		Image    string
-		Workdir  string
-		Runtime  string
-		Mounts   []string
-		CmdUp    string
-		CmdEnter string
-		Memory   string
-		CPUs     int
+		Image     string
+		Workdir   string
+		Runtime   config.RuntimeType
+		Commands  config.Commands
+		Mounts    []string
+		Resources config.Resources
+		Envs      map[string]config.EnvValue
 	}
 	_ = fields(*old)
+	type fieldsCommands struct {
+		Up    string
+		Enter string
+	}
+	_ = fieldsCommands(old.Commands)
+	type fieldsResources struct {
+		Memory string
+		CPUs   int
+	}
+	_ = fieldsResources(old.Resources)
+	type fieldsEnvValue struct {
+		Value           string
+		OverrideOnEnter bool
+	}
+	for _, v := range old.Envs {
+		_ = fieldsEnvValue(v)
+		break // Only need to check one value for type compatibility
+	}
 
 	// Fields that trigger rebuild:
 	if old.Image != new.Image ||
 		old.Workdir != new.Workdir ||
 		old.Runtime != new.Runtime ||
-		old.CmdUp != new.CmdUp ||
-		old.Memory != new.Memory ||
-		old.CPUs != new.CPUs ||
-		!equalStringSlices(old.Mounts, new.Mounts) {
+		old.Commands.Up != new.Commands.Up ||
+		old.Resources.Memory != new.Resources.Memory ||
+		old.Resources.CPUs != new.Resources.CPUs ||
+		!equalStringSlices(old.Mounts, new.Mounts) ||
+		envLiteralsDrift(old.Envs, new.Envs) {
 		return true
 	}
-	// CmdEnter: intentionally excluded, doesn't require rebuild
+	// Commands.Enter: intentionally excluded, doesn't require rebuild
+	// EnvValue.OverrideOnEnter: intentionally excluded, only affects enter behavior
 
 	return false
 }
 
-// DetectConfigDrift compares the state's config snapshot with the given config.
-// Returns nil if no drift or if state has no config snapshot.
-func (s *State) DetectConfigDrift(current *ConfigSnapshot) *ConfigDrift {
+// DetectConfigDrift compares the state's config with the given config.
+// Returns nil if no drift or if state has no config.
+func (s *State) DetectConfigDrift(current *config.Config) *ConfigDrift {
 	if s.Config == nil {
 		return nil
 	}
@@ -236,9 +231,9 @@ func (s *State) DetectConfigDrift(current *ConfigSnapshot) *ConfigDrift {
 	return nil
 }
 
-// UpdateConfig updates the config snapshot in the state.
-func (s *State) UpdateConfig(snapshot *ConfigSnapshot) {
-	s.Config = snapshot
+// UpdateConfig updates the config in the state.
+func (s *State) UpdateConfig(cfg *config.Config) {
+	s.Config = cfg
 }
 
 // equalStringSlices compares two string slices for equality.
@@ -253,3 +248,35 @@ func equalStringSlices(a, b []string) bool {
 	}
 	return true
 }
+
+// envLiteralsDrift checks if literal (non-interpolated) env values have changed.
+// Interpolated values (containing ${...}) are ignored - see AGD-019.
+// EnvValue.OverrideOnEnter is also ignored (only affects enter behavior).
+func envLiteralsDrift(a, b map[string]config.EnvValue) bool {
+	// Collect literal values only
+	aLiterals := make(map[string]string)
+	for k, v := range a {
+		if !strings.Contains(v.Value, "${") {
+			aLiterals[k] = v.Value
+		}
+	}
+
+	bLiterals := make(map[string]string)
+	for k, v := range b {
+		if !strings.Contains(v.Value, "${") {
+			bLiterals[k] = v.Value
+		}
+	}
+
+	// Compare literal maps
+	if len(aLiterals) != len(bLiterals) {
+		return true
+	}
+	for k, va := range aLiterals {
+		if vb, ok := bLiterals[k]; !ok || va != vb {
+			return true
+		}
+	}
+	return false
+}
+

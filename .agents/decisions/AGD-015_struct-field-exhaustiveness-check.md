@@ -15,40 +15,33 @@ We need a compile-time mechanism to force developers to review comparison logic 
 Use a **mirror type conversion** pattern to create compile-time checks:
 
 ```go
-type ConfigSnapshot struct {
-    Image    string
-    Workdir  string
-    Runtime  string
-    Mounts   []string
-    CmdUp    string
-    CmdEnter string
-}
+func (d *ConfigDrift) HasDrift() bool {
+    old, new := d.Old, d.New
 
-func (c *ConfigSnapshot) Equals(other *ConfigSnapshot) bool {
-    if c == nil || other == nil {
-        return c == other
-    }
-
-    // Compile-time check: must match ConfigSnapshot fields exactly.
-    // If ConfigSnapshot adds a field, this line fails to compile,
+    // Compile-time check: must match config.Config fields exactly.
+    // If Config adds a field, this line fails to compile,
     // forcing you to update 'fields' and decide whether to compare it.
     type fields struct {
-        Image    string
-        Workdir  string
-        Runtime  string
-        Mounts   []string
-        CmdUp    string
-        CmdEnter string
+        Image     string
+        Workdir   string
+        Runtime   config.RuntimeType
+        Commands  config.Commands
+        Mounts    []string
+        Resources config.Resources
+        Envs      map[string]config.EnvValue
     }
-    _ = fields(*c)
+    _ = fields(*old)
 
     // Fields that trigger rebuild:
-    return c.Image == other.Image &&
-        c.Workdir == other.Workdir &&
-        c.Runtime == other.Runtime &&
-        c.CmdUp == other.CmdUp &&
-        equalStringSlices(c.Mounts, other.Mounts)
-    // CmdEnter: intentionally excluded, doesn't require rebuild
+    if old.Image != new.Image ||
+        old.Workdir != new.Workdir ||
+        // ...
+    {
+        return true
+    }
+    // Commands.Enter: intentionally excluded, doesn't require rebuild
+
+    return false
 }
 ```
 
@@ -62,6 +55,58 @@ func (c *ConfigSnapshot) Equals(other *ConfigSnapshot) bool {
 
 - Add new field to struct → `fields(*c)` fails to compile → developer must update `fields` → sees comparison logic → decides whether to include field
 
+## Limitation: Nested Structs
+
+The basic pattern only checks top-level fields. If a nested struct (e.g., `Commands`, `Resources`) adds new fields, the mirror type still compiles because it only checks the type name, not internal fields:
+
+```go
+type fields struct {
+    Commands  config.Commands   // Only checks type, not internal fields!
+    Resources config.Resources  // Same issue
+}
+_ = fields(*old)  // Still compiles even if Commands adds new fields
+```
+
+**Solution:** Add separate mirror structs for each nested type:
+
+```go
+// Top-level check
+type fields struct {
+    Image     string
+    Workdir   string
+    Runtime   config.RuntimeType
+    Commands  config.Commands
+    Mounts    []string
+    Resources config.Resources
+    Envs      map[string]config.EnvValue
+}
+_ = fields(*old)
+
+// Nested struct checks
+type fieldsCommands struct {
+    Up    string
+    Enter string
+}
+_ = fieldsCommands(old.Commands)
+
+type fieldsResources struct {
+    Memory string
+    CPUs   int
+}
+_ = fieldsResources(old.Resources)
+
+type fieldsEnvValue struct {
+    Value           string
+    OverrideOnEnter bool
+}
+for _, v := range old.Envs {
+    _ = fieldsEnvValue(v)
+    break // Only need to check one value for type compatibility
+}
+```
+
+This ensures that adding fields to any nested struct will also trigger a compile error.
+
 ## Consequences
 
 **Positive:**
@@ -71,9 +116,9 @@ func (c *ConfigSnapshot) Equals(other *ConfigSnapshot) bool {
 - No runtime overhead (type conversion is optimized away)
 
 **Negative:**
-- Slightly more verbose code
+- More verbose code, especially with nested structs
 - Must maintain field order consistency between struct and mirror type
 - Pattern needs to be understood by team members
 
 **Usage:**
-- Implemented in `internal/state/state.go` for `ConfigSnapshot.Equals()`
+- Implemented in `internal/state/state.go` for `ConfigDrift.HasDrift()`

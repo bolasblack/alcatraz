@@ -86,32 +86,35 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// Check for configuration drift
 	needsRebuild := false
+	runtimeChanged := st.Runtime != rt.Name()
 	if st.Config != nil {
-		drift := st.DetectConfigDrift(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter, cfg.Resources.Memory, cfg.Resources.CPUs))
-		if drift != nil && drift.HasDrift() {
+		drift := st.DetectConfigDrift(&cfg)
+		if (drift != nil && drift.HasDrift()) || runtimeChanged {
 			if !upForce {
 				// Show drift and ask for confirmation
 				fmt.Println("Configuration has changed since last container creation:")
-				if drift.Old.Image != drift.New.Image {
-					fmt.Printf("  Image: %s → %s\n", drift.Old.Image, drift.New.Image)
+				if runtimeChanged {
+					fmt.Printf("  Runtime: %s → %s\n", st.Runtime, rt.Name())
 				}
-				if !slicesEqual(drift.Old.Mounts, drift.New.Mounts) {
-					fmt.Printf("  Mounts: changed\n")
-				}
-				if drift.Old.Workdir != drift.New.Workdir {
-					fmt.Printf("  Workdir: %s → %s\n", drift.Old.Workdir, drift.New.Workdir)
-				}
-				if drift.Old.Runtime != drift.New.Runtime {
-					fmt.Printf("  Runtime: %s → %s\n", drift.Old.Runtime, drift.New.Runtime)
-				}
-				if drift.Old.CmdUp != drift.New.CmdUp {
-					fmt.Printf("  Commands.up: changed\n")
-				}
-				if drift.Old.Memory != drift.New.Memory {
-					fmt.Printf("  Resources.memory: %s → %s\n", drift.Old.Memory, drift.New.Memory)
-				}
-				if drift.Old.CPUs != drift.New.CPUs {
-					fmt.Printf("  Resources.cpus: %d → %d\n", drift.Old.CPUs, drift.New.CPUs)
+				if drift != nil {
+					if drift.Old.Image != drift.New.Image {
+						fmt.Printf("  Image: %s → %s\n", drift.Old.Image, drift.New.Image)
+					}
+					if !slicesEqual(drift.Old.Mounts, drift.New.Mounts) {
+						fmt.Printf("  Mounts: changed\n")
+					}
+					if drift.Old.Workdir != drift.New.Workdir {
+						fmt.Printf("  Workdir: %s → %s\n", drift.Old.Workdir, drift.New.Workdir)
+					}
+					if drift.Old.Commands.Up != drift.New.Commands.Up {
+						fmt.Printf("  Commands.up: changed\n")
+					}
+					if drift.Old.Resources.Memory != drift.New.Resources.Memory {
+						fmt.Printf("  Resources.memory: %s → %s\n", drift.Old.Resources.Memory, drift.New.Resources.Memory)
+					}
+					if drift.Old.Resources.CPUs != drift.New.Resources.CPUs {
+						fmt.Printf("  Resources.cpus: %d → %d\n", drift.Old.Resources.CPUs, drift.New.Resources.CPUs)
+					}
 				}
 				fmt.Print("Rebuild container with new configuration? [y/N] ")
 
@@ -133,17 +136,27 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// If rebuild needed, remove existing container first
 	if needsRebuild {
-		status, _ := rt.Status(ctx, cwd, st)
+		// Determine which runtime to use for cleanup
+		cleanupRt := rt
+		if runtimeChanged {
+			// Runtime changed - use old runtime to remove old container
+			if oldRt := runtime.ByName(st.Runtime); oldRt != nil {
+				cleanupRt = oldRt
+				progress(out, "→ Runtime changed: %s → %s\n", st.Runtime, rt.Name())
+			}
+		}
+
+		status, _ := cleanupRt.Status(ctx, cwd, st)
 		if status.State != runtime.StateNotFound {
 			progress(out, "→ Removing existing container for rebuild...\n")
-			if err := rt.Down(ctx, cwd, st); err != nil {
+			if err := cleanupRt.Down(ctx, cwd, st); err != nil {
 				return fmt.Errorf("failed to remove container for rebuild: %w", err)
 			}
 		}
 	}
 
 	// Update state with current config
-	st.UpdateConfig(state.NewConfigSnapshot(cfg.Image, cfg.Workdir, rt.Name(), cfg.Mounts, cfg.Commands.Up, cfg.Commands.Enter, cfg.Resources.Memory, cfg.Resources.CPUs))
+	st.UpdateConfig(&cfg)
 	if err := state.Save(cwd, st); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
