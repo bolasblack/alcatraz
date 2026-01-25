@@ -70,9 +70,7 @@ runtime = "auto"
 - **Required**: No
 - **Default**: `"auto"`
 - **Valid values**:
-  - `"auto"` - Auto-detect best available runtime
-    - macOS: Apple Containerization > Docker
-    - Linux: Podman > Docker
+  - `"auto"` - Auto-detect best available runtime (Linux: Podman > Docker; Other: Docker)
   - `"docker"` - Force Docker regardless of other available runtimes
 
 ### commands.up
@@ -218,19 +216,7 @@ Resource limits are passed as container-level flags:
 
 **Important**: On macOS, Docker Desktop runs containers in a VM with fixed resource allocation. Container limits are constrained by the VM's allocated resources. Configure VM resources via Docker Desktop > Settings > Resources.
 
-### Apple Containerization
-
-Each container runs in its own lightweight VM with dedicated resources:
-
-- Memory: `-m` flag (1 MiB granularity)
-- CPU: `-c` or `--cpus` flag
-
-**Characteristics**:
-
-- Per-container micro-VM model
-- Zero memory overhead when no containers running
-- Memory automatically released when container stops
-- Default per container: 1 GiB memory, 4 CPUs
+> **macOS Users**: We recommend [OrbStack](https://orbstack.dev/) as it provides automatic memory management (shrinking unused memory), which colima and lima do not support.
 
 ## Full Example
 

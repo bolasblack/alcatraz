@@ -38,7 +38,7 @@ type State struct {
 	ContainerName string `json:"container_name"`
 	// CreatedAt is when the state was first created.
 	CreatedAt time.Time `json:"created_at"`
-	// Runtime is the runtime used for this project (docker, podman, apple).
+	// Runtime is the runtime used for this project (docker, podman).
 	Runtime string `json:"runtime"`
 	// Config stores the configuration at container creation time.
 	// Used for detecting configuration drift.

@@ -2,6 +2,7 @@
 title: "macOS Isolation Solution"
 description: "Choose Apple Containerization (macOS 26+) or OrbStack (macOS 15-) for Claude Code isolation"
 tags: macos, file-isolation, network-isolation
+obsoleted_by: AGD-020
 ---
 
 ## Context

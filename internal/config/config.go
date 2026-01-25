@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/BurntSushi/toml"
 	"github.com/invopop/jsonschema"
+	toml "github.com/pelletier/go-toml/v2"
 )
 
 // Commands defines the lifecycle commands for the container.
@@ -30,8 +30,8 @@ type RuntimeType string
 
 const (
 	// RuntimeAuto auto-detects the best available runtime.
-	// macOS: Apple Containerization > Docker
 	// Linux: Podman > Docker
+	// macOS and others: Docker
 	RuntimeAuto RuntimeType = "auto"
 
 	// RuntimeDocker forces Docker regardless of other available runtimes.
@@ -46,25 +46,6 @@ type EnvValue struct {
 	OverrideOnEnter bool   `toml:"override_on_enter,omitempty" json:"override_on_enter,omitempty" jsonschema:"description=Also set at docker exec time"`
 }
 
-// UnmarshalTOML handles both string and object formats for EnvValue.
-func (e *EnvValue) UnmarshalTOML(data interface{}) error {
-	switch v := data.(type) {
-	case string:
-		e.Value = v
-		e.OverrideOnEnter = false
-		return nil
-	case map[string]interface{}:
-		if val, ok := v["value"].(string); ok {
-			e.Value = val
-		}
-		if override, ok := v["override_on_enter"].(bool); ok {
-			e.OverrideOnEnter = override
-		}
-		return nil
-	default:
-		return fmt.Errorf("invalid env value type: %T", data)
-	}
-}
 
 // envVarPattern matches simple ${VAR} syntax.
 var envVarPattern = regexp.MustCompile(`^\$\{([a-zA-Z_][a-zA-Z0-9_-]*)\}$`)
@@ -152,6 +133,7 @@ func DefaultConfig() Config {
 	}
 }
 
+
 // NormalizeRuntime returns the runtime type, defaulting to auto if empty.
 func (c *Config) NormalizeRuntime() RuntimeType {
 	if c.Runtime == "" {
@@ -180,14 +162,79 @@ func (c *Config) ValidateEnvs() error {
 	return nil
 }
 
+// rawConfig is an intermediate type for decoding TOML with flexible env values.
+type rawConfig struct {
+	Image     string         `toml:"image"`
+	Workdir   string         `toml:"workdir,omitempty"`
+	Runtime   RuntimeType    `toml:"runtime,omitempty"`
+	Commands  Commands       `toml:"commands,omitempty"`
+	Mounts    []string       `toml:"mounts,omitempty"`
+	Resources Resources      `toml:"resources,omitempty"`
+	Envs      map[string]any `toml:"envs,omitempty"`
+}
+
 // LoadConfig reads and parses a configuration file from the given path.
+// Applies defaults for missing fields: runtime defaults to "auto", workdir to "/workspace".
 func LoadConfig(path string) (Config, error) {
-	var cfg Config
-	_, err := toml.DecodeFile(path, &cfg)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, err
 	}
+
+	var raw rawConfig
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		return Config{}, err
+	}
+
+	// Convert raw envs to EnvValue
+	envs := make(map[string]EnvValue)
+	for key, val := range raw.Envs {
+		env, err := parseEnvValue(val)
+		if err != nil {
+			return Config{}, fmt.Errorf("env %s: %w", key, err)
+		}
+		envs[key] = env
+	}
+
+	cfg := Config{
+		Image:     raw.Image,
+		Workdir:   raw.Workdir,
+		Runtime:   raw.Runtime,
+		Commands:  raw.Commands,
+		Mounts:    raw.Mounts,
+		Resources: raw.Resources,
+		Envs:      envs,
+	}
+
+	// Apply defaults for missing fields
+	if cfg.Runtime == "" {
+		cfg.Runtime = RuntimeAuto
+	}
+	if cfg.Workdir == "" {
+		cfg.Workdir = "/workspace"
+	}
+
 	return cfg, nil
+}
+
+// parseEnvValue converts a raw value to EnvValue.
+// Accepts string or map[string]any with value and override_on_enter fields.
+func parseEnvValue(val any) (EnvValue, error) {
+	switch v := val.(type) {
+	case string:
+		return EnvValue{Value: v, OverrideOnEnter: false}, nil
+	case map[string]any:
+		var env EnvValue
+		if value, ok := v["value"].(string); ok {
+			env.Value = value
+		}
+		if override, ok := v["override_on_enter"].(bool); ok {
+			env.OverrideOnEnter = override
+		}
+		return env, nil
+	default:
+		return EnvValue{}, fmt.Errorf("invalid type: %T", val)
+	}
 }
 
 // SchemaComment is the TOML comment that references the JSON Schema for editor autocomplete.
@@ -206,6 +253,5 @@ func SaveConfig(path string, cfg Config) error {
 		return err
 	}
 
-	encoder := toml.NewEncoder(f)
-	return encoder.Encode(cfg)
+	return toml.NewEncoder(f).Encode(cfg)
 }

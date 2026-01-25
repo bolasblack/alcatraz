@@ -67,12 +67,12 @@
             findutils
             gnugrep
             mise
-            alca
           ];
 
           shellHook = ''
             export TERMINFO_DIRS="${pkgs.ncurses}/share/terminfo"
             echo "Alcatraz development environment"
+            mise trust
           '';
         };
       }

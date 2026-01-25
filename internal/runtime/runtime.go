@@ -1,5 +1,5 @@
 // Package runtime provides container runtime abstraction for Alcatraz.
-// It supports multiple container runtimes including Docker, Podman, and Apple Container.
+// It supports multiple container runtimes including Docker and Podman.
 package runtime
 
 import (

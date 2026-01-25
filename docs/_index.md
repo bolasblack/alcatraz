@@ -13,7 +13,7 @@ Alcatraz (`alca`) wraps AI agent processes in configurable containers, providing
 ## Features
 
 - **Zero-config startup** — `alca init && alca up` gets you running
-- **Auto-detect runtime** — Chooses Docker, Podman, or Apple Containerization automatically
+- **Auto-detect runtime** — Chooses Docker or Podman automatically
 - **Nix/Flake integration** — Automatically activates `nix develop` environments
 
 ## Quick Start
@@ -47,7 +47,7 @@ alca run make build
 
 - ### [Runtimes]({{< relref "runtimes" >}})
 
-  Docker, Podman, and Apple Containerization. Platform differences and troubleshooting.
+  Docker and Podman. Platform differences and troubleshooting.
 
 - ### [Commands]({{< relref "commands" >}})
   CLI reference for all `alca` commands and flags.

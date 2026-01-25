@@ -1,3 +1,4 @@
 [tools]
 go = "latest"
 "go:github.com/gohugoio/hugo" = { version = "v0.154.5", tags = "extended" }
+golangci-lint = "latest"

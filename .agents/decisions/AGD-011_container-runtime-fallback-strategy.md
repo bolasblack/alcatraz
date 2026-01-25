@@ -2,6 +2,7 @@
 title: "Container Runtime Fallback Strategy"
 description: "Define fallback behavior when Apple container CLI is not installed vs not ready"
 tags: macos, cli, config
+updated_by: AGD-020
 ---
 
 ## Context

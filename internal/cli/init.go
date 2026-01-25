@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/bolasblack/alcatraz/internal/config"
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
@@ -35,9 +36,28 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("configuration file already exists: %s", configPath)
 	}
 
-	// Create default configuration using config package
-	cfg := config.DefaultConfig()
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	// Interactive template selection
+	var selectedTemplate string
+	err = huh.NewSelect[string]().
+		Title("Select a template").
+		Options(
+			huh.NewOption("Nix - NixOS-based development environment", string(config.TemplateNix)),
+			huh.NewOption("Debian - Debian-based environment with mise", string(config.TemplateDebian)),
+		).
+		Value(&selectedTemplate).
+		Run()
+	if err != nil {
+		return fmt.Errorf("template selection cancelled: %w", err)
+	}
+
+	// Generate configuration from template
+	template := config.Template(selectedTemplate)
+	content, err := config.GenerateConfig(template)
+	if err != nil {
+		return fmt.Errorf("failed to generate configuration: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write configuration: %w", err)
 	}
 
