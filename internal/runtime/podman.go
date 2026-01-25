@@ -110,9 +110,10 @@ func (p *Podman) Up(ctx context.Context, cfg *config.Config, projectDir string, 
 		progress(progressOut, "→ Running setup command...\n")
 		execArgs := []string{"exec", name, "sh", "-c", cfg.Commands.Up}
 		cmd := exec.CommandContext(ctx, "podman", execArgs...)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("up command failed: %w: %s", err, string(output))
+		cmd.Stdout = progressOut
+		cmd.Stderr = progressOut
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("up command failed: %w", err)
 		}
 	}
 

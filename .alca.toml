@@ -4,23 +4,35 @@ image = "nixos/nix"
 workdir = "/workspace"
 runtime = "docker"
 
-mounts = [
-  ".alca.cache/nix:/nix-cache",
-  ".alca.cache/go:/root/go",
-  ".alca.cache/mise:/root/.local/share/mise",
-]
+mounts = [".alca.cache/go:/root/go", ".alca.cache/mise:/root/.local/share/mise"]
 
 [commands]
-enter = "[ -f flake.nix ] && exec nix develop --store /nix-cache --command"
+up = "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command true"
+enter = "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command"
 
 [resources]
 memory = "16g"
 cpus = 8
 
 [envs]
+TERM = "${TERM}"
+LC_LANG = { value = "${LC_LANG}", override_on_enter = true }
+
 NIXPKGS_ALLOW_UNFREE = "1"
 NIX_CONFIG = """
 extra-experimental-features = nix-command flakes
 """
-TERM = "${TERM}"
-LC_LANG = { value = "${LC_LANG}", override_on_enter = true }
+
+# image = "debian:bookworm-slim"
+
+# mounts = [".alca.cache/go:/root/go", ".alca.cache/mise:/root/.local/share/mise"]
+
+# [commands]
+# up = """
+# apt update -y && apt install -y curl
+# install -dm 755 /etc/apt/keyrings
+# curl -fSs https://mise.jdx.dev/gpg-key.pub | tee /etc/apt/keyrings/mise-archive-keyring.asc 1> /dev/null
+# echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.jdx.dev/deb stable main" | tee /etc/apt/sources.list.d/mise.list
+# apt update -y
+# apt install -y mise
+# """

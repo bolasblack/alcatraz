@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -22,6 +23,8 @@ var downCmd = &cobra.Command{
 // runDown stops and removes the container.
 // See AGD-009 for CLI workflow design.
 func runDown(cmd *cobra.Command, args []string) error {
+	var out io.Writer = os.Stdout
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -40,7 +43,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to select runtime: %w", err)
 	}
 
-	fmt.Printf("Using runtime: %s\n", rt.Name())
+	progress(out, "→ Using runtime: %s\n", rt.Name())
 
 	// Load state
 	st, err := state.Load(cwd)
@@ -49,16 +52,17 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	if st == nil {
-		fmt.Println("No state file found. Container may not exist.")
+		progress(out, "→ No state file found. Container may not exist.\n")
 		return nil
 	}
 
 	// Stop container
+	progress(out, "→ Stopping container...\n")
 	ctx := context.Background()
 	if err := rt.Down(ctx, cwd, st); err != nil {
 		return fmt.Errorf("failed to stop container: %w", err)
 	}
 
-	fmt.Println("Container stopped successfully.")
+	progress(out, "✓ Container stopped\n")
 	return nil
 }
