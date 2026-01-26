@@ -17,9 +17,9 @@ func main() {
 		RequiredFromJSONSchemaTags: true,
 	}
 
-	schema := r.Reflect(&config.Config{})
+	schema := r.Reflect(&config.SchemaConfig{})
 	schema.Title = "Alcatraz Configuration"
-	schema.Description = "Configuration schema for .alca.toml"
+	schema.Description = "Configuration schema for .alca.toml files"
 	schema.ID = ""
 
 	data, err := json.MarshalIndent(schema, "", "  ")

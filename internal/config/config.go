@@ -108,7 +108,8 @@ func DefaultEnvs() map[string]EnvValue {
 	}
 }
 
-// Config represents the Alcatraz container configuration.
+// Config represents the Alcatraz container configuration (after processing).
+// This is the final merged config used internally by the program.
 type Config struct {
 	Image     string              `toml:"image" json:"image" jsonschema:"required,description=Container image to use"`
 	Workdir   string              `toml:"workdir,omitempty" json:"workdir,omitempty" jsonschema:"description=Working directory inside container"`
@@ -164,6 +165,7 @@ func (c *Config) ValidateEnvs() error {
 
 // rawConfig is an intermediate type for decoding TOML with flexible env values.
 type rawConfig struct {
+	Includes  []string       `toml:"includes,omitempty"`
 	Image     string         `toml:"image"`
 	Workdir   string         `toml:"workdir,omitempty"`
 	Runtime   RuntimeType    `toml:"runtime,omitempty"`
@@ -173,37 +175,27 @@ type rawConfig struct {
 	Envs      map[string]any `toml:"envs,omitempty"`
 }
 
+// SchemaConfig is the exported type for JSON schema generation.
+// It represents what users can write in .alca.toml files.
+// Unlike rawConfig (used for parsing), this uses typed Envs for proper schema generation.
+type SchemaConfig struct {
+	Includes  []string            `toml:"includes,omitempty" json:"includes,omitempty" jsonschema:"description=Other config files to include and merge (supports glob patterns)"`
+	Image     string              `toml:"image" json:"image" jsonschema:"required,description=Container image to use"`
+	Workdir   string              `toml:"workdir,omitempty" json:"workdir,omitempty" jsonschema:"description=Working directory inside container"`
+	Runtime   RuntimeType         `toml:"runtime,omitempty" json:"runtime,omitempty" jsonschema:"enum=auto,enum=docker,description=Container runtime selection"`
+	Commands  Commands            `toml:"commands,omitempty" json:"commands,omitempty" jsonschema:"description=Lifecycle commands"`
+	Mounts    []string            `toml:"mounts,omitempty" json:"mounts,omitempty" jsonschema:"description=Additional bind mounts (source:target[:ro])"`
+	Resources Resources           `toml:"resources,omitempty" json:"resources,omitempty" jsonschema:"description=Container resource limits"`
+	Envs      map[string]EnvValue `toml:"envs,omitempty" json:"envs,omitempty" jsonschema:"description=Environment variables for the container"`
+}
+
 // LoadConfig reads and parses a configuration file from the given path.
+// Supports includes directive for composable configuration.
 // Applies defaults for missing fields: runtime defaults to "auto", workdir to "/workspace".
 func LoadConfig(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	cfg, err := LoadWithIncludes(path)
 	if err != nil {
 		return Config{}, err
-	}
-
-	var raw rawConfig
-	if err := toml.Unmarshal(data, &raw); err != nil {
-		return Config{}, err
-	}
-
-	// Convert raw envs to EnvValue
-	envs := make(map[string]EnvValue)
-	for key, val := range raw.Envs {
-		env, err := parseEnvValue(val)
-		if err != nil {
-			return Config{}, fmt.Errorf("env %s: %w", key, err)
-		}
-		envs[key] = env
-	}
-
-	cfg := Config{
-		Image:     raw.Image,
-		Workdir:   raw.Workdir,
-		Runtime:   raw.Runtime,
-		Commands:  raw.Commands,
-		Mounts:    raw.Mounts,
-		Resources: raw.Resources,
-		Envs:      envs,
 	}
 
 	// Apply defaults for missing fields

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$ref": "#/$defs/Config",
+  "$ref": "#/$defs/SchemaConfig",
   "$defs": {
     "Commands": {
       "properties": {
@@ -16,8 +16,52 @@
       "additionalProperties": false,
       "type": "object"
     },
-    "Config": {
+    "EnvValue": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Static value or ${VAR} reference"
+        },
+        {
+          "properties": {
+            "value": {
+              "type": "string",
+              "description": "The value or ${VAR} reference"
+            },
+            "override_on_enter": {
+              "type": "boolean",
+              "description": "Also set at docker exec time"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object"
+        }
+      ],
+      "description": "Environment variable value (string or object with override_on_enter)"
+    },
+    "Resources": {
       "properties": {
+        "memory": {
+          "type": "string",
+          "description": "Memory limit (e.g. 4g or 512m)"
+        },
+        "cpus": {
+          "type": "integer",
+          "description": "Number of CPUs to allocate"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "SchemaConfig": {
+      "properties": {
+        "includes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Other config files to include and merge (supports glob patterns)"
+        },
         "image": {
           "type": "string",
           "description": "Container image to use"
@@ -62,45 +106,8 @@
       "required": [
         "image"
       ]
-    },
-    "EnvValue": {
-      "oneOf": [
-        {
-          "type": "string",
-          "description": "Static value or ${VAR} reference"
-        },
-        {
-          "properties": {
-            "value": {
-              "type": "string",
-              "description": "The value or ${VAR} reference"
-            },
-            "override_on_enter": {
-              "type": "boolean",
-              "description": "Also set at docker exec time"
-            }
-          },
-          "additionalProperties": false,
-          "type": "object"
-        }
-      ],
-      "description": "Environment variable value (string or object with override_on_enter)"
-    },
-    "Resources": {
-      "properties": {
-        "memory": {
-          "type": "string",
-          "description": "Memory limit (e.g. 4g or 512m)"
-        },
-        "cpus": {
-          "type": "integer",
-          "description": "Number of CPUs to allocate"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
     }
   },
   "title": "Alcatraz Configuration",
-  "description": "Configuration schema for .alca.toml"
+  "description": "Configuration schema for .alca.toml files"
 }

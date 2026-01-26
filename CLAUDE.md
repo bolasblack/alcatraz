@@ -1,8 +1,12 @@
 See [.agents/CLAUDE.md](.agents/CLAUDE.md) for the Agent Centric framework.
 
-## Config Struct Schema Regeneration
+## Config Changes Checklist
 
-When modifying the `Config` struct in `internal/config/config.go`, run `make schema` to regenerate `alca-config.schema.json`. This ensures editor autocomplete stays in sync with the config structure.
+When modifying config-related code (`internal/config/`):
+
+1. **Update documentation**: `docs/config.md` - add/update field descriptions, examples
+2. **Regenerate schema**: Run `make schema` to update `alca-config.schema.json` for editor autocomplete
+3. **Create AGD if needed**: Record significant config design decisions
 
 ## Code Patterns
 
