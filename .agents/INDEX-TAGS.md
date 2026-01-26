@@ -22,3 +22,5 @@ decisions/AGD-016_dynamic-tty-detection-for-exec.md: #cli
 decisions/AGD-017_env-config-design.md: #config, #cli
 decisions/AGD-018_manual-config-docs-maintenance.md: #tooling, #config
 decisions/AGD-019_config-drift-detection-for-envs.md: #config, #state
+decisions/AGD-020_remove-apple-containerization-runtime.md: #macos, #runtime
+decisions/AGD-021_keep-cli-over-sdk-for-container-runtime.md: #runtime

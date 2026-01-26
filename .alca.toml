@@ -1,7 +1,6 @@
 #:schema ./alca-config.schema.json
 
 image = "nixos/nix"
-workdir = "/workspace"
 runtime = "docker"
 
 mounts = [".alca.cache/go:/root/go", ".alca.cache/mise:/root/.local/share/mise"]
@@ -22,17 +21,3 @@ NIXPKGS_ALLOW_UNFREE = "1"
 NIX_CONFIG = """
 extra-experimental-features = nix-command flakes
 """
-
-# image = "debian:bookworm-slim"
-
-# mounts = [".alca.cache/go:/root/go", ".alca.cache/mise:/root/.local/share/mise"]
-
-# [commands]
-# up = """
-# apt update -y && apt install -y curl
-# install -dm 755 /etc/apt/keyrings
-# curl -fSs https://mise.jdx.dev/gpg-key.pub | tee /etc/apt/keyrings/mise-archive-keyring.asc 1> /dev/null
-# echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.jdx.dev/deb stable main" | tee /etc/apt/sources.list.d/mise.list
-# apt update -y
-# apt install -y mise
-# """

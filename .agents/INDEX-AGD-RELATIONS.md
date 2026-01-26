@@ -6,3 +6,4 @@
 
 decisions/AGD-012_runtime-config-setting.md -(u)-> decisions/AGD-009_cli-design.md
 decisions/AGD-014_list-cleanup-commands.md -(u)-> decisions/AGD-009_cli-design.md
+decisions/AGD-020_remove-apple-containerization-runtime.md -(o)-> decisions/AGD-001_macos-isolation-solution.md

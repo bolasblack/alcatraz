@@ -27,7 +27,7 @@
           src = ./.;
 
           # First build with empty hash to get the correct one
-          vendorHash = "sha256-Bu6c5jMNkDgMX/MuCc22+x/ScDqGhfdS2YS1e9yQM28=";
+          vendorHash = "sha256-MFeRBtWrrMx3vr16bsWeIbHAagqrFwSzNoGs4ILy31c=";
 
           # Build binaries
           subPackages = [
