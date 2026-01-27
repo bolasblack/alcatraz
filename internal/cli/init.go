@@ -24,9 +24,9 @@ var initCmd = &cobra.Command{
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	cwd, err := os.Getwd()
+	cwd, err := getCwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return err
 	}
 
 	configPath := filepath.Join(cwd, ConfigFilename)

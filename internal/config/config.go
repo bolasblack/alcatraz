@@ -37,6 +37,9 @@ const (
 	RuntimeDocker RuntimeType = "docker"
 )
 
+// DefaultWorkdir is the default working directory inside the container.
+const DefaultWorkdir = "/workspace"
+
 // EnvValue represents an environment variable configuration.
 // Can be unmarshaled from either a string or an object with value and override_on_enter fields.
 // See AGD-017 for environment variable configuration design.
@@ -44,7 +47,6 @@ type EnvValue struct {
 	Value           string `toml:"value" json:"value" jsonschema:"description=The value or ${VAR} reference"`
 	OverrideOnEnter bool   `toml:"override_on_enter,omitempty" json:"override_on_enter,omitempty" jsonschema:"description=Also set at docker exec time"`
 }
-
 
 // envVarPattern matches simple ${VAR} syntax.
 var envVarPattern = regexp.MustCompile(`^\$\{([a-zA-Z_][a-zA-Z0-9_-]*)\}$`)
@@ -67,6 +69,11 @@ func (e *EnvValue) Expand(getenv func(string) string) string {
 		return e.Value // Static value, return as-is
 	}
 	return getenv(matches[1])
+}
+
+// IsInterpolated returns true if the value contains ${...} interpolation syntax.
+func (e EnvValue) IsInterpolated() bool {
+	return strings.Contains(e.Value, "${")
 }
 
 // RawEnvValue is used in RawConfig for TOML parsing.
@@ -148,7 +155,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		Image:   "nixos/nix",
-		Workdir: "/workspace",
+		Workdir: DefaultWorkdir,
 		Runtime: RuntimeAuto,
 		Commands: Commands{
 			// Auto-enter nix develop if flake.nix exists
@@ -156,7 +163,6 @@ func DefaultConfig() Config {
 		},
 	}
 }
-
 
 // NormalizeRuntime returns the runtime type, defaulting to auto if empty.
 func (c *Config) NormalizeRuntime() RuntimeType {
@@ -170,6 +176,7 @@ func (c *Config) NormalizeRuntime() RuntimeType {
 // User-defined values override defaults.
 func (c *Config) MergedEnvs() map[string]EnvValue {
 	merged := DefaultEnvs()
+	// Range over nil map is safe in Go (no-op), no nil check needed.
 	for key, val := range c.Envs {
 		merged[key] = val
 	}
@@ -211,7 +218,7 @@ func LoadConfig(path string) (Config, error) {
 
 	// Validate required fields
 	if cfg.Image == "" {
-		return Config{}, fmt.Errorf("image field is required in the final merged .alca.toml configuration")
+		return Config{}, fmt.Errorf("image field is required in configuration %s", path)
 	}
 
 	// Apply defaults for missing fields
@@ -219,28 +226,8 @@ func LoadConfig(path string) (Config, error) {
 		cfg.Runtime = RuntimeAuto
 	}
 	if cfg.Workdir == "" {
-		cfg.Workdir = "/workspace"
+		cfg.Workdir = DefaultWorkdir
 	}
 
 	return cfg, nil
-}
-
-// parseEnvValue converts a raw value to EnvValue.
-// Accepts string or map[string]any with value and override_on_enter fields.
-func parseEnvValue(val any) (EnvValue, error) {
-	switch v := val.(type) {
-	case string:
-		return EnvValue{Value: v, OverrideOnEnter: false}, nil
-	case map[string]any:
-		var env EnvValue
-		if value, ok := v["value"].(string); ok {
-			env.Value = value
-		}
-		if override, ok := v["override_on_enter"].(bool); ok {
-			env.OverrideOnEnter = override
-		}
-		return env, nil
-	default:
-		return EnvValue{}, fmt.Errorf("invalid type: %T", val)
-	}
 }

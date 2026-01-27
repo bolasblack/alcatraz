@@ -1,6 +1,9 @@
 package network
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestProjectFileName(t *testing.T) {
 	tests := []struct {
@@ -160,15 +163,8 @@ func TestParseRuleInterfaces(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := ParseRuleInterfaces(tt.content)
-			if len(result) != len(tt.expected) {
+			if !slices.Equal(result, tt.expected) {
 				t.Errorf("ParseRuleInterfaces(%q) = %v, want %v", tt.content, result, tt.expected)
-				return
-			}
-			for i := range result {
-				if result[i] != tt.expected[i] {
-					t.Errorf("ParseRuleInterfaces(%q) = %v, want %v", tt.content, result, tt.expected)
-					return
-				}
 			}
 		})
 	}

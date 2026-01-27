@@ -3,17 +3,14 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 
-	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/spf13/cobra"
 )
 
 // experimentalWarning is displayed before executing experimental commands.
-const experimentalWarning = `⚠️  EXPERIMENTAL COMMAND
+const experimentalWarning = `Warning: EXPERIMENTAL COMMAND
 This feature is experimental and may change or be removed in future versions.
 Use with caution in production environments.
 `
@@ -47,38 +44,23 @@ func runReload(cmd *cobra.Command, args []string) error {
 	fmt.Fprint(cmd.OutOrStderr(), experimentalWarning)
 	fmt.Fprintln(cmd.OutOrStderr())
 
-	cwd, err := os.Getwd()
+	cwd, err := getCwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return err
 	}
 
-	configPath := filepath.Join(cwd, ConfigFilename)
-
-	// Load configuration
-	cfg, err := config.LoadConfig(configPath)
+	// Load configuration and runtime
+	cfg, rt, err := loadConfigAndRuntime(cwd)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("configuration not found: run 'alca init' first")
-		}
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	// Select runtime based on config
-	rt, err := runtime.SelectRuntime(&cfg)
-	if err != nil {
-		return fmt.Errorf("failed to select runtime: %w", err)
+		return err
 	}
 
 	fmt.Printf("Using runtime: %s\n", rt.Name())
 
-	// Load state
-	st, err := state.Load(cwd)
+	// Load state (required)
+	st, err := loadRequiredState(cwd)
 	if err != nil {
-		return fmt.Errorf("failed to load state: %w", err)
-	}
-
-	if st == nil {
-		return fmt.Errorf("no state file found: run 'alca up' first")
+		return err
 	}
 
 	// Check current status
@@ -95,15 +77,15 @@ func runReload(cmd *cobra.Command, args []string) error {
 	fmt.Println("Reloading configuration...")
 
 	// Reload the container
-	if err := rt.Reload(ctx, &cfg, cwd, st); err != nil {
+	if err := rt.Reload(ctx, cfg, cwd, st); err != nil {
 		if err == runtime.ErrNotRunning {
-			return fmt.Errorf("container is not running: run 'alca up' first")
+			return fmt.Errorf(ErrMsgNotRunning)
 		}
 		return fmt.Errorf("failed to reload container: %w", err)
 	}
 
 	// Update state with current config
-	st.UpdateConfig(&cfg)
+	st.UpdateConfig(cfg)
 	if err := state.Save(cwd, st); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}

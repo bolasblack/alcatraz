@@ -19,76 +19,82 @@ func LoadWithIncludes(path string) (Config, error) {
 
 // loadWithIncludes is the internal recursive implementation.
 func loadWithIncludes(path string, visited map[string]bool) (Config, error) {
-	// Get absolute path for circular reference detection
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return Config{}, fmt.Errorf("failed to resolve path %s: %w", path, err)
-	}
-
-	// Check for circular reference
-	if visited[absPath] {
-		return Config{}, fmt.Errorf("circular include detected: %s", path)
-	}
-	visited[absPath] = true
-
-	// Read and parse raw config
-	data, err := os.ReadFile(path)
+	absPath, err := validateAndMarkVisited(path, visited)
 	if err != nil {
 		return Config{}, err
 	}
 
-	var raw RawConfig
-	if err := toml.Unmarshal(data, &raw); err != nil {
-		return Config{}, fmt.Errorf("failed to parse %s: %w", path, err)
+	raw, err := readRawConfig(path)
+	if err != nil {
+		return Config{}, err
 	}
 
-	// Get base directory for resolving relative include paths
 	baseDir := filepath.Dir(absPath)
-
-	// Process includes first (depth-first)
-	var mergedConfig Config
-	hasIncludes := len(raw.Includes) > 0
-
-	for _, includePattern := range raw.Includes {
-		// Resolve relative to the current config file's directory
-		resolvedPattern := includePattern
-		if !filepath.IsAbs(includePattern) {
-			resolvedPattern = filepath.Join(baseDir, includePattern)
-		}
-
-		// Expand glob pattern
-		matchedFiles, err := expandGlob(resolvedPattern)
-		if err != nil {
-			return Config{}, fmt.Errorf("failed to expand glob %s: %w", includePattern, err)
-		}
-
-		// Empty glob result is OK (no files matched)
-		for _, includePath := range matchedFiles {
-			// Recursively load included config
-			includedConfig, err := loadWithIncludes(includePath, visited)
-			if err != nil {
-				return Config{}, fmt.Errorf("failed to load include %s: %w", includePath, err)
-			}
-
-			// Merge included config
-			mergedConfig = mergeConfigs(mergedConfig, includedConfig)
-		}
+	mergedConfig, err := processIncludes(raw.Includes, baseDir, visited)
+	if err != nil {
+		return Config{}, err
 	}
 
-	// Convert current raw config to Config
 	currentConfig, err := rawToConfig(raw)
 	if err != nil {
 		return Config{}, fmt.Errorf("failed to convert config %s: %w", path, err)
 	}
 
-	// Merge current config on top of included configs
-	if hasIncludes {
-		mergedConfig = mergeConfigs(mergedConfig, currentConfig)
-	} else {
-		mergedConfig = currentConfig
+	if len(raw.Includes) > 0 {
+		return mergeConfigs(mergedConfig, currentConfig), nil
 	}
+	return currentConfig, nil
+}
 
-	return mergedConfig, nil
+// validateAndMarkVisited resolves path and checks for circular references.
+func validateAndMarkVisited(path string, visited map[string]bool) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve path %s: %w", path, err)
+	}
+	if visited[absPath] {
+		return "", fmt.Errorf("circular include detected: %s", path)
+	}
+	visited[absPath] = true
+	return absPath, nil
+}
+
+// readRawConfig reads and parses a TOML config file.
+func readRawConfig(path string) (RawConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return RawConfig{}, err
+	}
+	var raw RawConfig
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		return RawConfig{}, fmt.Errorf("failed to parse %s: %w", path, err)
+	}
+	return raw, nil
+}
+
+// processIncludes loads and merges all included configs.
+func processIncludes(includes []string, baseDir string, visited map[string]bool) (Config, error) {
+	var merged Config
+	for _, pattern := range includes {
+		resolved := pattern
+		if !filepath.IsAbs(pattern) {
+			resolved = filepath.Join(baseDir, pattern)
+		}
+
+		files, err := expandGlob(resolved)
+		if err != nil {
+			return Config{}, fmt.Errorf("failed to expand glob %s: %w", pattern, err)
+		}
+
+		for _, file := range files {
+			cfg, err := loadWithIncludes(file, visited)
+			if err != nil {
+				return Config{}, fmt.Errorf("failed to load include %s: %w", file, err)
+			}
+			merged = mergeConfigs(merged, cfg)
+		}
+	}
+	return merged, nil
 }
 
 // rawToConfig converts RawConfig to Config without applying defaults.
@@ -113,6 +119,26 @@ func rawToConfig(raw RawConfig) (Config, error) {
 		Envs:      envs,
 		Network:   raw.Network,
 	}, nil
+}
+
+// parseEnvValue converts a raw value to EnvValue.
+// Accepts string or map[string]any with value and override_on_enter fields.
+func parseEnvValue(val any) (EnvValue, error) {
+	switch v := val.(type) {
+	case string:
+		return EnvValue{Value: v, OverrideOnEnter: false}, nil
+	case map[string]any:
+		var env EnvValue
+		if value, ok := v["value"].(string); ok {
+			env.Value = value
+		}
+		if override, ok := v["override_on_enter"].(bool); ok {
+			env.OverrideOnEnter = override
+		}
+		return env, nil
+	default:
+		return EnvValue{}, fmt.Errorf("invalid type: %T", val)
+	}
 }
 
 // isGlobPattern checks if the pattern contains glob special characters.
@@ -153,6 +179,21 @@ func expandGlob(pattern string) ([]string, error) {
 // Arrays: append (concatenate)
 // Same key: overlay wins
 func mergeConfigs(base, overlay Config) Config {
+	// Mirror type ensures all Config fields are explicitly handled (AGD-015).
+	// Adding a new field to Config will cause a compile error here.
+	type configFields struct {
+		Image     string
+		Workdir   string
+		Runtime   RuntimeType
+		Commands  Commands
+		Mounts    []string
+		Resources Resources
+		Envs      map[string]EnvValue
+		Network   Network
+	}
+	_ = configFields(base)
+	_ = configFields(overlay)
+
 	result := base
 
 	// Simple fields: overlay wins if non-empty

@@ -3,12 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
-	"path/filepath"
 	"text/tabwriter"
 
-	"github.com/bolasblack/alcatraz/internal/config"
-	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
@@ -21,20 +19,18 @@ var listCmd = &cobra.Command{
 
 // runList displays all alca-managed containers.
 func runList(cmd *cobra.Command, args []string) error {
-	cwd, err := os.Getwd()
+	cwd, err := getCwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return err
 	}
 
-	// Try to load config for runtime selection, use default if not found
-	configPath := filepath.Join(cwd, ConfigFilename)
-	cfg, _ := config.LoadConfig(configPath)
-
-	// Select runtime
-	rt, err := runtime.SelectRuntime(&cfg)
+	// Load config (optional) and select runtime
+	// Log warning if config has issues but continue
+	cfg, rt, err := loadConfigAndRuntimeOptional(cwd)
 	if err != nil {
-		return fmt.Errorf("failed to select runtime: %w", err)
+		return err
 	}
+	_ = cfg // Config loaded for runtime selection only
 
 	ctx := context.Background()
 	containers, err := rt.ListContainers(ctx)
@@ -72,4 +68,12 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	w.Flush()
 	return nil
+}
+
+// init registers a logger for config warnings (optional).
+func init() {
+	// Suppress log output by default; can be enabled via environment variable
+	if os.Getenv("ALCA_DEBUG") == "" {
+		log.SetOutput(os.Stderr)
+	}
 }

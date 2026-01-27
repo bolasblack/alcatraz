@@ -58,7 +58,7 @@ func selectLinuxRuntime(progressOut io.Writer) (Runtime, error) {
 	// Fall back to Docker
 	docker := NewDocker()
 	if docker.Available() {
-		progress(progressOut, "→ Using Docker (Podman not available)\n")
+		progressStep(progressOut, "Using Docker (Podman not available)\n")
 		return docker, nil
 	}
 
@@ -72,57 +72,6 @@ func selectDefaultRuntime(progressOut io.Writer) (Runtime, error) {
 		return docker, nil
 	}
 	return nil, fmt.Errorf("no container runtime available: Docker not found")
-}
-
-// Detect returns the first available container runtime for the current platform.
-// Detection order (see AGD-009 for CLI design decisions):
-//   - Linux: Podman > Docker
-//   - Others (including macOS): Docker
-//
-// Deprecated: Use SelectRuntime with config for AGD-011 compliant behavior.
-// Returns nil if no runtime is available.
-func Detect() Runtime {
-	return DetectWithOutput(nil)
-}
-
-// DetectWithOutput returns the first available container runtime with optional progress output.
-// When progressOut is non-nil, prints informative messages about fallback decisions.
-// Detection order (see AGD-009 for CLI design decisions):
-//   - Linux: Podman > Docker
-//   - Others (including macOS): Docker
-//
-// Deprecated: Use SelectRuntimeWithOutput with config for AGD-011 compliant behavior.
-// Returns nil if no runtime is available.
-func DetectWithOutput(progressOut io.Writer) Runtime {
-	switch runtime.GOOS {
-	case "linux":
-		return detectLinux()
-	default:
-		// For other platforms (including macOS), try Docker
-		docker := NewDocker()
-		if docker.Available() {
-			return docker
-		}
-		return nil
-	}
-}
-
-// detectLinux returns the preferred runtime for Linux.
-// Prefers Podman over Docker for rootless container support.
-func detectLinux() Runtime {
-	// Try Podman first (preferred on Linux)
-	podman := NewPodman()
-	if podman.Available() {
-		return podman
-	}
-
-	// Fall back to Docker
-	docker := NewDocker()
-	if docker.Available() {
-		return docker
-	}
-
-	return nil
 }
 
 // All returns all supported runtime implementations.
@@ -167,22 +116,4 @@ func IsOrbStack() (bool, error) {
 	return strings.Contains(string(output), "OrbStack"), nil
 }
 
-// GetOrbStackSubnet returns the OrbStack network subnet from orbctl config.
-// Returns an error if orbctl is not available or the subnet is not found.
-func GetOrbStackSubnet() (string, error) {
-	cmd := exec.Command("orbctl", "config", "show")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("orbctl not found or failed: %w", err)
-	}
-	// Parse: network.subnet4: 192.168.138.0/23
-	for _, line := range strings.Split(string(output), "\n") {
-		if strings.Contains(line, "network.subnet4") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 2 {
-				return strings.TrimSpace(parts[1]), nil
-			}
-		}
-	}
-	return "", fmt.Errorf("network.subnet4 not found in orbctl config")
-}
+

@@ -20,6 +20,11 @@ func progress(w io.Writer, format string, args ...any) {
 	}
 }
 
+// progressStep writes a progress message with → prefix (step in progress).
+func progressStep(w io.Writer, format string, args ...any) {
+	progress(w, "→ "+format, args...)
+}
+
 // Common errors returned by runtime implementations.
 var (
 	ErrNotAvailable    = errors.New("runtime not available")

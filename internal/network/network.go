@@ -1,5 +1,9 @@
 // Package network provides network configuration helpers for Alcatraz.
 // See AGD-023 for LAN access design decisions.
+//
+// Naming conventions:
+//   - Is*: checks existence or state (e.g., IsNetworkHelperInstalled)
+//   - Has*: checks possession or configuration (e.g., HasLANAccess)
 package network
 
 import (
@@ -10,14 +14,31 @@ import (
 	"strings"
 )
 
+// pf anchor constants for macOS NAT configuration.
+// See AGD-023 for design decisions.
 const (
 	// PfAnchorDir is the directory for pf anchor files.
 	PfAnchorDir = "/etc/pf.anchors/alcatraz"
 	// SharedRuleFile is the filename for the shared NAT rule.
 	SharedRuleFile = "_shared"
-	// LaunchDaemonPlist is the path to the LaunchDaemon plist.
-	LaunchDaemonPlist = "/Library/LaunchDaemons/com.alcatraz.pf-watcher.plist"
+	// LANAccessWildcard is the wildcard value for full LAN access.
+	LANAccessWildcard = "*"
 )
+
+// parseLineValue extracts the value from a "key: value" line in command output.
+// Returns the trimmed value and true if found, empty string and false otherwise.
+func parseLineValue(output, prefix string) (string, bool) {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1]), true
+			}
+		}
+	}
+	return "", false
+}
 
 // GetOrbStackSubnet gets the OrbStack network subnet from orbctl config.
 // Returns the subnet (e.g., "192.168.138.0/23") or error.
@@ -28,22 +49,11 @@ func GetOrbStackSubnet() (string, error) {
 		return "", fmt.Errorf("failed to run orbctl config show: %w", err)
 	}
 
-	for _, line := range strings.Split(string(output), "\n") {
-		if strings.Contains(line, "network.subnet4") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				return strings.TrimSpace(parts[1]), nil
-			}
-		}
+	if subnet, found := parseLineValue(string(output), "network.subnet4"); found {
+		return subnet, nil
 	}
 
-	return "", fmt.Errorf("network.subnet4 not found in orbctl config")
-}
-
-// IsNetworkHelperInstalled checks if the network helper LaunchDaemon is installed.
-func IsNetworkHelperInstalled() bool {
-	_, err := os.Stat(LaunchDaemonPlist)
-	return err == nil
+	return "", fmt.Errorf("network.subnet4 not found in orbctl output")
 }
 
 // GetDefaultInterface returns the default network interface on macOS.
@@ -55,17 +65,29 @@ func GetDefaultInterface() (string, error) {
 		return "", fmt.Errorf("failed to get default route: %w", err)
 	}
 
-	for _, line := range strings.Split(string(output), "\n") {
+	if iface, found := parseLineValue(string(output), "interface:"); found {
+		return iface, nil
+	}
+
+	return "", fmt.Errorf("interface not found in route output")
+}
+
+// parseAllLineValues extracts all values matching a "key: value" pattern from command output.
+// Returns a slice of trimmed values.
+func parseAllLineValues(output, prefix string) []string {
+	var values []string
+	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "interface:") {
+		if strings.HasPrefix(line, prefix) {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
-				return strings.TrimSpace(parts[1]), nil
+				if value := strings.TrimSpace(parts[1]); value != "" {
+					values = append(values, value)
+				}
 			}
 		}
 	}
-
-	return "", fmt.Errorf("default interface not found in route output")
+	return values
 }
 
 // GetPhysicalInterfaces returns all physical network interfaces on macOS.
@@ -77,22 +99,9 @@ func GetPhysicalInterfaces() ([]string, error) {
 		return nil, fmt.Errorf("failed to list hardware ports: %w", err)
 	}
 
-	var interfaces []string
-	for _, line := range strings.Split(string(output), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "Device:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				iface := strings.TrimSpace(parts[1])
-				if iface != "" {
-					interfaces = append(interfaces, iface)
-				}
-			}
-		}
-	}
-
+	interfaces := parseAllLineValues(string(output), "Device:")
 	if len(interfaces) == 0 {
-		return nil, fmt.Errorf("no physical interfaces found")
+		return nil, fmt.Errorf("interfaces not found in networksetup output")
 	}
 
 	return interfaces, nil
@@ -114,19 +123,19 @@ func GenerateNATRules(subnet string, interfaces []string) string {
 }
 
 // ReadExistingRuleInterfaces reads the existing rule file and extracts interface names.
-// Returns nil if file doesn't exist.
-func ReadExistingRuleInterfaces() ([]string, error) {
+// Returns (interfaces, exists, error) where exists indicates if the file was found.
+func ReadExistingRuleInterfaces() (interfaces []string, exists bool, err error) {
 	sharedPath := filepath.Join(PfAnchorDir, SharedRuleFile)
 
 	data, err := os.ReadFile(sharedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, false, nil
 		}
-		return nil, fmt.Errorf("failed to read rule file: %w", err)
+		return nil, false, fmt.Errorf("failed to read rule file: %w", err)
 	}
 
-	return ParseRuleInterfaces(string(data)), nil
+	return ParseRuleInterfaces(string(data)), true, nil
 }
 
 // ParseRuleInterfaces extracts interface names from NAT rule content.
@@ -155,13 +164,13 @@ func NeedsRuleUpdate() (bool, []string, error) {
 	}
 
 	// Read existing rule interfaces
-	existingInterfaces, err := ReadExistingRuleInterfaces()
+	existingInterfaces, exists, err := ReadExistingRuleInterfaces()
 	if err != nil {
 		return false, nil, err
 	}
 
 	// If no existing file, needs update
-	if existingInterfaces == nil {
+	if !exists {
 		return true, currentInterfaces, nil
 	}
 
@@ -182,56 +191,55 @@ func NeedsRuleUpdate() (bool, []string, error) {
 }
 
 // DeleteProjectFile removes the project-specific rule file.
-// Returns true if the shared file should also be removed (no other projects).
-func DeleteProjectFile(projectPath string) (removeShared bool, err error) {
+// Returns (removeShared, flushWarning, error) where:
+//   - removeShared: true if the shared file should also be removed (no other projects)
+//   - flushWarning: non-nil if anchor flush failed (non-fatal)
+func DeleteProjectFile(projectPath string) (removeShared bool, flushWarning error, err error) {
 	filename := ProjectFileName(projectPath)
 	projectFilePath := filepath.Join(PfAnchorDir, filename)
 
 	// Remove project file
 	if err := os.Remove(projectFilePath); err != nil && !os.IsNotExist(err) {
-		return false, fmt.Errorf("failed to remove project file: %w", err)
+		return false, nil, fmt.Errorf("failed to remove project file: %w", err)
 	}
 
 	// Flush main anchor - LaunchDaemon will reload on file change
-	if err := flushAnchor("alcatraz"); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to flush anchor: %v\n", err)
-	}
+	flushWarning = flushAnchor("alcatraz")
 
 	// Check if other project files exist
 	entries, err := os.ReadDir(PfAnchorDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, nil
+			return false, flushWarning, nil
 		}
-		return false, fmt.Errorf("failed to read pf anchor directory: %w", err)
+		return false, flushWarning, fmt.Errorf("failed to read pf anchor directory: %w", err)
 	}
 
 	// Count non-shared files
 	for _, entry := range entries {
 		if entry.Name() != SharedRuleFile {
-			return false, nil // Other projects exist
+			return false, flushWarning, nil // Other projects exist
 		}
 	}
 
-	return true, nil // No other projects, remove shared
+	return true, flushWarning, nil // No other projects, remove shared
 }
 
 // DeleteSharedRule removes the shared NAT rule file and flushes the anchor.
-func DeleteSharedRule() error {
+// Returns (flushWarning, error) where flushWarning is non-nil if anchor flush failed (non-fatal).
+func DeleteSharedRule() (flushWarning error, err error) {
 	sharedPath := filepath.Join(PfAnchorDir, SharedRuleFile)
 
 	if err := os.Remove(sharedPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove shared rule: %w", err)
+		return nil, fmt.Errorf("failed to remove shared rule: %w", err)
 	}
 
-	if err := flushAnchor("alcatraz"); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to flush anchor: %v\n", err)
-	}
-
-	return nil
+	flushWarning = flushAnchor("alcatraz")
+	return flushWarning, nil
 }
 
-// flushAnchor flushes a pf anchor.
+// flushAnchor flushes a pf anchor using exec.Command directly.
+// For operations requiring progress reporting, use FlushPfRules instead.
 func flushAnchor(anchorName string) error {
 	cmd := exec.Command("pfctl", "-a", anchorName, "-F", "all")
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -243,9 +251,15 @@ func flushAnchor(anchorName string) error {
 // HasLANAccess checks if the config has LAN access enabled.
 func HasLANAccess(lanAccess []string) bool {
 	for _, access := range lanAccess {
-		if access == "*" {
+		if access == LANAccessWildcard {
 			return true
 		}
 	}
 	return false
+}
+
+// FileExists checks if a file or directory exists.
+func FileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"slices"
 	"time"
 
 	"github.com/bolasblack/alcatraz/internal/config"
@@ -28,6 +28,13 @@ const (
 	LabelVersion = "alca.version"
 	// CurrentVersion is the current alca state version.
 	CurrentVersion = "1"
+
+	// containerNameUUIDPrefixLen is the number of UUID characters used in container names.
+	containerNameUUIDPrefixLen = 12
+	// stateDirPerm is the permission for the state directory (rwxr-xr-x).
+	stateDirPerm = 0755
+	// stateFilePerm is the permission for the state file (rw-r--r--).
+	stateFilePerm = 0644
 )
 
 // State represents the persistent state of an Alcatraz project.
@@ -56,6 +63,11 @@ func StateDirPath(projectDir string) string {
 	return filepath.Join(projectDir, StateDir)
 }
 
+// LabelFilter returns a Docker/Podman filter string for finding containers by project ID.
+func LabelFilter(projectID string) string {
+	return fmt.Sprintf("label=%s=%s", LabelProjectID, projectID)
+}
+
 // Load reads the state file from the given project directory.
 // Returns nil and no error if the state file does not exist.
 func Load(projectDir string) (*State, error) {
@@ -81,7 +93,7 @@ func Load(projectDir string) (*State, error) {
 // Creates the .alca directory if it does not exist.
 func Save(projectDir string, state *State) error {
 	dir := StateDirPath(projectDir)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, stateDirPerm); err != nil {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
 
@@ -91,7 +103,7 @@ func Save(projectDir string, state *State) error {
 	}
 
 	path := StateFilePath(projectDir)
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, stateFilePerm); err != nil {
 		return fmt.Errorf("failed to write state file: %w", err)
 	}
 
@@ -121,7 +133,7 @@ func LoadOrCreate(projectDir string, runtimeName string) (*State, bool, error) {
 	projectID := uuid.New().String()
 	state = &State{
 		ProjectID:     projectID,
-		ContainerName: "alca-" + projectID[:12],
+		ContainerName: "alca-" + projectID[:containerNameUUIDPrefixLen],
 		CreatedAt:     time.Now(),
 		Runtime:       runtimeName,
 	}
@@ -154,6 +166,10 @@ func (s *State) ContainerLabels(projectDir string) map[string]string {
 }
 
 // DriftChanges describes specific configuration changes that require rebuild.
+//
+// Design: Pointer fields (*[2]T) provide old/new values for user-facing diff display.
+// Boolean fields are used for complex types (slices, maps) where showing the full
+// diff would be verbose - the CLI just reports "changed" for these.
 type DriftChanges struct {
 	Image     *[2]string // [old, new] if changed
 	Workdir   *[2]string
@@ -161,8 +177,8 @@ type DriftChanges struct {
 	CommandUp *[2]string
 	Memory    *[2]string
 	CPUs      *[2]int
-	Mounts    bool
-	Envs      bool
+	Mounts    bool // true if changed (slice comparison, no diff detail)
+	Envs      bool // true if changed (map comparison, no diff detail)
 }
 
 // DetectConfigDrift compares the state's config with the given config.
@@ -173,12 +189,15 @@ func (s *State) DetectConfigDrift(current *config.Config) *DriftChanges {
 		return nil
 	}
 
-	old, new := s.Config, current
+	enforceConfigFieldCompleteness(s.Config)
+	return compareConfigs(s.Config, current)
+}
 
-	// Compile-time check: must match config.Config fields exactly.
-	// If Config adds a field, this line fails to compile,
-	// forcing you to update 'fields' and decide whether to compare it.
-	// See AGD-015 for pattern details.
+// enforceConfigFieldCompleteness ensures all config.Config fields are handled.
+// Compile-time check: if Config adds a field, this fails to compile,
+// forcing you to update the mirror types and decide whether to compare it.
+// See AGD-015 for pattern details.
+func enforceConfigFieldCompleteness(cfg *config.Config) {
 	type fields struct {
 		Image     string
 		Workdir   string
@@ -189,26 +208,38 @@ func (s *State) DetectConfigDrift(current *config.Config) *DriftChanges {
 		Envs      map[string]config.EnvValue
 		Network   config.Network
 	}
-	_ = fields(*old)
+	_ = fields(*cfg)
+
 	type fieldsCommands struct {
 		Up    string
 		Enter string
 	}
-	_ = fieldsCommands(old.Commands)
+	_ = fieldsCommands(cfg.Commands)
+
 	type fieldsResources struct {
 		Memory string
 		CPUs   int
 	}
-	_ = fieldsResources(old.Resources)
+	_ = fieldsResources(cfg.Resources)
+
 	type fieldsEnvValue struct {
 		Value           string
 		OverrideOnEnter bool
 	}
-	for _, v := range old.Envs {
+	for _, v := range cfg.Envs {
 		_ = fieldsEnvValue(v)
 		break // Only need to check one value for type compatibility
 	}
+}
 
+// compareConfigs compares two configs and returns the differences.
+// Returns nil if configs are equivalent.
+//
+// Intentionally excluded fields (don't require rebuild):
+//   - Commands.Enter: only affects enter behavior
+//   - EnvValue.OverrideOnEnter: only affects enter behavior
+//   - Network.LANAccess: pf rules are external, no container rebuild needed
+func compareConfigs(old, new *config.Config) *DriftChanges {
 	var changes DriftChanges
 	hasAny := false
 
@@ -236,17 +267,14 @@ func (s *State) DetectConfigDrift(current *config.Config) *DriftChanges {
 		changes.CPUs = &[2]int{old.Resources.CPUs, new.Resources.CPUs}
 		hasAny = true
 	}
-	if !equalStringSlices(old.Mounts, new.Mounts) {
+	if !slices.Equal(old.Mounts, new.Mounts) {
 		changes.Mounts = true
 		hasAny = true
 	}
-	if envLiteralsDrift(old.Envs, new.Envs) {
+	if hasEnvLiteralDrift(old.Envs, new.Envs) {
 		changes.Envs = true
 		hasAny = true
 	}
-	// Commands.Enter: intentionally excluded, doesn't require rebuild
-	// EnvValue.OverrideOnEnter: intentionally excluded, only affects enter behavior
-	// Network.LANAccess: intentionally excluded, doesn't require container rebuild (pf rules are external)
 
 	if !hasAny {
 		return nil
@@ -259,34 +287,21 @@ func (s *State) UpdateConfig(cfg *config.Config) {
 	s.Config = cfg
 }
 
-// equalStringSlices compares two string slices for equality.
-func equalStringSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// envLiteralsDrift checks if literal (non-interpolated) env values have changed.
+// hasEnvLiteralDrift checks if literal (non-interpolated) env values have changed.
 // Interpolated values (containing ${...}) are ignored - see AGD-019.
 // EnvValue.OverrideOnEnter is also ignored (only affects enter behavior).
-func envLiteralsDrift(a, b map[string]config.EnvValue) bool {
+func hasEnvLiteralDrift(a, b map[string]config.EnvValue) bool {
 	// Collect literal values only
 	aLiterals := make(map[string]string)
 	for k, v := range a {
-		if !strings.Contains(v.Value, "${") {
+		if !v.IsInterpolated() {
 			aLiterals[k] = v.Value
 		}
 	}
 
 	bLiterals := make(map[string]string)
 	for k, v := range b {
-		if !strings.Contains(v.Value, "${") {
+		if !v.IsInterpolated() {
 			bLiterals[k] = v.Value
 		}
 	}

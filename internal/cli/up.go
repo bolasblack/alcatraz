@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	goruntime "runtime"
 	"strings"
 
@@ -17,11 +16,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	upQuiet bool
-	upForce bool
-)
-
 var upCmd = &cobra.Command{
 	Use:   "up",
 	Short: "Start the sandbox environment",
@@ -30,68 +24,43 @@ var upCmd = &cobra.Command{
 }
 
 func init() {
-	upCmd.Flags().BoolVarP(&upQuiet, "quiet", "q", false, "Suppress progress output")
-	upCmd.Flags().BoolVarP(&upForce, "force", "f", false, "Force rebuild without confirmation on config change")
-}
-
-// progress writes a progress message if not in quiet mode.
-func progress(w io.Writer, format string, args ...any) {
-	if w != nil {
-		fmt.Fprintf(w, format, args...)
-	}
+	upCmd.Flags().BoolP("quiet", "q", false, "Suppress progress output")
+	upCmd.Flags().BoolP("force", "f", false, "Force rebuild without confirmation on config change")
 }
 
 // runUp starts the container environment.
 // See AGD-009 for CLI workflow design.
 func runUp(cmd *cobra.Command, args []string) error {
+	quiet, _ := cmd.Flags().GetBool("quiet")
+	force, _ := cmd.Flags().GetBool("force")
+
 	var out io.Writer = os.Stdout
-	if upQuiet {
+	if quiet {
 		out = nil
 	}
 
-	cwd, err := os.Getwd()
+	cwd, err := getCwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return err
 	}
 
-	configPath := filepath.Join(cwd, ConfigFilename)
-
 	// Load configuration
-	progress(out, "→ Loading config from %s\n", ConfigFilename)
-	cfg, err := config.LoadConfig(configPath)
+	progressStep(out, "Loading config from %s\n", ConfigFilename)
+	cfg, _, err := loadConfigFromCwd(cwd)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("configuration not found: run 'alca init' first")
-		}
-		return fmt.Errorf("failed to load config: %w", err)
+		return err
 	}
 
 	// Select runtime based on config
-	progress(out, "→ Detecting runtime...\n")
-	rt, err := runtime.SelectRuntimeWithOutput(&cfg, out)
+	progressStep(out, "Detecting runtime...\n")
+	rt, err := runtime.SelectRuntimeWithOutput(cfg, out)
 	if err != nil {
 		return fmt.Errorf("failed to select runtime: %w", err)
 	}
-	progress(out, "→ Detected runtime: %s\n", rt.Name())
+	progressStep(out, "Detected runtime: %s\n", rt.Name())
 
 	// Early check - fail fast if network-helper needed but user declines
-	// Callback creates NAT rules while sudo is cached after install
-	if err := ensureNetworkHelper(&cfg, out, func() error {
-		subnet, err := network.GetOrbStackSubnet()
-		if err != nil {
-			return fmt.Errorf("failed to get OrbStack subnet: %w", err)
-		}
-		interfaces, err := network.GetPhysicalInterfaces()
-		if err != nil {
-			return fmt.Errorf("failed to get physical interfaces: %w", err)
-		}
-		rules := network.GenerateNATRules(subnet, interfaces)
-		if err := WriteSharedRuleWithSudo(rules); err != nil {
-			return fmt.Errorf("failed to create NAT rules: %w", err)
-		}
-		progress(out, "→ NAT rules created for all interfaces\n")
-		return nil
-	}); err != nil {
+	if err := ensureNetworkHelper(cfg, out); err != nil {
 		return err
 	}
 
@@ -102,98 +71,38 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	if isNew {
-		progress(out, "→ Created new state file: %s\n", state.StateFilePath(cwd))
+		progressStep(out, "Created new state file: %s\n", state.StateFilePath(cwd))
 	}
 
 	ctx := context.Background()
 
-	// Check for configuration drift
-	needsRebuild := false
-	runtimeChanged := st.Runtime != rt.Name()
-	drift := st.DetectConfigDrift(&cfg)
-	if drift != nil || runtimeChanged {
-		if !upForce {
-			// Show drift and ask for confirmation
-			fmt.Println("Configuration has changed since last container creation:")
-			if runtimeChanged {
-				fmt.Printf("  Runtime: %s → %s\n", st.Runtime, rt.Name())
-			}
-			if drift != nil {
-				if drift.Image != nil {
-					fmt.Printf("  Image: %s → %s\n", drift.Image[0], drift.Image[1])
-				}
-				if drift.Mounts {
-					fmt.Printf("  Mounts: changed\n")
-				}
-				if drift.Workdir != nil {
-					fmt.Printf("  Workdir: %s → %s\n", drift.Workdir[0], drift.Workdir[1])
-				}
-				if drift.CommandUp != nil {
-					fmt.Printf("  Commands.up: changed\n")
-				}
-				if drift.Memory != nil {
-					fmt.Printf("  Resources.memory: %s → %s\n", drift.Memory[0], drift.Memory[1])
-				}
-				if drift.CPUs != nil {
-					fmt.Printf("  Resources.cpus: %d → %d\n", drift.CPUs[0], drift.CPUs[1])
-				}
-				if drift.Envs {
-					fmt.Printf("  Envs: changed\n")
-				}
-			}
-			fmt.Print("Rebuild container with new configuration? [y/N] ")
-
-			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
-			answer = strings.TrimSpace(strings.ToLower(answer))
-
-			if answer != "y" && answer != "yes" {
-				fmt.Println("Keeping existing container.")
-			} else {
-				needsRebuild = true
-			}
-		} else {
-			needsRebuild = true
-			progress(out, "→ Configuration changed, rebuilding container (-f)\n")
-		}
+	// Check for configuration drift and handle rebuild
+	needsRebuild, err := handleConfigDrift(ctx, cfg, st, rt, out, force)
+	if err != nil {
+		return err
 	}
 
 	// If rebuild needed, remove existing container first
 	if needsRebuild {
-		// Determine which runtime to use for cleanup
-		cleanupRt := rt
-		if runtimeChanged {
-			// Runtime changed - use old runtime to remove old container
-			if oldRt := runtime.ByName(st.Runtime); oldRt != nil {
-				cleanupRt = oldRt
-				progress(out, "→ Runtime changed: %s → %s\n", st.Runtime, rt.Name())
-			}
-		}
-
-		status, _ := cleanupRt.Status(ctx, cwd, st)
-		if status.State != runtime.StateNotFound {
-			progress(out, "→ Removing existing container for rebuild...\n")
-			if err := cleanupRt.Down(ctx, cwd, st); err != nil {
-				return fmt.Errorf("failed to remove container for rebuild: %w", err)
-			}
+		if err := rebuildContainerIfNeeded(ctx, cfg, st, rt, cwd, out); err != nil {
+			return err
 		}
 	}
 
 	// Update state with current config only when rebuilding or first time
 	if needsRebuild || isNew {
-		st.UpdateConfig(&cfg)
+		st.UpdateConfig(cfg)
 		if err := state.Save(cwd, st); err != nil {
 			return fmt.Errorf("failed to save state: %w", err)
 		}
 	}
 
 	// Start container
-	if err := rt.Up(ctx, &cfg, cwd, st, out); err != nil {
+	if err := rt.Up(ctx, cfg, cwd, st, out); err != nil {
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
 	// Configure NAT rules if LAN access enabled (macOS only)
-	// Network-helper was already ensured early in the function.
 	// See AGD-023 for design decisions.
 	if goruntime.GOOS == "darwin" && network.HasLANAccess(cfg.Network.LANAccess) {
 		if err := configureNATRules(cwd, out); err != nil {
@@ -201,16 +110,71 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	progress(out, "✓ Environment ready\n")
+	progressDone(out, "Environment ready\n")
+	return nil
+}
+
+// handleConfigDrift checks for configuration drift and prompts user if needed.
+// Returns true if rebuild is needed.
+func handleConfigDrift(ctx context.Context, cfg *config.Config, st *state.State, rt runtime.Runtime, out io.Writer, force bool) (bool, error) {
+	runtimeChanged := st.Runtime != rt.Name()
+	drift := st.DetectConfigDrift(cfg)
+
+	if drift == nil && !runtimeChanged {
+		return false, nil
+	}
+
+	if force {
+		progressStep(out, "Configuration changed, rebuilding container (-f)\n")
+		return true, nil
+	}
+
+	// Show drift and ask for confirmation
+	displayConfigDrift(os.Stdout, drift, runtimeChanged, st.Runtime, rt.Name())
+	fmt.Print("Rebuild container with new configuration? [y/N] ")
+
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+
+	if answer != "y" && answer != "yes" {
+		fmt.Println("Keeping existing container.")
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// rebuildContainerIfNeeded removes the existing container for rebuild.
+func rebuildContainerIfNeeded(ctx context.Context, cfg *config.Config, st *state.State, rt runtime.Runtime, cwd string, out io.Writer) error {
+	// Determine which runtime to use for cleanup
+	cleanupRt := rt
+	runtimeChanged := st.Runtime != rt.Name()
+
+	if runtimeChanged {
+		// Runtime changed - use old runtime to remove old container
+		if oldRt := runtime.ByName(st.Runtime); oldRt != nil {
+			cleanupRt = oldRt
+			progressStep(out, "Runtime changed: %s → %s\n", st.Runtime, rt.Name())
+		}
+	}
+
+	status, _ := cleanupRt.Status(ctx, cwd, st)
+	if status.State != runtime.StateNotFound {
+		progressStep(out, "Removing existing container for rebuild...\n")
+		if err := cleanupRt.Down(ctx, cwd, st); err != nil {
+			return fmt.Errorf("failed to remove container for rebuild: %w", err)
+		}
+	}
+
 	return nil
 }
 
 // ensureNetworkHelper checks if network-helper is needed and installed.
 // Call EARLY in runUp(), before drift check.
 // Returns error if user declines install.
-// The onInstall callback is called after successful install while sudo is still cached.
 // See AGD-023 for design decisions.
-func ensureNetworkHelper(cfg *config.Config, out io.Writer, onInstall func() error) error {
+func ensureNetworkHelper(cfg *config.Config, out io.Writer) error {
 	// Only applies to macOS with LAN access configured
 	if goruntime.GOOS != "darwin" || !network.HasLANAccess(cfg.Network.LANAccess) {
 		return nil
@@ -222,38 +186,49 @@ func ensureNetworkHelper(cfg *config.Config, out io.Writer, onInstall func() err
 		return fmt.Errorf("failed to detect runtime: %w", err)
 	}
 	if !isOrbStack {
-		progress(out, "→ LAN access: Docker Desktop detected, works natively\n")
+		progressStep(out, "LAN access: Docker Desktop detected, works natively\n")
 		return nil
 	}
 
-	progress(out, "→ LAN access: OrbStack detected\n")
+	progressStep(out, "LAN access: OrbStack detected\n")
 
 	// Check if network helper is installed and up to date
-	installed := network.IsNetworkHelperInstalled()
-	needsUpdate := IsNetworkHelperNeedsUpdate()
+	installed := network.IsHelperInstalled()
+	needsUpdate := network.IsHelperNeedsUpdate()
 
 	if !installed {
-		progress(out, "→ Network configuration requires network-helper.\n")
+		progressStep(out, "Network configuration requires network-helper.\n")
 		if !promptConfirm("Install now?") {
 			return fmt.Errorf("LAN access requires network-helper. Either:\n  - Run 'alca network-helper install' manually\n  - Remove network.lan-access from your config")
 		}
 	} else if needsUpdate {
-		progress(out, "→ Network helper needs update.\n")
+		progressStep(out, "Network helper needs update.\n")
 	} else {
 		return nil // Already installed and up to date
 	}
 
 	// Install or update network helper
-	if err := InstallNetworkHelper(); err != nil {
+	if err := network.InstallHelper(func(format string, args ...any) {
+		progressStep(out, format, args...)
+	}); err != nil {
 		return fmt.Errorf("failed to install network-helper: %w", err)
 	}
 
-	// Call onInstall callback while sudo is still cached
-	if onInstall != nil {
-		if err := onInstall(); err != nil {
-			return err
-		}
+	// Create NAT rules while sudo is cached
+	subnet, err := network.GetOrbStackSubnet()
+	if err != nil {
+		return fmt.Errorf("failed to get OrbStack subnet: %w", err)
 	}
+	interfaces, err := network.GetPhysicalInterfaces()
+	if err != nil {
+		return fmt.Errorf("failed to get physical interfaces: %w", err)
+	}
+	rules := network.GenerateNATRules(subnet, interfaces)
+	if err := network.WriteSharedRule(rules); err != nil {
+		return fmt.Errorf("failed to create NAT rules: %w", err)
+	}
+	progressStep(out, "NAT rules created for all interfaces\n")
+
 	return nil
 }
 
@@ -276,7 +251,7 @@ func configureNATRules(projectDir string, out io.Writer) error {
 		return fmt.Errorf("failed to get OrbStack subnet: %w", err)
 	}
 
-	progress(out, "→ OrbStack subnet: %s\n", subnet)
+	progressStep(out, "OrbStack subnet: %s\n", subnet)
 
 	// Check if rule update is needed (new interfaces detected)
 	needsUpdate, newInterfaces, err := network.NeedsRuleUpdate()
@@ -286,7 +261,7 @@ func configureNATRules(projectDir string, out io.Writer) error {
 
 	if needsUpdate {
 		if len(newInterfaces) > 0 {
-			progress(out, "→ New network interfaces detected: %s\n", strings.Join(newInterfaces, ", "))
+			progressStep(out, "New network interfaces detected: %s\n", strings.Join(newInterfaces, ", "))
 		}
 		// Create/update shared NAT rule for all physical interfaces
 		interfaces, err := network.GetPhysicalInterfaces()
@@ -294,18 +269,18 @@ func configureNATRules(projectDir string, out io.Writer) error {
 			return fmt.Errorf("failed to get physical interfaces: %w", err)
 		}
 		rules := network.GenerateNATRules(subnet, interfaces)
-		if err := WriteSharedRuleWithSudo(rules); err != nil {
+		if err := network.WriteSharedRule(rules); err != nil {
 			return fmt.Errorf("failed to create shared NAT rule: %w", err)
 		}
-		progress(out, "→ NAT rules updated for all interfaces\n")
+		progressStep(out, "NAT rules updated for all interfaces\n")
 	}
 
 	// Create project-specific file
 	projectContent := "# Project-specific rules for " + projectDir + "\n"
-	if err := WriteProjectFileWithSudo(projectDir, projectContent); err != nil {
+	if err := network.WriteProjectFile(projectDir, projectContent); err != nil {
 		return fmt.Errorf("failed to create project file: %w", err)
 	}
 
-	progress(out, "→ LAN access configured\n")
+	progressStep(out, "LAN access configured\n")
 	return nil
 }

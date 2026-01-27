@@ -112,6 +112,20 @@ func insertUpComment(content, comment string) string {
 
 // configToRaw converts Config to RawConfig for TOML serialization.
 func configToRaw(c Config) RawConfig {
+	// Mirror type ensures all Config fields are explicitly handled (AGD-015).
+	// Adding a new field to Config will cause a compile error here.
+	type configFields struct {
+		Image     string
+		Workdir   string
+		Runtime   RuntimeType
+		Commands  Commands
+		Mounts    []string
+		Resources Resources
+		Envs      map[string]EnvValue
+		Network   Network
+	}
+	_ = configFields(c)
+
 	var envs RawEnvValueMap
 	if len(c.Envs) > 0 {
 		envs = make(RawEnvValueMap)
@@ -127,5 +141,6 @@ func configToRaw(c Config) RawConfig {
 		Mounts:    c.Mounts,
 		Resources: c.Resources,
 		Envs:      envs,
+		Network:   c.Network,
 	}
 }

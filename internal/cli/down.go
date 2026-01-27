@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	goruntime "runtime"
 
-	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/network"
 	"github.com/bolasblack/alcatraz/internal/runtime"
-	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -27,39 +24,32 @@ var downCmd = &cobra.Command{
 func runDown(cmd *cobra.Command, args []string) error {
 	var out io.Writer = os.Stdout
 
-	cwd, err := os.Getwd()
+	cwd, err := getCwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return err
 	}
 
-	// Load config to respect runtime setting
-	configPath := filepath.Join(cwd, ConfigFilename)
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to load config: %w", err)
+	// Load config (optional) and select runtime
+	cfg, rt, err := loadConfigAndRuntimeOptional(cwd)
+	if err != nil {
+		return err
 	}
 
-	// Select runtime based on config
-	rt, err := runtime.SelectRuntime(&cfg)
-	if err != nil {
-		return fmt.Errorf("failed to select runtime: %w", err)
-	}
+	progressStep(out, "Using runtime: %s\n", rt.Name())
 
-	progress(out, "→ Using runtime: %s\n", rt.Name())
-
-	// Load state
-	st, err := state.Load(cwd)
+	// Load state (optional - missing state is not an error for down)
+	st, err := loadStateOptional(cwd)
 	if err != nil {
-		return fmt.Errorf("failed to load state: %w", err)
+		return err
 	}
 
 	if st == nil {
-		progress(out, "→ No state file found. Container may not exist.\n")
+		progressStep(out, "No state file found. Container may not exist.\n")
 		return nil
 	}
 
 	// Stop container
-	progress(out, "→ Stopping container...\n")
+	progressStep(out, "Stopping container...\n")
 	ctx := context.Background()
 	if err := rt.Down(ctx, cwd, st); err != nil {
 		return fmt.Errorf("failed to stop container: %w", err)
@@ -70,11 +60,11 @@ func runDown(cmd *cobra.Command, args []string) error {
 	if goruntime.GOOS == "darwin" && network.HasLANAccess(cfg.Network.LANAccess) {
 		if err := cleanupLANAccess(cwd, out); err != nil {
 			// Don't fail on cleanup errors, just warn
-			progress(out, "→ Warning: failed to clean up LAN access: %v\n", err)
+			progressStep(out, "Warning: failed to clean up LAN access: %v\n", err)
 		}
 	}
 
-	progress(out, "✓ Container stopped\n")
+	progressDone(out, "Container stopped\n")
 	return nil
 }
 
@@ -91,18 +81,25 @@ func cleanupLANAccess(projectDir string, out io.Writer) error {
 	}
 
 	// Delete project file and check if shared should be removed
-	removeShared, err := network.DeleteProjectFile(projectDir)
+	removeShared, flushWarning, err := network.DeleteProjectFile(projectDir)
+	if flushWarning != nil {
+		progressStep(out, "Warning: failed to flush anchor: %v\n", flushWarning)
+	}
 	if err != nil {
 		return err
 	}
 
 	if removeShared {
-		progress(out, "→ No other LAN access projects, removing shared NAT rule\n")
-		if err := network.DeleteSharedRule(); err != nil {
+		progressStep(out, "No other LAN access projects, removing shared NAT rule\n")
+		flushWarning, err := network.DeleteSharedRule()
+		if flushWarning != nil {
+			progressStep(out, "Warning: failed to flush anchor: %v\n", flushWarning)
+		}
+		if err != nil {
 			return err
 		}
 	}
 
-	progress(out, "→ LAN access cleaned up\n")
+	progressStep(out, "LAN access cleaned up\n")
 	return nil
 }

@@ -5,11 +5,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/spf13/cobra"
@@ -33,19 +31,15 @@ func init() {
 
 // runCleanup finds and removes orphan containers.
 func runCleanup(cmd *cobra.Command, args []string) error {
-	cwd, err := os.Getwd()
+	cwd, err := getCwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return err
 	}
 
-	// Try to load config for runtime selection, use default if not found
-	configPath := filepath.Join(cwd, ConfigFilename)
-	cfg, _ := config.LoadConfig(configPath)
-
-	// Select runtime
-	rt, err := runtime.SelectRuntime(&cfg)
+	// Load config (optional) and select runtime
+	_, rt, err := loadConfigAndRuntimeOptional(cwd)
 	if err != nil {
-		return fmt.Errorf("failed to select runtime: %w", err)
+		return err
 	}
 
 	ctx := context.Background()
@@ -57,7 +51,8 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	// Find orphan containers
 	var orphans []runtime.ContainerInfo
 	for _, c := range containers {
-		if isOrphan(c) {
+		isOrphan, _ := checkOrphanStatus(c)
+		if isOrphan {
 			orphans = append(orphans, c)
 		}
 	}
@@ -73,67 +68,121 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		// --all flag: skip interaction
 		toDelete = orphans
 	} else {
-		// Display orphan containers
-		fmt.Printf("Found %d orphan container(s):\n\n", len(orphans))
-		for i, c := range orphans {
-			reason := getOrphanReason(c)
-			projectPath := c.ProjectPath
-			if projectPath == "" {
-				projectPath = "(no path)"
-			}
-			fmt.Printf("  [%d] %s\n", i+1, c.Name)
-			fmt.Printf("      Path: %s\n", projectPath)
-			fmt.Printf("      Reason: %s\n", reason)
-			fmt.Println()
-		}
+		toDelete = selectOrphansInteractively(orphans)
+	}
 
-		// Interactive selection
-		fmt.Println("Select containers to delete (comma-separated numbers, or Enter for all):")
-		fmt.Print("> ")
-
-		reader := bufio.NewReader(os.Stdin)
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			// Ctrl+C or EOF
-			fmt.Println("\nCancelled.")
-			return nil
-		}
-
-		input = strings.TrimSpace(input)
-		if input == "" {
-			// Empty input = delete all
-			toDelete = orphans
-		} else {
-			// Parse numbers
-			parts := strings.Split(input, ",")
-			seen := make(map[int]bool)
-			for _, part := range parts {
-				part = strings.TrimSpace(part)
-				num, err := strconv.Atoi(part)
-				if err != nil {
-					fmt.Printf("Invalid number: %s\n", part)
-					continue
-				}
-				if num < 1 || num > len(orphans) {
-					fmt.Printf("Number out of range: %d\n", num)
-					continue
-				}
-				if !seen[num] {
-					seen[num] = true
-					toDelete = append(toDelete, orphans[num-1])
-				}
-			}
-		}
-
-		if len(toDelete) == 0 {
-			fmt.Println("No containers selected.")
-			return nil
-		}
+	if len(toDelete) == 0 {
+		fmt.Println("No containers selected.")
+		return nil
 	}
 
 	// Delete containers
+	deleted := deleteContainers(ctx, rt, toDelete)
+	fmt.Printf("\nRemoved %d container(s).\n", deleted)
+	return nil
+}
+
+// checkOrphanStatus checks if a container is orphaned and returns the reason.
+// Returns (isOrphan, reason).
+func checkOrphanStatus(c runtime.ContainerInfo) (bool, string) {
+	// No path label = orphan
+	if c.ProjectPath == "" {
+		return true, "no project path label"
+	}
+
+	// Directory doesn't exist = orphan
+	if _, err := os.Stat(c.ProjectPath); os.IsNotExist(err) {
+		return true, "project directory does not exist"
+	}
+
+	// No state file = orphan
+	stateFile := state.StateFilePath(c.ProjectPath)
+	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
+		return true, "state file (.alca/state.json) does not exist"
+	}
+
+	// Verify project ID matches
+	st, err := state.Load(c.ProjectPath)
+	if err != nil {
+		return true, "failed to load state file"
+	}
+	if st == nil {
+		return true, "state file is empty"
+	}
+	if st.ProjectID != c.ProjectID {
+		return true, "project ID mismatch"
+	}
+
+	return false, ""
+}
+
+// selectOrphansInteractively displays orphans and prompts for selection.
+func selectOrphansInteractively(orphans []runtime.ContainerInfo) []runtime.ContainerInfo {
+	fmt.Printf("Found %d orphan container(s):\n\n", len(orphans))
+	for i, c := range orphans {
+		_, reason := checkOrphanStatus(c)
+		projectPath := c.ProjectPath
+		if projectPath == "" {
+			projectPath = "(no path)"
+		}
+		fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		fmt.Printf("      Path: %s\n", projectPath)
+		fmt.Printf("      Reason: %s\n", reason)
+		fmt.Println()
+	}
+
+	// Interactive selection
+	fmt.Println("Select containers to delete (comma-separated numbers, or Enter for all):")
+	fmt.Print("> ")
+
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		// Ctrl+C or EOF
+		fmt.Println("\nCancelled.")
+		return nil
+	}
+
+	input = strings.TrimSpace(input)
+	if input == "" {
+		// Empty input = delete all
+		return orphans
+	}
+
+	// Parse numbers
+	return parseContainerSelection(input, orphans)
+}
+
+// parseContainerSelection parses user input and returns selected containers.
+func parseContainerSelection(input string, orphans []runtime.ContainerInfo) []runtime.ContainerInfo {
+	var selected []runtime.ContainerInfo
+	parts := strings.Split(input, ",")
+	seen := make(map[int]bool)
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		num, err := strconv.Atoi(part)
+		if err != nil {
+			fmt.Printf("Invalid number: %s\n", part)
+			continue
+		}
+		if num < 1 || num > len(orphans) {
+			fmt.Printf("Number out of range: %d\n", num)
+			continue
+		}
+		if !seen[num] {
+			seen[num] = true
+			selected = append(selected, orphans[num-1])
+		}
+	}
+
+	return selected
+}
+
+// deleteContainers removes the given containers and returns the count of successfully deleted.
+func deleteContainers(ctx context.Context, rt runtime.Runtime, containers []runtime.ContainerInfo) int {
 	deleted := 0
-	for _, c := range toDelete {
+	for _, c := range containers {
 		fmt.Printf("Removing %s... ", c.Name)
 		if err := rt.RemoveContainer(ctx, c.Name); err != nil {
 			fmt.Printf("failed: %v\n", err)
@@ -142,66 +191,5 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 			deleted++
 		}
 	}
-
-	fmt.Printf("\nRemoved %d container(s).\n", deleted)
-	return nil
-}
-
-// isOrphan checks if a container is orphaned.
-func isOrphan(c runtime.ContainerInfo) bool {
-	// No path label = orphan
-	if c.ProjectPath == "" {
-		return true
-	}
-
-	// Directory doesn't exist = orphan
-	if _, err := os.Stat(c.ProjectPath); os.IsNotExist(err) {
-		return true
-	}
-
-	// No state file = orphan
-	stateFile := state.StateFilePath(c.ProjectPath)
-	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
-		return true
-	}
-
-	// Optionally: verify project ID matches
-	st, err := state.Load(c.ProjectPath)
-	if err != nil || st == nil {
-		return true
-	}
-	if st.ProjectID != c.ProjectID {
-		return true
-	}
-
-	return false
-}
-
-// getOrphanReason returns a human-readable reason why the container is orphaned.
-func getOrphanReason(c runtime.ContainerInfo) string {
-	if c.ProjectPath == "" {
-		return "no project path label"
-	}
-
-	if _, err := os.Stat(c.ProjectPath); os.IsNotExist(err) {
-		return "project directory does not exist"
-	}
-
-	stateFile := state.StateFilePath(c.ProjectPath)
-	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
-		return "state file (.alca/state.json) does not exist"
-	}
-
-	st, err := state.Load(c.ProjectPath)
-	if err != nil {
-		return "failed to load state file"
-	}
-	if st == nil {
-		return "state file is empty"
-	}
-	if st.ProjectID != c.ProjectID {
-		return "project ID mismatch"
-	}
-
-	return "unknown"
+	return deleted
 }

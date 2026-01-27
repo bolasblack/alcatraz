@@ -6,12 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
-	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
-	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -32,36 +29,21 @@ func init() {
 // runRun executes a command inside the container.
 // See AGD-009 for CLI workflow design.
 func runRun(cmd *cobra.Command, args []string) error {
-	cwd, err := os.Getwd()
+	cwd, err := getCwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return err
 	}
 
-	configPath := filepath.Join(cwd, ConfigFilename)
-
-	// Load configuration to get enter command
-	cfg, err := config.LoadConfig(configPath)
+	// Load configuration and runtime
+	cfg, rt, err := loadConfigAndRuntime(cwd)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("configuration not found: run 'alca init' first")
-		}
-		return fmt.Errorf("failed to load config: %w", err)
+		return err
 	}
 
-	// Select runtime based on config
-	rt, err := runtime.SelectRuntime(&cfg)
+	// Load state (required)
+	st, err := loadRequiredState(cwd)
 	if err != nil {
-		return fmt.Errorf("failed to select runtime: %w", err)
-	}
-
-	// Load state
-	st, err := state.Load(cwd)
-	if err != nil {
-		return fmt.Errorf("failed to load state: %w", err)
-	}
-
-	if st == nil {
-		return fmt.Errorf("no state file found: run 'alca up' first")
+		return err
 	}
 
 	ctx := context.Background()
@@ -73,7 +55,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if status.State != runtime.StateRunning {
-		return fmt.Errorf("container is not running: run 'alca up' first")
+		return fmt.Errorf(ErrMsgNotRunning)
 	}
 
 	// Build command with optional enter prefix
@@ -93,7 +75,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		execCmd = args
 	}
 
-	err = rt.Exec(ctx, &cfg, cwd, st, execCmd)
+	err = rt.Exec(ctx, cfg, cwd, st, execCmd)
 	if err != nil {
 		// Pass through exit codes instead of reporting as error
 		var exitErr *exec.ExitError
@@ -112,5 +94,3 @@ func shellQuote(s string) string {
 	// Replace ' with '\'' (end quote, escaped quote, start quote)
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
-
-

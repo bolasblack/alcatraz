@@ -22,9 +22,9 @@ var statusCmd = &cobra.Command{
 // runStatus displays container status.
 // See AGD-009 for CLI workflow design.
 func runStatus(cmd *cobra.Command, args []string) error {
-	cwd, err := os.Getwd()
+	cwd, err := getCwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return err
 	}
 
 	configPath := filepath.Join(cwd, ConfigFilename)
@@ -41,13 +41,13 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Config: %s\n", configPath)
 	fmt.Println("")
 
-	// Load config to respect runtime setting
+	// Load config
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Select runtime based on config
+	// Select runtime
 	rt, err := runtime.SelectRuntime(&cfg)
 	if err != nil {
 		fmt.Println("Runtime: None available")
@@ -59,7 +59,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Runtime: %s\n", rt.Name())
 	fmt.Println("")
 
-	// Load state
+	// Load state (optional for status)
 	st, err := state.Load(cwd)
 	if err != nil {
 		fmt.Printf("State: Error loading state: %v\n", err)
@@ -84,54 +84,16 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	printContainerStatus(status, st, &cfg, rt)
+
+	return nil
+}
+
+// printContainerStatus prints container status with drift detection.
+func printContainerStatus(status runtime.ContainerStatus, st *state.State, cfg *config.Config, rt runtime.Runtime) {
 	switch status.State {
 	case runtime.StateRunning:
-		fmt.Println("Container: Running")
-		fmt.Printf("  ID:    %s\n", status.ID)
-		fmt.Printf("  Name:  %s\n", status.Name)
-		fmt.Printf("  Image: %s\n", status.Image)
-		if status.StartedAt != "" {
-			fmt.Printf("  Started: %s\n", status.StartedAt)
-		}
-		fmt.Println("")
-
-		// Check for configuration drift
-		runtimeChanged := st.Runtime != rt.Name()
-		drift := st.DetectConfigDrift(&cfg)
-		if drift != nil || runtimeChanged {
-			fmt.Println("⚠️  Configuration drift detected:")
-			if runtimeChanged {
-				fmt.Printf("  Runtime: %s → %s\n", st.Runtime, rt.Name())
-			}
-			if drift != nil {
-				if drift.Image != nil {
-					fmt.Printf("  Image: %s → %s\n", drift.Image[0], drift.Image[1])
-				}
-				if drift.Workdir != nil {
-					fmt.Printf("  Workdir: %s → %s\n", drift.Workdir[0], drift.Workdir[1])
-				}
-				if drift.Memory != nil {
-					fmt.Printf("  Resources.memory: %s → %s\n", drift.Memory[0], drift.Memory[1])
-				}
-				if drift.CPUs != nil {
-					fmt.Printf("  Resources.cpus: %d → %d\n", drift.CPUs[0], drift.CPUs[1])
-				}
-				if drift.Mounts {
-					fmt.Printf("  Mounts: changed\n")
-				}
-				if drift.CommandUp != nil {
-					fmt.Printf("  Commands.up: changed\n")
-				}
-				if drift.Envs {
-					fmt.Printf("  Envs: changed\n")
-				}
-			}
-			fmt.Println("")
-			fmt.Println("Run 'alca up -f' to rebuild with new configuration.")
-			fmt.Println("")
-		}
-
-		fmt.Println("Run 'alca run <command>' to execute commands.")
+		printRunningContainerStatus(status, st, cfg, rt)
 	case runtime.StateStopped:
 		fmt.Println("Container: Stopped")
 		fmt.Println("")
@@ -143,6 +105,27 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	default:
 		fmt.Println("Container: Unknown state")
 	}
+}
 
-	return nil
+// printRunningContainerStatus prints status for a running container.
+func printRunningContainerStatus(status runtime.ContainerStatus, st *state.State, cfg *config.Config, rt runtime.Runtime) {
+	fmt.Println("Container: Running")
+	fmt.Printf("  ID:    %s\n", status.ID)
+	fmt.Printf("  Name:  %s\n", status.Name)
+	fmt.Printf("  Image: %s\n", status.Image)
+	if status.StartedAt != "" {
+		fmt.Printf("  Started: %s\n", status.StartedAt)
+	}
+	fmt.Println("")
+
+	// Check for configuration drift
+	runtimeChanged := st.Runtime != rt.Name()
+	drift := st.DetectConfigDrift(cfg)
+	if displayConfigDrift(os.Stdout, drift, runtimeChanged, st.Runtime, rt.Name()) {
+		fmt.Println("")
+		fmt.Println("Run 'alca up -f' to rebuild with new configuration.")
+		fmt.Println("")
+	}
+
+	fmt.Println("Run 'alca run <command>' to execute commands.")
 }
