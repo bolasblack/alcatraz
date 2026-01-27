@@ -65,13 +65,18 @@
             ncurses
             coreutils
             findutils
+            iputils
+            iproute2
+            traceroute
+            tcpdump
             gnugrep
+            nodejs-slim
             mise
           ];
 
           shellHook = ''
-            export TERMINFO_DIRS="${pkgs.ncurses}/share/terminfo"
             echo "Alcatraz development environment"
+            export PATH="/extra-bin:$PATH"
             mise trust
           '';
         };

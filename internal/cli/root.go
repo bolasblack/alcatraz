@@ -13,11 +13,13 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "alca",
-	Short: "Alcatraz - Lightweight container isolation for AI coding assistants",
-	Long: `Alcatraz (alca) provides lightweight container isolation for AI coding assistants.
+	Use:           "alca",
+	Short:         "Alcatraz - Lightweight container isolation for AI coding assistants",
+	Long:          `Alcatraz (alca) provides lightweight container isolation for AI coding assistants.
 It wraps AI agent processes in configurable containers for enhanced security.`,
-	Version: Version,
+	Version:       Version,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 func Execute() {
@@ -41,4 +43,5 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(cleanupCmd)
 	rootCmd.AddCommand(experimentalCmd)
+	rootCmd.AddCommand(networkHelperCmd)
 }

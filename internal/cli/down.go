@@ -6,8 +6,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 
 	"github.com/bolasblack/alcatraz/internal/config"
+	"github.com/bolasblack/alcatraz/internal/network"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/spf13/cobra"
@@ -63,6 +65,44 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to stop container: %w", err)
 	}
 
+	// Clean up LAN access if configured (macOS + OrbStack only)
+	// See AGD-023 for design decisions.
+	if goruntime.GOOS == "darwin" && network.HasLANAccess(cfg.Network.LANAccess) {
+		if err := cleanupLANAccess(cwd, out); err != nil {
+			// Don't fail on cleanup errors, just warn
+			progress(out, "→ Warning: failed to clean up LAN access: %v\n", err)
+		}
+	}
+
 	progress(out, "✓ Container stopped\n")
+	return nil
+}
+
+// cleanupLANAccess removes LAN access configuration for the project.
+// See AGD-023 for implementation details.
+func cleanupLANAccess(projectDir string, out io.Writer) error {
+	// Only clean up for OrbStack
+	isOrbStack, err := runtime.IsOrbStack()
+	if err != nil {
+		return fmt.Errorf("failed to detect runtime: %w", err)
+	}
+	if !isOrbStack {
+		return nil
+	}
+
+	// Delete project file and check if shared should be removed
+	removeShared, err := network.DeleteProjectFile(projectDir)
+	if err != nil {
+		return err
+	}
+
+	if removeShared {
+		progress(out, "→ No other LAN access projects, removing shared NAT rule\n")
+		if err := network.DeleteSharedRule(); err != nil {
+			return err
+		}
+	}
+
+	progress(out, "→ LAN access cleaned up\n")
 	return nil
 }

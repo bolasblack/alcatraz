@@ -74,6 +74,27 @@ Processing order:
 
 ### Implementation
 
-- `internal/config/includes.go`: Core logic for `LoadWithIncludes`
-- `internal/config/config.go`: Added `Includes` field to `rawConfig`, `LoadConfig` now uses `LoadWithIncludes`
-- Full test coverage in `internal/config/includes_test.go`
+#### Config Type Separation
+
+To support includes, we separated config types by responsibility:
+
+- **`RawConfig`**: User-facing format for `.alca.toml` files
+  - Used for TOML parsing (includes `Includes` field)
+  - Used for JSON schema generation (editor autocomplete)
+  - `Envs` is `RawEnvValueMap` (`map[string]any`) for flexible TOML parsing
+
+- **`Config`**: Internal processed format
+  - No `Includes` field (processed and removed)
+  - No serialization tags (pure Go struct)
+  - `Envs` is `map[string]EnvValue` for type safety
+
+- **`RawEnvValueMap`**: Type alias `map[string]any` with `JSONSchema()` method
+  - Allows TOML to parse both string and object env values
+  - Generates correct JSON schema for editor autocomplete
+
+#### Files
+
+- `internal/config/includes.go`: Core logic for `LoadWithIncludes`, `rawToConfig`
+- `internal/config/config.go`: `RawConfig`, `Config`, `RawEnvValueMap` types
+- `internal/config/generator.go`: `configToRaw` for template serialization
+- `internal/config/includes_test.go`: Full test coverage

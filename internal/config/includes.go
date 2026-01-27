@@ -1,3 +1,5 @@
+// includes.go implements config file includes support.
+// See AGD-022 for design decisions.
 package config
 
 import (
@@ -35,7 +37,7 @@ func loadWithIncludes(path string, visited map[string]bool) (Config, error) {
 		return Config{}, err
 	}
 
-	var raw rawConfig
+	var raw RawConfig
 	if err := toml.Unmarshal(data, &raw); err != nil {
 		return Config{}, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
@@ -89,8 +91,8 @@ func loadWithIncludes(path string, visited map[string]bool) (Config, error) {
 	return mergedConfig, nil
 }
 
-// rawToConfig converts rawConfig to Config without applying defaults.
-func rawToConfig(raw rawConfig) (Config, error) {
+// rawToConfig converts RawConfig to Config without applying defaults.
+func rawToConfig(raw RawConfig) (Config, error) {
 	// Convert raw envs to EnvValue
 	envs := make(map[string]EnvValue)
 	for key, val := range raw.Envs {
@@ -109,6 +111,7 @@ func rawToConfig(raw rawConfig) (Config, error) {
 		Mounts:    raw.Mounts,
 		Resources: raw.Resources,
 		Envs:      envs,
+		Network:   raw.Network,
 	}, nil
 }
 
@@ -190,6 +193,11 @@ func mergeConfigs(base, overlay Config) Config {
 	}
 	for key, val := range overlay.Envs {
 		result.Envs[key] = val
+	}
+
+	// Network: deep merge
+	if len(overlay.Network.LANAccess) > 0 {
+		result.Network.LANAccess = append(result.Network.LANAccess, overlay.Network.LANAccess...)
 	}
 
 	return result

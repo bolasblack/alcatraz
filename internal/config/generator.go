@@ -24,6 +24,9 @@ const (
 	TemplateDebian Template = "debian"
 )
 
+// SchemaComment is the TOML comment that references the JSON Schema for editor autocomplete.
+const SchemaComment = "#:schema https://raw.githubusercontent.com/bolasblack/alcatraz/refs/heads/master/alca-config.schema.json\n\n"
+
 // TemplateConfig holds a Config and its associated comment.
 type TemplateConfig struct {
 	Config    Config
@@ -35,7 +38,7 @@ func GenerateConfig(template Template) (string, error) {
 	tc := getTemplateConfig(template)
 
 	var buf bytes.Buffer
-	if err := toml.NewEncoder(&buf).Encode(tc.Config); err != nil {
+	if err := toml.NewEncoder(&buf).Encode(configToRaw(tc.Config)); err != nil {
 		return "", fmt.Errorf("encode template: %w", err)
 	}
 
@@ -105,4 +108,24 @@ func insertUpComment(content, comment string) string {
 	}
 
 	return strings.Join(result, "\n")
+}
+
+// configToRaw converts Config to RawConfig for TOML serialization.
+func configToRaw(c Config) RawConfig {
+	var envs RawEnvValueMap
+	if len(c.Envs) > 0 {
+		envs = make(RawEnvValueMap)
+		for k, v := range c.Envs {
+			envs[k] = v
+		}
+	}
+	return RawConfig{
+		Image:     c.Image,
+		Workdir:   c.Workdir,
+		Runtime:   c.Runtime,
+		Commands:  c.Commands,
+		Mounts:    c.Mounts,
+		Resources: c.Resources,
+		Envs:      envs,
+	}
 }

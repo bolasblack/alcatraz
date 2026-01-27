@@ -17,7 +17,8 @@ func main() {
 		RequiredFromJSONSchemaTags: true,
 	}
 
-	schema := r.Reflect(&config.SchemaConfig{})
+	schema := r.Reflect(&config.RawConfig{})
+	schema.Version = "http://json-schema.org/draft-07/schema#" // draft-07 for better editor support
 	schema.Title = "Alcatraz Configuration"
 	schema.Description = "Configuration schema for .alca.toml files"
 	schema.ID = ""

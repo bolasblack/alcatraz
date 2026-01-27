@@ -2,7 +2,7 @@
 
 image = "nixos/nix"
 runtime = "docker"
-
+includes = ['./.alca.*.toml']
 mounts = [".alca.cache/go:/root/go", ".alca.cache/mise:/root/.local/share/mise"]
 
 [commands]
@@ -14,10 +14,10 @@ memory = "16g"
 cpus = 8
 
 [envs]
-TERM = "${TERM}"
-LC_LANG = { value = "${LC_LANG}", override_on_enter = true }
-
 NIXPKGS_ALLOW_UNFREE = "1"
 NIX_CONFIG = """
 extra-experimental-features = nix-command flakes
 """
+
+[network]
+lan-access = ['*']

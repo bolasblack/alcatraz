@@ -187,6 +187,7 @@ func (s *State) DetectConfigDrift(current *config.Config) *DriftChanges {
 		Mounts    []string
 		Resources config.Resources
 		Envs      map[string]config.EnvValue
+		Network   config.Network
 	}
 	_ = fields(*old)
 	type fieldsCommands struct {
@@ -245,6 +246,7 @@ func (s *State) DetectConfigDrift(current *config.Config) *DriftChanges {
 	}
 	// Commands.Enter: intentionally excluded, doesn't require rebuild
 	// EnvValue.OverrideOnEnter: intentionally excluded, only affects enter behavior
+	// Network.LANAccess: intentionally excluded, doesn't require container rebuild (pf rules are external)
 
 	if !hasAny {
 		return nil

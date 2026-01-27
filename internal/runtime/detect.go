@@ -3,7 +3,9 @@ package runtime
 import (
 	"fmt"
 	"io"
+	"os/exec"
 	"runtime"
+	"strings"
 
 	"github.com/bolasblack/alcatraz/internal/config"
 )
@@ -152,4 +154,35 @@ func Available() []Runtime {
 		}
 	}
 	return available
+}
+
+// IsOrbStack returns true if Docker is running on OrbStack.
+// It checks the Docker info output for "OrbStack" in the OperatingSystem field.
+func IsOrbStack() (bool, error) {
+	cmd := exec.Command("docker", "info", "--format", "{{.OperatingSystem}}")
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to get docker info: %w", err)
+	}
+	return strings.Contains(string(output), "OrbStack"), nil
+}
+
+// GetOrbStackSubnet returns the OrbStack network subnet from orbctl config.
+// Returns an error if orbctl is not available or the subnet is not found.
+func GetOrbStackSubnet() (string, error) {
+	cmd := exec.Command("orbctl", "config", "show")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("orbctl not found or failed: %w", err)
+	}
+	// Parse: network.subnet4: 192.168.138.0/23
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.Contains(line, "network.subnet4") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				return strings.TrimSpace(parts[1]), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("network.subnet4 not found in orbctl config")
 }

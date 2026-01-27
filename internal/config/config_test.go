@@ -67,46 +67,6 @@ func TestLoadConfigNotFound(t *testing.T) {
 	}
 }
 
-func TestSaveConfig(t *testing.T) {
-	cfg := Config{
-		Image:   "alpine:latest",
-		Workdir: "/home",
-		Commands: Commands{
-			Up:    "apk update",
-			Enter: "sh",
-		},
-		Mounts: []string{"/src:/dst"},
-	}
-
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, ".alca.toml")
-
-	if err := SaveConfig(path, cfg); err != nil {
-		t.Fatalf("SaveConfig failed: %v", err)
-	}
-
-	loaded, err := LoadConfig(path)
-	if err != nil {
-		t.Fatalf("LoadConfig after save failed: %v", err)
-	}
-
-	if loaded.Image != cfg.Image {
-		t.Errorf("image mismatch: expected %q, got %q", cfg.Image, loaded.Image)
-	}
-	if loaded.Workdir != cfg.Workdir {
-		t.Errorf("workdir mismatch: expected %q, got %q", cfg.Workdir, loaded.Workdir)
-	}
-	if loaded.Commands.Up != cfg.Commands.Up {
-		t.Errorf("commands.up mismatch: expected %q, got %q", cfg.Commands.Up, loaded.Commands.Up)
-	}
-	if loaded.Commands.Enter != cfg.Commands.Enter {
-		t.Errorf("commands.enter mismatch: expected %q, got %q", cfg.Commands.Enter, loaded.Commands.Enter)
-	}
-	if len(loaded.Mounts) != len(cfg.Mounts) {
-		t.Errorf("mounts count mismatch: expected %d, got %d", len(cfg.Mounts), len(loaded.Mounts))
-	}
-}
-
 func TestLoadConfigWithEnvs(t *testing.T) {
 	content := `
 image = "ubuntu:latest"

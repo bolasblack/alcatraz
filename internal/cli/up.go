@@ -7,9 +7,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 
 	"github.com/bolasblack/alcatraz/internal/config"
+	"github.com/bolasblack/alcatraz/internal/network"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/spf13/cobra"
@@ -71,6 +73,27 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to select runtime: %w", err)
 	}
 	progress(out, "→ Detected runtime: %s\n", rt.Name())
+
+	// Early check - fail fast if network-helper needed but user declines
+	// Callback creates NAT rules while sudo is cached after install
+	if err := ensureNetworkHelper(&cfg, out, func() error {
+		subnet, err := network.GetOrbStackSubnet()
+		if err != nil {
+			return fmt.Errorf("failed to get OrbStack subnet: %w", err)
+		}
+		interfaces, err := network.GetPhysicalInterfaces()
+		if err != nil {
+			return fmt.Errorf("failed to get physical interfaces: %w", err)
+		}
+		rules := network.GenerateNATRules(subnet, interfaces)
+		if err := WriteSharedRuleWithSudo(rules); err != nil {
+			return fmt.Errorf("failed to create NAT rules: %w", err)
+		}
+		progress(out, "→ NAT rules created for all interfaces\n")
+		return nil
+	}); err != nil {
+		return err
+	}
 
 	// Load or create state
 	st, isNew, err := state.LoadOrCreate(cwd, rt.Name())
@@ -169,6 +192,120 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
+	// Configure NAT rules if LAN access enabled (macOS only)
+	// Network-helper was already ensured early in the function.
+	// See AGD-023 for design decisions.
+	if goruntime.GOOS == "darwin" && network.HasLANAccess(cfg.Network.LANAccess) {
+		if err := configureNATRules(cwd, out); err != nil {
+			return fmt.Errorf("failed to configure LAN access: %w", err)
+		}
+	}
+
 	progress(out, "✓ Environment ready\n")
+	return nil
+}
+
+// ensureNetworkHelper checks if network-helper is needed and installed.
+// Call EARLY in runUp(), before drift check.
+// Returns error if user declines install.
+// The onInstall callback is called after successful install while sudo is still cached.
+// See AGD-023 for design decisions.
+func ensureNetworkHelper(cfg *config.Config, out io.Writer, onInstall func() error) error {
+	// Only applies to macOS with LAN access configured
+	if goruntime.GOOS != "darwin" || !network.HasLANAccess(cfg.Network.LANAccess) {
+		return nil
+	}
+
+	// Check runtime
+	isOrbStack, err := runtime.IsOrbStack()
+	if err != nil {
+		return fmt.Errorf("failed to detect runtime: %w", err)
+	}
+	if !isOrbStack {
+		progress(out, "→ LAN access: Docker Desktop detected, works natively\n")
+		return nil
+	}
+
+	progress(out, "→ LAN access: OrbStack detected\n")
+
+	// Check if network helper is installed and up to date
+	installed := network.IsNetworkHelperInstalled()
+	needsUpdate := IsNetworkHelperNeedsUpdate()
+
+	if !installed {
+		progress(out, "→ Network configuration requires network-helper.\n")
+		if !promptConfirm("Install now?") {
+			return fmt.Errorf("LAN access requires network-helper. Either:\n  - Run 'alca network-helper install' manually\n  - Remove network.lan-access from your config")
+		}
+	} else if needsUpdate {
+		progress(out, "→ Network helper needs update.\n")
+	} else {
+		return nil // Already installed and up to date
+	}
+
+	// Install or update network helper
+	if err := InstallNetworkHelper(); err != nil {
+		return fmt.Errorf("failed to install network-helper: %w", err)
+	}
+
+	// Call onInstall callback while sudo is still cached
+	if onInstall != nil {
+		if err := onInstall(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// configureNATRules sets up the NAT rules for LAN access.
+// Call AFTER container start. Assumes network-helper is already installed.
+// See AGD-023 for implementation details.
+func configureNATRules(projectDir string, out io.Writer) error {
+	// Check runtime - skip for Docker Desktop
+	isOrbStack, err := runtime.IsOrbStack()
+	if err != nil {
+		return fmt.Errorf("failed to detect runtime: %w", err)
+	}
+	if !isOrbStack {
+		return nil // Docker Desktop works natively, no NAT rules needed
+	}
+
+	// Get OrbStack subnet
+	subnet, err := network.GetOrbStackSubnet()
+	if err != nil {
+		return fmt.Errorf("failed to get OrbStack subnet: %w", err)
+	}
+
+	progress(out, "→ OrbStack subnet: %s\n", subnet)
+
+	// Check if rule update is needed (new interfaces detected)
+	needsUpdate, newInterfaces, err := network.NeedsRuleUpdate()
+	if err != nil {
+		return fmt.Errorf("failed to check rule update: %w", err)
+	}
+
+	if needsUpdate {
+		if len(newInterfaces) > 0 {
+			progress(out, "→ New network interfaces detected: %s\n", strings.Join(newInterfaces, ", "))
+		}
+		// Create/update shared NAT rule for all physical interfaces
+		interfaces, err := network.GetPhysicalInterfaces()
+		if err != nil {
+			return fmt.Errorf("failed to get physical interfaces: %w", err)
+		}
+		rules := network.GenerateNATRules(subnet, interfaces)
+		if err := WriteSharedRuleWithSudo(rules); err != nil {
+			return fmt.Errorf("failed to create shared NAT rule: %w", err)
+		}
+		progress(out, "→ NAT rules updated for all interfaces\n")
+	}
+
+	// Create project-specific file
+	projectContent := "# Project-specific rules for " + projectDir + "\n"
+	if err := WriteProjectFileWithSudo(projectDir, projectContent); err != nil {
+		return fmt.Errorf("failed to create project file: %w", err)
+	}
+
+	progress(out, "→ LAN access configured\n")
 	return nil
 }

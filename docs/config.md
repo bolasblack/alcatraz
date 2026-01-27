@@ -13,6 +13,7 @@ This document describes the `.alca.toml` configuration file format for Alcatraz.
 - [Includes](#includes)
 - [Field Reference](#field-reference)
 - [Runtime-Specific Notes](#runtime-specific-notes)
+- [Network Configuration](#network-configuration)
 - [Full Example](#full-example)
 
 ## Overview
@@ -122,6 +123,7 @@ See [AGD-022](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisio
 | `resources.memory` | string | No       | -                                        | Memory limit (e.g., "4g", "512m")              |
 | `resources.cpus`   | int    | No       | -                                        | CPU limit (e.g., 2, 4)                         |
 | `envs`             | table  | No       | See below                                | Environment variables for the container        |
+| `network.lan-access` | array | No      | `[]`                                     | LAN access configuration (macOS only)          |
 
 ### image
 
@@ -309,6 +311,74 @@ Resource limits are passed as container-level flags:
 
 > **macOS Users**: We recommend [OrbStack](https://orbstack.dev/) as it provides automatic memory management (shrinking unused memory), which colima and lima do not support.
 
+## Network Configuration
+
+Configure network access for containers. See [AGD-023](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-023_macos-lan-access-pf-anchor.md) for design rationale.
+
+### network.lan-access
+
+Allow containers to access LAN hosts.
+
+```toml
+[network]
+lan-access = ["*"]
+```
+
+- **Type**: array of strings
+- **Required**: No
+- **Default**: `[]` (no LAN access)
+- **Valid values**: `"*"` (allow all LAN access)
+
+#### Platform Behavior
+
+| Platform | Runtime | Behavior |
+|----------|---------|----------|
+| macOS | Docker Desktop | LAN access works natively, no additional setup |
+| macOS | OrbStack | Requires network-helper for NAT rules |
+| Linux | Docker/Podman | LAN access works natively |
+
+#### OrbStack Setup (macOS only)
+
+When using OrbStack on macOS, containers cannot access LAN hosts by default due to a NAT issue. Alcatraz provides a network helper to configure pf firewall rules.
+
+```bash
+# One-time installation (requires sudo)
+alca network-helper install
+
+# Check status
+alca network-helper status
+
+# Uninstall
+alca network-helper uninstall
+```
+
+**How it works**:
+
+1. On `alca up`, if `lan-access = ["*"]` is configured:
+   - Docker Desktop: No action needed
+   - OrbStack: Creates NAT rule in `/etc/pf.anchors/alcatraz/`
+
+2. On `alca down`:
+   - Removes project-specific rule file
+   - If no other projects use LAN access, removes shared NAT rule
+
+**Manual cleanup** (if alca is broken):
+
+```bash
+# View what alcatraz added
+sudo pfctl -a "alcatraz" -s all
+
+# Remove all alcatraz rules
+sudo pfctl -a "alcatraz" -F all
+
+# Remove LaunchDaemon
+sudo launchctl unload /Library/LaunchDaemons/com.alcatraz.pf-watcher.plist
+sudo rm /Library/LaunchDaemons/com.alcatraz.pf-watcher.plist
+
+# Remove rule files
+sudo rm -rf /etc/pf.anchors/alcatraz/
+```
+
 ## Full Example
 
 ```toml
@@ -341,4 +411,8 @@ cpus = 8
 [envs]
 NIXPKGS_ALLOW_UNFREE = "1"
 EDITOR = { value = "${EDITOR}", override_on_enter = true }
+
+# Network configuration (macOS only)
+[network]
+lan-access = ["*"]
 ```

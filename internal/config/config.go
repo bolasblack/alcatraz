@@ -1,15 +1,14 @@
 // Package config handles parsing and writing of Alcatraz configuration files (.alca.toml).
 // See AGD-009 for configuration format design decisions.
+// See AGD-022 for includes support and Config/RawConfig type separation.
 package config
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 
 	"github.com/invopop/jsonschema"
-	toml "github.com/pelletier/go-toml/v2"
 )
 
 // Commands defines the lifecycle commands for the container.
@@ -70,9 +69,26 @@ func (e *EnvValue) Expand(getenv func(string) string) string {
 	return getenv(matches[1])
 }
 
-// JSONSchema implements jsonschema.JSONSchemer to generate a schema that accepts
-// both string and object formats.
-func (EnvValue) JSONSchema() *jsonschema.Schema {
+// RawEnvValue is used in RawConfig for TOML parsing.
+// Underlying type is any to support flexible TOML decoding (string or object).
+// Implements JSONSchema to generate correct schema for editor autocomplete.
+type RawEnvValue = any
+
+// RawEnvValueMap is a map of environment variables for RawConfig.
+// Used for both TOML parsing (accepts any) and JSON schema generation.
+type RawEnvValueMap map[string]RawEnvValue
+
+// JSONSchema implements jsonschema.JSONSchemer to generate correct schema.
+func (RawEnvValueMap) JSONSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Type:                 "object",
+		AdditionalProperties: envValueSchema(),
+		Description:          "Environment variables for the container",
+	}
+}
+
+// envValueSchema returns the JSON schema for an environment variable value.
+func envValueSchema() *jsonschema.Schema {
 	props := jsonschema.NewProperties()
 	props.Set("value", &jsonschema.Schema{Type: "string", Description: "The value or ${VAR} reference"})
 	props.Set("override_on_enter", &jsonschema.Schema{Type: "boolean", Description: "Also set at docker exec time"})
@@ -108,16 +124,23 @@ func DefaultEnvs() map[string]EnvValue {
 	}
 }
 
+// Network defines network configuration for the container.
+// See AGD-023 for LAN access design decisions.
+type Network struct {
+	LANAccess []string `toml:"lan-access,omitempty" json:"lan-access,omitempty" jsonschema:"description=LAN access configuration (currently only '*' is supported)"`
+}
+
 // Config represents the Alcatraz container configuration (after processing).
 // This is the final merged config used internally by the program.
 type Config struct {
-	Image     string              `toml:"image" json:"image" jsonschema:"required,description=Container image to use"`
-	Workdir   string              `toml:"workdir,omitempty" json:"workdir,omitempty" jsonschema:"description=Working directory inside container"`
-	Runtime   RuntimeType         `toml:"runtime,omitempty" json:"runtime,omitempty" jsonschema:"enum=auto,enum=docker,description=Container runtime selection"`
-	Commands  Commands            `toml:"commands,omitempty" json:"commands,omitempty" jsonschema:"description=Lifecycle commands"`
-	Mounts    []string            `toml:"mounts,omitempty" json:"mounts,omitempty" jsonschema:"description=Additional bind mounts (source:target[:ro])"`
-	Resources Resources           `toml:"resources,omitempty" json:"resources,omitempty" jsonschema:"description=Container resource limits"`
-	Envs      map[string]EnvValue `toml:"envs,omitempty" json:"envs,omitempty" jsonschema:"description=Environment variables for the container"`
+	Image     string
+	Workdir   string
+	Runtime   RuntimeType
+	Commands  Commands
+	Mounts    []string
+	Resources Resources
+	Envs      map[string]EnvValue
+	Network   Network
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -163,30 +186,18 @@ func (c *Config) ValidateEnvs() error {
 	return nil
 }
 
-// rawConfig is an intermediate type for decoding TOML with flexible env values.
-type rawConfig struct {
-	Includes  []string       `toml:"includes,omitempty"`
-	Image     string         `toml:"image"`
-	Workdir   string         `toml:"workdir,omitempty"`
-	Runtime   RuntimeType    `toml:"runtime,omitempty"`
-	Commands  Commands       `toml:"commands,omitempty"`
-	Mounts    []string       `toml:"mounts,omitempty"`
-	Resources Resources      `toml:"resources,omitempty"`
-	Envs      map[string]any `toml:"envs,omitempty"`
-}
-
-// SchemaConfig is the exported type for JSON schema generation.
-// It represents what users can write in .alca.toml files.
-// Unlike rawConfig (used for parsing), this uses typed Envs for proper schema generation.
-type SchemaConfig struct {
-	Includes  []string            `toml:"includes,omitempty" json:"includes,omitempty" jsonschema:"description=Other config files to include and merge (supports glob patterns)"`
-	Image     string              `toml:"image" json:"image" jsonschema:"required,description=Container image to use"`
-	Workdir   string              `toml:"workdir,omitempty" json:"workdir,omitempty" jsonschema:"description=Working directory inside container"`
-	Runtime   RuntimeType         `toml:"runtime,omitempty" json:"runtime,omitempty" jsonschema:"enum=auto,enum=docker,description=Container runtime selection"`
-	Commands  Commands            `toml:"commands,omitempty" json:"commands,omitempty" jsonschema:"description=Lifecycle commands"`
-	Mounts    []string            `toml:"mounts,omitempty" json:"mounts,omitempty" jsonschema:"description=Additional bind mounts (source:target[:ro])"`
-	Resources Resources           `toml:"resources,omitempty" json:"resources,omitempty" jsonschema:"description=Container resource limits"`
-	Envs      map[string]EnvValue `toml:"envs,omitempty" json:"envs,omitempty" jsonschema:"description=Environment variables for the container"`
+// RawConfig represents the raw configuration as written in .alca.toml files.
+// Used for TOML parsing and JSON schema generation.
+type RawConfig struct {
+	Includes  []string       `toml:"includes,omitempty" json:"includes,omitempty" jsonschema:"description=Other config files to include and merge (supports glob patterns)"`
+	Image     string         `toml:"image" json:"image" jsonschema:"description=Container image to use"`
+	Workdir   string         `toml:"workdir,omitempty" json:"workdir,omitempty" jsonschema:"description=Working directory inside container"`
+	Runtime   RuntimeType    `toml:"runtime,omitempty" json:"runtime,omitempty" jsonschema:"enum=auto,enum=docker,description=Container runtime selection"`
+	Commands  Commands       `toml:"commands,omitempty" json:"commands,omitempty" jsonschema:"description=Lifecycle commands"`
+	Mounts    []string       `toml:"mounts,omitempty" json:"mounts,omitempty" jsonschema:"description=Additional bind mounts (source:target[:ro])"`
+	Resources Resources      `toml:"resources,omitempty" json:"resources,omitempty" jsonschema:"description=Container resource limits"`
+	Envs      RawEnvValueMap `toml:"envs,omitempty" json:"envs,omitempty"`
+	Network   Network        `toml:"network,omitempty" json:"network,omitempty" jsonschema:"description=Network configuration"`
 }
 
 // LoadConfig reads and parses a configuration file from the given path.
@@ -196,6 +207,11 @@ func LoadConfig(path string) (Config, error) {
 	cfg, err := LoadWithIncludes(path)
 	if err != nil {
 		return Config{}, err
+	}
+
+	// Validate required fields
+	if cfg.Image == "" {
+		return Config{}, fmt.Errorf("image field is required in the final merged .alca.toml configuration")
 	}
 
 	// Apply defaults for missing fields
@@ -227,23 +243,4 @@ func parseEnvValue(val any) (EnvValue, error) {
 	default:
 		return EnvValue{}, fmt.Errorf("invalid type: %T", val)
 	}
-}
-
-// SchemaComment is the TOML comment that references the JSON Schema for editor autocomplete.
-const SchemaComment = "#:schema https://raw.githubusercontent.com/bolasblack/alcatraz/refs/heads/master/alca-config.schema.json\n\n"
-
-// SaveConfig writes the configuration to the given path with schema comment header.
-func SaveConfig(path string, cfg Config) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	// Write schema comment for editor autocomplete support
-	if _, err := f.WriteString(SchemaComment); err != nil {
-		return err
-	}
-
-	return toml.NewEncoder(f).Encode(cfg)
 }
