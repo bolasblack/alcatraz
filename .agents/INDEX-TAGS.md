@@ -26,3 +26,4 @@ decisions/AGD-020_remove-apple-containerization-runtime.md: #macos, #runtime
 decisions/AGD-021_keep-cli-over-sdk-for-container-runtime.md: #runtime
 decisions/AGD-022_config-includes-support.md: #config
 decisions/AGD-023_macos-lan-access-pf-anchor.md: #macos, #network-isolation, #security, #config
+decisions/AGD-024_transactfs-ideal-model.md: #tooling, #security, #cli
