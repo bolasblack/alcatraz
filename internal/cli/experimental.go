@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
@@ -55,7 +56,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Using runtime: %s\n", rt.Name())
+	progressStep(os.Stdout, "Using runtime: %s\n", rt.Name())
 
 	// Load state (required)
 	st, err := loadRequiredState(cwd)
@@ -74,7 +75,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("container not found: run 'alca up' first to create the container")
 	}
 
-	fmt.Println("Reloading configuration...")
+	progressStep(os.Stdout, "Reloading configuration...\n")
 
 	// Reload the container
 	if err := rt.Reload(ctx, cfg, cwd, st); err != nil {
@@ -90,6 +91,6 @@ func runReload(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 
-	fmt.Println("Configuration reloaded successfully.")
+	progressDone(os.Stdout, "Configuration reloaded successfully.\n")
 	return nil
 }

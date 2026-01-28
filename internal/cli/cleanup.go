@@ -78,7 +78,8 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 
 	// Delete containers
 	deleted := deleteContainers(ctx, rt, toDelete)
-	fmt.Printf("\nRemoved %d container(s).\n", deleted)
+	fmt.Println("") // spacing after inline progress
+	progressDone(os.Stdout, "Removed %d container(s).\n", deleted)
 	return nil
 }
 
@@ -183,11 +184,11 @@ func parseContainerSelection(input string, orphans []runtime.ContainerInfo) []ru
 func deleteContainers(ctx context.Context, rt runtime.Runtime, containers []runtime.ContainerInfo) int {
 	deleted := 0
 	for _, c := range containers {
-		fmt.Printf("Removing %s... ", c.Name)
+		progressStep(os.Stdout, "Removing %s... ", c.Name)
 		if err := rt.RemoveContainer(ctx, c.Name); err != nil {
-			fmt.Printf("failed: %v\n", err)
+			progress(os.Stdout, "failed: %v\n", err)
 		} else {
-			fmt.Println("done")
+			progress(os.Stdout, "done\n")
 			deleted++
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/bolasblack/alcatraz/internal/config"
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 // SelectRuntime returns a runtime based on config and availability.
@@ -58,7 +59,7 @@ func selectLinuxRuntime(progressOut io.Writer) (Runtime, error) {
 	// Fall back to Docker
 	docker := NewDocker()
 	if docker.Available() {
-		progressStep(progressOut, "Using Docker (Podman not available)\n")
+		util.ProgressStep(progressOut, "Using Docker (Podman not available)\n")
 		return docker, nil
 	}
 

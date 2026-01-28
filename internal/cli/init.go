@@ -61,7 +61,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to write configuration: %w", err)
 	}
 
-	fmt.Printf("Created %s\n", configPath)
+	progressDone(os.Stdout, "Created %s\n", configPath)
 	fmt.Println("Edit this file to customize your container settings.")
 	return nil
 }

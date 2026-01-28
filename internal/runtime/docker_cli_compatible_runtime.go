@@ -11,6 +11,7 @@ import (
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/state"
+	"github.com/bolasblack/alcatraz/internal/util"
 	"golang.org/x/term"
 )
 
@@ -55,29 +56,29 @@ func (r *dockerCLICompatibleRuntime) Up(ctx context.Context, cfg *config.Config,
 	// Check if container already exists
 	status, err := r.Status(ctx, projectDir, st)
 	if err == nil && status.State == StateRunning {
-		progressStep(progressOut, "Container already running: %s\n", name)
+		util.ProgressStep(progressOut, "Container already running: %s\n", name)
 		return nil
 	}
 
 	// Remove existing stopped container if any
 	if status.State == StateStopped {
-		progressStep(progressOut, "Removing stopped container: %s\n", status.Name)
+		util.ProgressStep(progressOut, "Removing stopped container: %s\n", status.Name)
 		if err := r.removeContainer(ctx, status.Name); err != nil {
 			return fmt.Errorf("failed to remove stopped container: %w", err)
 		}
 	}
 
-	progressStep(progressOut, "Pulling image: %s\n", cfg.Image)
+	util.ProgressStep(progressOut, "Pulling image: %s\n", cfg.Image)
 
 	args := r.buildRunArgs(cfg, projectDir, st, name)
 
-	progressStep(progressOut, "Creating container: %s\n", name)
+	util.ProgressStep(progressOut, "Creating container: %s\n", name)
 	cmd := exec.CommandContext(ctx, r.command, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s run failed: %w: %s", r.command, err, string(output))
 	}
-	progressStep(progressOut, "Container started\n")
+	util.ProgressStep(progressOut, "Container started\n")
 
 	// Run the up command if specified
 	if cfg.Commands.Up != "" {
@@ -134,7 +135,7 @@ func (r *dockerCLICompatibleRuntime) buildRunArgs(cfg *config.Config, projectDir
 
 // executeUpCommand runs the post-creation setup command.
 func (r *dockerCLICompatibleRuntime) executeUpCommand(ctx context.Context, containerName, command string, progressOut io.Writer) error {
-	progressStep(progressOut, "Running setup command...\n")
+	util.ProgressStep(progressOut, "Running setup command...\n")
 	execArgs := []string{"exec", containerName, "sh", "-c", command}
 	cmd := exec.CommandContext(ctx, r.command, execArgs...)
 	cmd.Stdout = progressOut
@@ -324,7 +325,7 @@ func (r *dockerCLICompatibleRuntime) ListContainers(ctx context.Context) ([]Cont
 		info, err := r.getContainerInfo(ctx, name)
 		if err != nil {
 			// Log warning instead of silently ignoring
-			progressStep(os.Stderr, "Warning: failed to inspect container %s: %v\n", name, err)
+			util.ProgressStep(os.Stderr, "Warning: failed to inspect container %s: %v\n", name, err)
 			continue
 		}
 		containers = append(containers, info)

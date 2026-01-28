@@ -5,25 +5,11 @@ package runtime
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/state"
 )
-
-// progress writes a progress message to the given writer.
-// If writer is nil, the message is silently discarded.
-func progress(w io.Writer, format string, args ...any) {
-	if w != nil {
-		fmt.Fprintf(w, format, args...)
-	}
-}
-
-// progressStep writes a progress message with → prefix (step in progress).
-func progressStep(w io.Writer, format string, args ...any) {
-	progress(w, "→ "+format, args...)
-}
 
 // Common errors returned by runtime implementations.
 var (

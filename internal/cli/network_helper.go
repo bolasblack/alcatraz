@@ -115,7 +115,7 @@ func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("")
-	fmt.Println("Network helper installed successfully.")
+	progressDone(os.Stdout, "Network helper installed successfully.\n")
 	return nil
 }
 
@@ -166,7 +166,7 @@ func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
 
 	// Perform uninstallation using network package
 	warnings := network.UninstallHelper(ctx, func(format string, args ...any) {
-		fmt.Printf(format, args...)
+		progressStep(os.Stdout, format, args...)
 	})
 	for _, w := range warnings {
 		fmt.Printf("Warning: %v\n", w)
@@ -181,13 +181,13 @@ func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
 
 	// Flush pf rules after files are removed
 	if err := network.FlushPfRulesAfterUninstall(func(format string, args ...any) {
-		fmt.Printf(format, args...)
+		progressStep(os.Stdout, format, args...)
 	}); err != nil {
 		fmt.Printf("Warning: %v\n", err)
 	}
 
 	fmt.Println("")
-	fmt.Println("Network helper uninstalled successfully.")
+	progressDone(os.Stdout, "Network helper uninstalled successfully.\n")
 	return nil
 }
 
