@@ -45,7 +45,7 @@ func TestTransactFs_Commit_Success(t *testing.T) {
 	tfs := New(WithActualFs(actualFs))
 
 	// Stage a file
-	tfs.WriteFile("/tmp/test", []byte("content"), 0644)
+	afero.WriteFile(tfs,"/tmp/test", []byte("content"), 0644)
 
 	// Commit with success callback
 	_, err := tfs.Commit(func(ctx CommitContext) (*CommitOpsResult, error) {

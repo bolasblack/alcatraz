@@ -5,7 +5,6 @@
 package transact
 
 import (
-	"io"
 	"os"
 	"slices"
 	"sync"
@@ -63,7 +62,7 @@ type TransactFs struct {
 	// deletedPaths tracks paths marked for deletion
 	deletedPaths []string
 	// openHandles tracks all open file handles for snapshot on delete
-	openHandles map[*wrapperFile]struct{}
+	openHandles map[*TransactFsFile]struct{}
 	// mu protects concurrent access
 	mu sync.RWMutex
 }
@@ -84,7 +83,7 @@ func New(opts ...Option) *TransactFs {
 	t := &TransactFs{
 		staged:      afero.NewMemMapFs(),
 		actual:      afero.NewOsFs(),
-		openHandles: make(map[*wrapperFile]struct{}),
+		openHandles: make(map[*TransactFsFile]struct{}),
 	}
 	for _, opt := range opts {
 		opt(t)
@@ -151,7 +150,7 @@ func (t *TransactFs) OpenFile(name string, flag int, perm os.FileMode) (afero.Fi
 		}
 		t.trackPath(name)
 
-		wrapper := &wrapperFile{
+		wrapper := &TransactFsFile{
 			tfs:     t,
 			path:    name,
 			inner:   f,
@@ -175,7 +174,7 @@ func (t *TransactFs) OpenFile(name string, flag int, perm os.FileMode) (afero.Fi
 		return nil, os.ErrNotExist
 	}
 
-	wrapper := &wrapperFile{
+	wrapper := &TransactFsFile{
 		tfs:     t,
 		path:    name,
 		isWrite: false,
@@ -223,6 +222,18 @@ func (t *TransactFs) Chmod(path string, mode os.FileMode) error {
 func (t *TransactFs) Remove(path string) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	// Check if already deleted
+	if slices.Contains(t.deletedPaths, path) {
+		return &os.PathError{Op: "remove", Path: path, Err: os.ErrNotExist}
+	}
+
+	// Check if file exists in staged or actual
+	_, stagedErr := t.staged.Stat(path)
+	_, actualErr := t.actual.Stat(path)
+	if stagedErr != nil && actualErr != nil {
+		return &os.PathError{Op: "remove", Path: path, Err: os.ErrNotExist}
+	}
 
 	// Snapshot content for any open handles on this path
 	for handle := range t.openHandles {
@@ -415,36 +426,6 @@ func (t *TransactFs) Chtimes(name string, atime time.Time, mtime time.Time) erro
 // -----------------------------------------------------------------------------
 // TransactFs: Extension methods (not part of afero.Fs)
 // -----------------------------------------------------------------------------
-
-// WriteFile stages a file write in memory.
-func (t *TransactFs) WriteFile(path string, content []byte, perm os.FileMode) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	// If path was marked for deletion, resurrect it
-	t.deletedPaths = slices.DeleteFunc(t.deletedPaths, func(p string) bool {
-		return p == path
-	})
-
-	// Ensure parent directory exists in staged
-	if err := t.staged.MkdirAll(parentDir(path), 0755); err != nil {
-		return err
-	}
-
-	if err := afero.WriteFile(t.staged, path, content, perm); err != nil {
-		return err
-	}
-	t.trackPath(path)
-	return nil
-}
-
-// ReadFile reads from CopyOnWrite overlay (staged first, then actual).
-func (t *TransactFs) ReadFile(path string) ([]byte, error) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.readFileLocked(path)
-}
-
 // readFileLocked reads from cow overlay. Caller must hold at least RLock.
 func (t *TransactFs) readFileLocked(path string) ([]byte, error) {
 	// Check if marked for deletion
@@ -549,203 +530,3 @@ func parentDir(path string) string {
 	return "."
 }
 
-// =============================================================================
-// wrapperFile: implements afero.File with CopyOnWrite semantics
-// =============================================================================
-
-// Compile-time check: wrapperFile implements afero.File
-var _ afero.File = (*wrapperFile)(nil)
-
-// wrapperFile wraps file operations with CopyOnWrite semantics.
-type wrapperFile struct {
-	tfs      *TransactFs
-	path     string
-	pos      int64
-	isWrite  bool
-	inner    afero.File // Only set for write mode
-	deleted  bool       // True if file was deleted while handle was open
-	snapshot []byte     // Content snapshot (set when deleted)
-}
-
-// -----------------------------------------------------------------------------
-// wrapperFile: afero.File interface implementation
-// -----------------------------------------------------------------------------
-
-func (w *wrapperFile) Close() error {
-	w.tfs.mu.Lock()
-	delete(w.tfs.openHandles, w)
-	w.tfs.mu.Unlock()
-
-	if w.inner != nil {
-		return w.inner.Close()
-	}
-	return nil
-}
-
-func (w *wrapperFile) Read(p []byte) (int, error) {
-	if w.isWrite && w.inner != nil {
-		return w.inner.Read(p)
-	}
-
-	// Read from appropriate source
-	var content []byte
-	var err error
-
-	if w.deleted {
-		// Read from snapshot
-		content = w.snapshot
-	} else {
-		// Read from cow overlay
-		w.tfs.mu.RLock()
-		content, err = w.tfs.readFileLocked(w.path)
-		w.tfs.mu.RUnlock()
-		if err != nil {
-			return 0, err
-		}
-	}
-
-	if w.pos >= int64(len(content)) {
-		return 0, io.EOF
-	}
-
-	n := copy(p, content[w.pos:])
-	w.pos += int64(n)
-	return n, nil
-}
-
-func (w *wrapperFile) ReadAt(p []byte, off int64) (int, error) {
-	if w.isWrite && w.inner != nil {
-		return w.inner.ReadAt(p, off)
-	}
-
-	var content []byte
-	var err error
-
-	if w.deleted {
-		content = w.snapshot
-	} else {
-		w.tfs.mu.RLock()
-		content, err = w.tfs.readFileLocked(w.path)
-		w.tfs.mu.RUnlock()
-		if err != nil {
-			return 0, err
-		}
-	}
-
-	if off >= int64(len(content)) {
-		return 0, io.EOF
-	}
-
-	n := copy(p, content[off:])
-	if n < len(p) {
-		return n, io.EOF
-	}
-	return n, nil
-}
-
-func (w *wrapperFile) Seek(offset int64, whence int) (int64, error) {
-	if w.isWrite && w.inner != nil {
-		return w.inner.Seek(offset, whence)
-	}
-
-	var size int64
-	if w.deleted {
-		size = int64(len(w.snapshot))
-	} else {
-		w.tfs.mu.RLock()
-		content, err := w.tfs.readFileLocked(w.path)
-		w.tfs.mu.RUnlock()
-		if err != nil {
-			return 0, err
-		}
-		size = int64(len(content))
-	}
-
-	var newPos int64
-	switch whence {
-	case io.SeekStart:
-		newPos = offset
-	case io.SeekCurrent:
-		newPos = w.pos + offset
-	case io.SeekEnd:
-		newPos = size + offset
-	}
-
-	if newPos < 0 {
-		return 0, os.ErrInvalid
-	}
-	w.pos = newPos
-	return newPos, nil
-}
-
-func (w *wrapperFile) Write(p []byte) (int, error) {
-	if w.inner != nil {
-		n, err := w.inner.Write(p)
-		if err == nil {
-			w.tfs.mu.Lock()
-			w.tfs.trackPath(w.path)
-			w.tfs.mu.Unlock()
-		}
-		return n, err
-	}
-	return 0, os.ErrPermission
-}
-
-func (w *wrapperFile) WriteAt(p []byte, off int64) (int, error) {
-	if w.inner != nil {
-		n, err := w.inner.WriteAt(p, off)
-		if err == nil {
-			w.tfs.mu.Lock()
-			w.tfs.trackPath(w.path)
-			w.tfs.mu.Unlock()
-		}
-		return n, err
-	}
-	return 0, os.ErrPermission
-}
-
-func (w *wrapperFile) WriteString(s string) (int, error) {
-	return w.Write([]byte(s))
-}
-
-func (w *wrapperFile) Name() string {
-	return w.path
-}
-
-func (w *wrapperFile) Readdir(count int) ([]os.FileInfo, error) {
-	return nil, os.ErrInvalid
-}
-
-func (w *wrapperFile) Readdirnames(n int) ([]string, error) {
-	return nil, os.ErrInvalid
-}
-
-func (w *wrapperFile) Stat() (os.FileInfo, error) {
-	if w.inner != nil {
-		return w.inner.Stat()
-	}
-
-	w.tfs.mu.RLock()
-	defer w.tfs.mu.RUnlock()
-
-	// Try staged first
-	if info, err := w.tfs.staged.Stat(w.path); err == nil {
-		return info, nil
-	}
-	// Fallback to actual
-	return w.tfs.actual.Stat(w.path)
-}
-
-func (w *wrapperFile) Sync() error {
-	if w.inner != nil {
-		return w.inner.Sync()
-	}
-	return nil
-}
-
-func (w *wrapperFile) Truncate(size int64) error {
-	if w.inner != nil {
-		return w.inner.Truncate(size)
-	}
-	return os.ErrPermission
-}

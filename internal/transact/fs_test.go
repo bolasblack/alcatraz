@@ -1,7 +1,6 @@
 package transact
 
 import (
-	"os"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -10,7 +9,7 @@ import (
 func TestNeedsCommit(t *testing.T) {
 	// Test with changes
 	tfs := New(WithActualFs(afero.NewMemMapFs()))
-	if err := tfs.WriteFile("/etc/new", []byte("content"), 0644); err != nil {
+	if err := afero.WriteFile(tfs,"/etc/new", []byte("content"), 0644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	if !tfs.NeedsCommit() {
@@ -32,25 +31,10 @@ func TestNeedsCommit(t *testing.T) {
 	}
 }
 
-func TestTransactFs_MkdirAll(t *testing.T) {
-	tfs := New(WithActualFs(afero.NewMemMapFs()))
-
-	err := tfs.MkdirAll("/etc/test/nested", 0755)
-	if err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
-	}
-
-	// Verify we can write to the created directory
-	err = tfs.WriteFile("/etc/test/nested/file.txt", []byte("content"), 0644)
-	if err != nil {
-		t.Fatalf("WriteFile after MkdirAll failed: %v", err)
-	}
-}
-
 func TestTransactFs_WriteFile(t *testing.T) {
 	tfs := New(WithActualFs(afero.NewMemMapFs()))
 
-	err := tfs.WriteFile("/etc/test/file.txt", []byte("content"), 0644)
+	err := afero.WriteFile(tfs,"/etc/test/file.txt", []byte("content"), 0644)
 	if err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
@@ -124,37 +108,6 @@ func TestTransactFs_Remove(t *testing.T) {
 	}
 }
 
-// Regression test: WriteFile delegates to staged fs without implicit MkdirAll.
-// Note: MemMapFs auto-creates parent dirs, so we use a strict wrapper to verify.
-func TestWriteFile_NoParentDir(t *testing.T) {
-	// Use strictMkdirFs that tracks MkdirAll calls
-	strictFs := &strictMkdirFs{Fs: afero.NewMemMapFs()}
-	tfs := &TransactFs{
-		staged:      strictFs,
-		actual:      afero.NewMemMapFs(),
-		openHandles: make(map[*wrapperFile]struct{}),
-	}
-
-	// WriteFile now calls MkdirAll internally for convenience
-	_ = tfs.WriteFile("/some/path/file.txt", []byte("content"), 0644)
-
-	// With the new implementation, WriteFile does ensure parent dirs
-	if !strictFs.mkdirAllCalled {
-		t.Error("WriteFile should call MkdirAll internally for convenience")
-	}
-}
-
-// strictMkdirFs tracks if MkdirAll was called
-type strictMkdirFs struct {
-	afero.Fs
-	mkdirAllCalled bool
-}
-
-func (s *strictMkdirFs) MkdirAll(path string, perm os.FileMode) error {
-	s.mkdirAllCalled = true
-	return s.Fs.MkdirAll(path, perm)
-}
-
 // Test that ReadFile reads from staged first (CopyOnWrite semantics)
 func TestReadFile_CopyOnWrite(t *testing.T) {
 	actualFs := afero.NewMemMapFs()
@@ -169,7 +122,7 @@ func TestReadFile_CopyOnWrite(t *testing.T) {
 	tfs := New(WithActualFs(actualFs))
 
 	// ReadFile should return actual content before any writes
-	content, err := tfs.ReadFile("/etc/test")
+	content, err := afero.ReadFile(tfs,"/etc/test")
 	if err != nil {
 		t.Fatalf("ReadFile failed: %v", err)
 	}
@@ -178,12 +131,12 @@ func TestReadFile_CopyOnWrite(t *testing.T) {
 	}
 
 	// Write new content to staged
-	if err := tfs.WriteFile("/etc/test", []byte("updated"), 0644); err != nil {
+	if err := afero.WriteFile(tfs,"/etc/test", []byte("updated"), 0644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
 	// ReadFile should return staged content (CopyOnWrite semantics)
-	content, err = tfs.ReadFile("/etc/test")
+	content, err = afero.ReadFile(tfs,"/etc/test")
 	if err != nil {
 		t.Fatalf("ReadFile failed: %v", err)
 	}

@@ -82,7 +82,7 @@ func TestIdeal_ReadFallbackToActual(t *testing.T) {
 
 	tfs := New(WithActualFs(actual))
 
-	content, err := tfs.ReadFile("/test")
+	content, err := afero.ReadFile(tfs,"/test")
 	require.NoError(t, err)
 	assert.Equal(t, "actual-content", string(content))
 }
@@ -93,9 +93,9 @@ func TestIdeal_ReadPrefersStaged(t *testing.T) {
 	afero.WriteFile(actual, "/test", []byte("actual-content"), 0644)
 
 	tfs := New(WithActualFs(actual))
-	tfs.WriteFile("/test", []byte("staged-content"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("staged-content"), 0644)
 
-	content, err := tfs.ReadFile("/test")
+	content, err := afero.ReadFile(tfs,"/test")
 	require.NoError(t, err)
 	assert.Equal(t, "staged-content", string(content))
 }
@@ -106,14 +106,14 @@ func TestIdeal_WriteGoesToStaged(t *testing.T) {
 	afero.WriteFile(actual, "/test", []byte("original"), 0644)
 
 	tfs := New(WithActualFs(actual))
-	tfs.WriteFile("/test", []byte("modified"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("modified"), 0644)
 
 	// actual should be unchanged
 	actualContent, _ := afero.ReadFile(actual, "/test")
 	assert.Equal(t, "original", string(actualContent))
 
 	// tfs should return staged content
-	tfsContent, _ := tfs.ReadFile("/test")
+	tfsContent, _ := afero.ReadFile(tfs,"/test")
 	assert.Equal(t, "modified", string(tfsContent))
 }
 
@@ -134,7 +134,7 @@ func TestIdeal_ReadAfterWrite_BeforeCommit(t *testing.T) {
 	assert.Equal(t, "original", string(content))
 
 	// Write new content
-	tfs.WriteFile("/test", []byte("new-content"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("new-content"), 0644)
 
 	// Read via same handle should see new content (CopyOnWrite semantics)
 	f.Seek(0, io.SeekStart)
@@ -152,7 +152,7 @@ func TestIdeal_CommitWritesToActual(t *testing.T) {
 	afero.WriteFile(actual, "/test", []byte("original"), 0644)
 
 	tfs := New(WithActualFs(actual))
-	tfs.WriteFile("/test", []byte("committed"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("committed"), 0644)
 
 	_, err := tfs.Commit(successCommitFunc())
 	require.NoError(t, err)
@@ -167,7 +167,7 @@ func TestIdeal_CommitResetsStaged(t *testing.T) {
 	actual := afero.NewMemMapFs()
 
 	tfs := New(WithActualFs(actual))
-	tfs.WriteFile("/test", []byte("content"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("content"), 0644)
 
 	tfs.Commit(successCommitFunc())
 
@@ -188,8 +188,8 @@ func TestIdeal_CommitCallback_ReceivesCorrectOps(t *testing.T) {
 	afero.WriteFile(actual, "/existing", []byte("original"), 0644)
 
 	tfs := New(WithActualFs(actual))
-	tfs.WriteFile("/existing", []byte("modified"), 0644)
-	tfs.WriteFile("/newfile", []byte("new"), 0644)
+	afero.WriteFile(tfs,"/existing", []byte("modified"), 0644)
+	afero.WriteFile(tfs,"/newfile", []byte("new"), 0644)
 	tfs.Remove("/todelete")
 
 	var receivedOps []FileOp
@@ -221,7 +221,7 @@ func TestIdeal_CommitCallback_FailurePreservesStaged(t *testing.T) {
 	afero.WriteFile(actual, "/test", []byte("original"), 0644)
 
 	tfs := New(WithActualFs(actual))
-	tfs.WriteFile("/test", []byte("staged-content"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("staged-content"), 0644)
 
 	// Commit with failing callback
 	expectedErr := errors.New("commit failed")
@@ -233,7 +233,7 @@ func TestIdeal_CommitCallback_FailurePreservesStaged(t *testing.T) {
 	assert.Equal(t, expectedErr, err)
 
 	// Staged should be preserved - can still read staged content
-	content, _ := tfs.ReadFile("/test")
+	content, _ := afero.ReadFile(tfs,"/test")
 	assert.Equal(t, "staged-content", string(content))
 
 	// NeedsCommit should still be true
@@ -248,7 +248,7 @@ func TestIdeal_CommitCallback_FailureAllowsRetry(t *testing.T) {
 	actual := afero.NewMemMapFs()
 
 	tfs := New(WithActualFs(actual))
-	tfs.WriteFile("/test", []byte("content"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("content"), 0644)
 
 	// First commit fails
 	attemptCount := 0
@@ -291,7 +291,7 @@ func TestIdeal_CommitCallback_PartialWriteOnFailure(t *testing.T) {
 	afero.WriteFile(actualFs, "/test", []byte("original"), 0644)
 
 	tfs := New(WithActualFs(actualFs))
-	tfs.WriteFile("/test", []byte("new-content"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("new-content"), 0644)
 
 	// Callback that writes to actual but then fails
 	_, err := tfs.Commit(func(ctx CommitContext) (*CommitOpsResult, error) {
@@ -302,7 +302,7 @@ func TestIdeal_CommitCallback_PartialWriteOnFailure(t *testing.T) {
 	assert.Error(t, err)
 
 	// Staged should still be preserved
-	content, _ := tfs.ReadFile("/test")
+	content, _ := afero.ReadFile(tfs,"/test")
 	assert.Equal(t, "new-content", string(content))
 
 	// actual may have partial write (this is expected - caller's responsibility)
@@ -316,7 +316,7 @@ func TestIdeal_CommitCallback_ReceivesContext(t *testing.T) {
 	afero.WriteFile(actualFs, "/test", []byte("original"), 0644)
 
 	tfs := New(WithActualFs(actualFs))
-	tfs.WriteFile("/test", []byte("new"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("new"), 0644)
 
 	var receivedCtx CommitContext
 	tfs.Commit(func(ctx CommitContext) (*CommitOpsResult, error) {
@@ -342,7 +342,7 @@ func TestIdeal_CommitCallback_ReturnsOpsResult(t *testing.T) {
 	actual := afero.NewMemMapFs()
 
 	tfs := New(WithActualFs(actual))
-	tfs.WriteFile("/test", []byte("content"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("content"), 0644)
 
 	result, err := tfs.Commit(func(ctx CommitContext) (*CommitOpsResult, error) {
 		for _, op := range ctx.Ops {
@@ -362,7 +362,7 @@ func TestIdeal_CommitCallback_ReturnsNilOpsResult(t *testing.T) {
 	actual := afero.NewMemMapFs()
 
 	tfs := New(WithActualFs(actual))
-	tfs.WriteFile("/test", []byte("content"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("content"), 0644)
 
 	result, err := tfs.Commit(func(ctx CommitContext) (*CommitOpsResult, error) {
 		for _, op := range ctx.Ops {
@@ -382,7 +382,7 @@ func TestIdeal_CommitNewFile(t *testing.T) {
 	actual := afero.NewMemMapFs()
 
 	tfs := New(WithActualFs(actual))
-	tfs.WriteFile("/newfile", []byte("new"), 0644)
+	afero.WriteFile(tfs,"/newfile", []byte("new"), 0644)
 
 	tfs.Commit(successCommitFunc())
 
@@ -424,7 +424,7 @@ func TestIdeal_OldHandle_OpenedBeforeWrite_SeesNewContentAfterCommit(t *testing.
 	defer f.Close()
 
 	// Write and Commit
-	tfs.WriteFile("/test", []byte("committed"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("committed"), 0644)
 	tfs.Commit(successCommitFunc())
 
 	// Old handle should see committed content
@@ -442,7 +442,7 @@ func TestIdeal_OldHandle_OpenedAfterWrite_SeesNewContentAfterCommit(t *testing.T
 	tfs := New(WithActualFs(actual))
 
 	// Write first
-	tfs.WriteFile("/test", []byte("staged"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("staged"), 0644)
 
 	// Open handle AFTER write
 	f, err := tfs.Open("/test")
@@ -475,7 +475,7 @@ func TestIdeal_OldHandle_MultipleHandles_AllSeeNewContentAfterCommit(t *testing.
 	defer f1.Close()
 
 	// Write
-	tfs.WriteFile("/test", []byte("staged"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("staged"), 0644)
 
 	// Handle 2: opened after write
 	f2, _ := tfs.Open("/test")
@@ -555,7 +555,7 @@ func TestIdeal_OldHandle_WriteRemoveCommit_SeesWrittenContent(t *testing.T) {
 	defer f.Close()
 
 	// Write new content
-	tfs.WriteFile("/test", []byte("written-before-delete"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("written-before-delete"), 0644)
 
 	// Remove
 	tfs.Remove("/test")
@@ -579,7 +579,7 @@ func TestIdeal_OldHandle_WriteRemoveCommit_HandleOpenedAfterWrite(t *testing.T) 
 	tfs := New(WithActualFs(actual))
 
 	// Write new content
-	tfs.WriteFile("/test", []byte("written"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("written"), 0644)
 
 	// Open handle after write
 	f, err := tfs.Open("/test")
@@ -614,7 +614,7 @@ func TestIdeal_OldHandle_PositionPreservedAfterCommit(t *testing.T) {
 	f.Seek(5, io.SeekStart)
 
 	// Write longer content and commit
-	tfs.WriteFile("/test", []byte("ABCDEFGHIJKLMNOP"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("ABCDEFGHIJKLMNOP"), 0644)
 	tfs.Commit(successCommitFunc())
 
 	// Read from position 5 should return "FGHIJKLMNOP"
@@ -635,7 +635,7 @@ func TestIdeal_OldHandle_PositionBeyondNewLength(t *testing.T) {
 	f.Seek(8, io.SeekStart)
 
 	// Write shorter content and commit
-	tfs.WriteFile("/test", []byte("ABC"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("ABC"), 0644)
 	tfs.Commit(successCommitFunc())
 
 	// Read should return EOF (position 8 is beyond length 3)
@@ -657,24 +657,24 @@ func TestIdeal_MultipleCommits(t *testing.T) {
 	tfs := New(WithActualFs(actual))
 
 	// First cycle
-	tfs.WriteFile("/test", []byte("commit1"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("commit1"), 0644)
 	tfs.Commit(successCommitFunc())
 
-	content, _ := tfs.ReadFile("/test")
+	content, _ := afero.ReadFile(tfs,"/test")
 	assert.Equal(t, "commit1", string(content))
 
 	// Second cycle
-	tfs.WriteFile("/test", []byte("commit2"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("commit2"), 0644)
 	tfs.Commit(successCommitFunc())
 
-	content, _ = tfs.ReadFile("/test")
+	content, _ = afero.ReadFile(tfs,"/test")
 	assert.Equal(t, "commit2", string(content))
 
 	// Third cycle with handle
 	f, _ := tfs.Open("/test")
 	defer f.Close()
 
-	tfs.WriteFile("/test", []byte("commit3"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("commit3"), 0644)
 	tfs.Commit(successCommitFunc())
 
 	f.Seek(0, io.SeekStart)
@@ -693,7 +693,7 @@ func TestIdeal_HandleAcrossMultipleCommits(t *testing.T) {
 	defer f.Close()
 
 	// First commit
-	tfs.WriteFile("/test", []byte("commit1"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("commit1"), 0644)
 	tfs.Commit(successCommitFunc())
 
 	f.Seek(0, io.SeekStart)
@@ -701,7 +701,7 @@ func TestIdeal_HandleAcrossMultipleCommits(t *testing.T) {
 	assert.Equal(t, "commit1", string(c))
 
 	// Second commit
-	tfs.WriteFile("/test", []byte("commit2"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("commit2"), 0644)
 	tfs.Commit(successCommitFunc())
 
 	f.Seek(0, io.SeekStart)
@@ -727,7 +727,7 @@ func TestIdeal_OpenFileWrite_ContentVisibleViaRead(t *testing.T) {
 	fw.Close()
 
 	// Read via different method
-	content, _ := tfs.ReadFile("/test")
+	content, _ := afero.ReadFile(tfs,"/test")
 	assert.Equal(t, "written-via-handle", string(content))
 }
 
@@ -801,7 +801,7 @@ func TestIdeal_ReadNonExistentFile(t *testing.T) {
 	actual := afero.NewMemMapFs()
 	tfs := New(WithActualFs(actual))
 
-	_, err := tfs.ReadFile("/nonexistent")
+	_, err := afero.ReadFile(tfs,"/nonexistent")
 	assert.Error(t, err)
 }
 
@@ -810,9 +810,9 @@ func TestIdeal_WriteNewFile_ReadBeforeCommit(t *testing.T) {
 	actual := afero.NewMemMapFs()
 	tfs := New(WithActualFs(actual))
 
-	tfs.WriteFile("/newfile", []byte("new-content"), 0644)
+	afero.WriteFile(tfs,"/newfile", []byte("new-content"), 0644)
 
-	content, err := tfs.ReadFile("/newfile")
+	content, err := afero.ReadFile(tfs,"/newfile")
 	require.NoError(t, err)
 	assert.Equal(t, "new-content", string(content))
 }
@@ -826,7 +826,7 @@ func TestIdeal_RemoveBeforeCommit_ReadFails(t *testing.T) {
 	tfs.Remove("/test")
 
 	// Read should fail (file marked for deletion)
-	_, err := tfs.ReadFile("/test")
+	_, err := afero.ReadFile(tfs,"/test")
 	assert.Error(t, err)
 }
 
@@ -837,9 +837,9 @@ func TestIdeal_WriteAfterRemove_Resurrects(t *testing.T) {
 
 	tfs := New(WithActualFs(actual))
 	tfs.Remove("/test")
-	tfs.WriteFile("/test", []byte("resurrected"), 0644)
+	afero.WriteFile(tfs,"/test", []byte("resurrected"), 0644)
 
-	content, err := tfs.ReadFile("/test")
+	content, err := afero.ReadFile(tfs,"/test")
 	require.NoError(t, err)
 	assert.Equal(t, "resurrected", string(content))
 
