@@ -4,12 +4,13 @@
 package network
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/bolasblack/alcatraz/internal/sudo"
+	"github.com/bolasblack/alcatraz/internal/util"
+	"github.com/spf13/afero"
 )
 
 // pf.conf constants.
@@ -23,11 +24,12 @@ const (
 // EnsurePfAnchor adds nat-anchor "alcatraz" to /etc/pf.conf if not present.
 // Also handles migration from old 'alcatraz/*' wildcard format.
 // IMPORTANT: nat-anchor lines must come BEFORE anchor lines in pf.conf.
-func EnsurePfAnchor() error {
+func EnsurePfAnchor(ctx context.Context) error {
+	fs := util.MustGetFs(ctx)
 	anchorLine := `nat-anchor "alcatraz"`
 	oldAnchorLine := `nat-anchor "alcatraz/*"`
 
-	content, err := os.ReadFile(PfConfPath)
+	content, err := afero.ReadFile(fs, PfConfPath)
 	if err != nil {
 		return fmt.Errorf("failed to read pf.conf: %w", err)
 	}
@@ -44,14 +46,15 @@ func EnsurePfAnchor() error {
 	newLines := parsePfConfAndRemoveOldAnchor(contentStr, oldAnchorLine)
 	newLines = insertAnchorLine(newLines, anchorLine)
 
-	return writePfConf(newLines)
+	return writePfConf(ctx, newLines)
 }
 
 // RemovePfAnchor removes nat-anchor "alcatraz" from /etc/pf.conf.
-func RemovePfAnchor() error {
+func RemovePfAnchor(ctx context.Context) error {
+	fs := util.MustGetFs(ctx)
 	anchorLine := `nat-anchor "alcatraz"`
 
-	content, err := os.ReadFile(PfConfPath)
+	content, err := afero.ReadFile(fs, PfConfPath)
 	if err != nil {
 		return fmt.Errorf("failed to read pf.conf: %w", err)
 	}
@@ -68,60 +71,43 @@ func RemovePfAnchor() error {
 			newLines = append(newLines, line)
 		}
 	}
-	newContent := strings.Join(newLines, "\n")
 
-	tmpFile, err := os.CreateTemp("", "pf.conf-*.txt")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(newContent); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-	tmpFile.Close()
-
-	if err := sudo.Run("cp", tmpFile.Name(), PfConfPath); err != nil {
-		return fmt.Errorf("failed to update pf.conf: %w", err)
-	}
-
-	// Note: pfctl reload errors are intentionally ignored as they are non-fatal.
-	// The rules will be loaded on next system boot or manual reload.
-	_ = sudo.Run("pfctl", "-f", PfConfPath)
-
-	return nil
+	return writePfConf(ctx, newLines)
 }
 
-// WriteSharedRule writes the shared NAT rule file.
-func WriteSharedRule(rules string) error {
+// WriteSharedRule writes the shared NAT rule file to the staging filesystem.
+// The actual file write with sudo will happen during commit.
+func WriteSharedRule(ctx context.Context, rules string) error {
+	fs := util.MustGetFs(ctx)
 	sharedPath := filepath.Join(PfAnchorDir, SharedRuleFile)
 
-	changed, err := sudo.EnsureFileContent(sharedPath, rules)
-	if err != nil {
-		return fmt.Errorf("failed to write shared rule: %w", err)
+	// Ensure parent directory exists in staging
+	if err := fs.MkdirAll(PfAnchorDir, 0755); err != nil {
+		return fmt.Errorf("failed to create anchor directory: %w", err)
 	}
-	if changed {
-		if err := sudo.EnsureChmod(sharedPath, 0644, false); err != nil {
-			return fmt.Errorf("failed to set shared rule permissions: %w", err)
-		}
+
+	// Stage the write
+	if err := afero.WriteFile(fs, sharedPath, []byte(rules), 0644); err != nil {
+		return fmt.Errorf("failed to stage shared rule: %w", err)
 	}
 	return nil
 }
 
-// WriteProjectFile writes the project-specific rule file.
-func WriteProjectFile(projectDir, content string) error {
+// WriteProjectFile writes the project-specific rule file to the staging filesystem.
+// The actual file write with sudo will happen during commit.
+func WriteProjectFile(ctx context.Context, projectDir, content string) error {
+	fs := util.MustGetFs(ctx)
 	filename := ProjectFileName(projectDir)
 	projectFilePath := filepath.Join(PfAnchorDir, filename)
 
-	changed, err := sudo.EnsureFileContent(projectFilePath, content)
-	if err != nil {
-		return fmt.Errorf("failed to write project file: %w", err)
+	// Ensure parent directory exists in staging
+	if err := fs.MkdirAll(PfAnchorDir, 0755); err != nil {
+		return fmt.Errorf("failed to create anchor directory: %w", err)
 	}
-	if changed {
-		if err := sudo.EnsureChmod(projectFilePath, 0644, false); err != nil {
-			return fmt.Errorf("failed to set project file permissions: %w", err)
-		}
+
+	// Stage the write
+	if err := afero.WriteFile(fs, projectFilePath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to stage project file: %w", err)
 	}
 	return nil
 }
@@ -179,63 +165,50 @@ func insertAfterIndex(lines []string, idx int, line string) []string {
 }
 
 // insertBeforeFirstAnchor inserts a line before the first "anchor" line.
+// If no anchor line found, appends before any trailing empty line.
 func insertBeforeFirstAnchor(lines []string, anchorLine string) []string {
-	result := make([]string, 0, len(lines)+1)
-	inserted := false
-
+	// Find first "anchor" line position
+	anchorIdx := -1
 	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !inserted && strings.HasPrefix(trimmed, "anchor ") {
-			result = append(result, anchorLine)
-			inserted = true
-		}
-		result = append(result, line)
-		// If we reach end without finding anchor line, append
-		if i == len(lines)-1 && !inserted {
-			if trimmed != "" {
-				result = append(result, anchorLine)
-			} else {
-				// Insert before trailing empty line
-				result = append(result[:len(result)-1], anchorLine, "")
-			}
+		if strings.HasPrefix(strings.TrimSpace(line), "anchor ") {
+			anchorIdx = i
+			break
 		}
 	}
 
-	return result
+	// Insert before anchor if found
+	if anchorIdx >= 0 {
+		result := make([]string, 0, len(lines)+1)
+		result = append(result, lines[:anchorIdx]...)
+		result = append(result, anchorLine)
+		result = append(result, lines[anchorIdx:]...)
+		return result
+	}
+
+	// No anchor found - append at end, but before trailing empty line
+	if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		result := make([]string, 0, len(lines)+1)
+		result = append(result, lines[:len(lines)-1]...)
+		result = append(result, anchorLine, "")
+		return result
+	}
+
+	return append(lines, anchorLine)
 }
 
-// writePfConf writes the new pf.conf content with backup.
-func writePfConf(lines []string) error {
+// writePfConf writes the new pf.conf content to the staging filesystem.
+// The actual file write with sudo will happen during commit.
+func writePfConf(ctx context.Context, lines []string) error {
+	fs := util.MustGetFs(ctx)
 	newContent := strings.Join(lines, "\n")
 	if !strings.HasSuffix(newContent, "\n") {
 		newContent += "\n"
 	}
 
-	// Write to temp file and sudo cp
-	tmpFile, err := os.CreateTemp("", "pf.conf-*.txt")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
+	// Stage the write - actual sudo write happens during commit
+	if err := afero.WriteFile(fs, PfConfPath, []byte(newContent), 0644); err != nil {
+		return fmt.Errorf("failed to stage pf.conf: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(newContent); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-	tmpFile.Close()
-
-	// Backup original
-	if err := sudo.Run("cp", PfConfPath, PfConfPath+".bak"); err != nil {
-		return fmt.Errorf("failed to backup pf.conf: %w", err)
-	}
-
-	// Copy new content
-	if err := sudo.Run("cp", tmpFile.Name(), PfConfPath); err != nil {
-		return fmt.Errorf("failed to update pf.conf: %w", err)
-	}
-
-	// Reload pf - errors are non-fatal, rules will load on next boot
-	_ = sudo.Run("pfctl", "-f", PfConfPath)
 
 	return nil
 }

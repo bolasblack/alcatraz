@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/bolasblack/alcatraz/internal/config"
+	"github.com/bolasblack/alcatraz/internal/util"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
 )
@@ -156,18 +157,13 @@ func promptConfirm(prompt string) bool {
 }
 
 // progress writes a progress message if not in quiet mode.
-func progress(w io.Writer, format string, args ...any) {
-	if w != nil {
-		fmt.Fprintf(w, format, args...)
-	}
-}
+// Delegates to util.Progress for shared implementation.
+var progress = util.Progress
 
 // progressStep writes a progress message with → prefix (step in progress).
-func progressStep(w io.Writer, format string, args ...any) {
-	progress(w, "→ "+format, args...)
-}
+// Delegates to util.ProgressStep for shared implementation.
+var progressStep = util.ProgressStep
 
 // progressDone writes a progress message with ✓ prefix (step completed).
-func progressDone(w io.Writer, format string, args ...any) {
-	progress(w, "✓ "+format, args...)
-}
+// Delegates to util.ProgressDone for shared implementation.
+var progressDone = util.ProgressDone

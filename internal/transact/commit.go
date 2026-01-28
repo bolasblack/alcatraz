@@ -8,12 +8,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// SudoRunner is the interface for executing sudo commands.
-// Used by commit callbacks that need to execute privileged operations.
-type SudoRunner interface {
-	Run(name string, args ...string) error
-}
-
 // ExecuteOp executes a single file operation on the given filesystem.
 // Useful for implementing commit callbacks.
 func ExecuteOp(fs afero.Fs, op FileOp) error {

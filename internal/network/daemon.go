@@ -3,12 +3,15 @@
 package network
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/bolasblack/alcatraz/internal/sudo"
+	"github.com/bolasblack/alcatraz/internal/util"
+	"github.com/spf13/afero"
 )
 
 // LaunchDaemon constants.
@@ -41,80 +44,106 @@ var launchDaemonPlist = `<?xml version="1.0" encoding="UTF-8"?>
 // ProgressFunc is a callback for progress messages during installation.
 type ProgressFunc func(format string, args ...any)
 
-// InstallHelper installs the network helper LaunchDaemon.
-// The progress callback is called with status messages during installation.
+// InstallHelper stages network helper files using TransactFs from context.
+// IMPORTANT: This only stages files. Caller must:
+// 1. Call this function to stage files
+// 2. Commit the TransactFs with sudo
+// 3. Call LoadLaunchDaemon() after commit to load the daemon
 // See AGD-023 for lifecycle details.
-func InstallHelper(progress ProgressFunc) error {
+func InstallHelper(ctx context.Context, progress ProgressFunc) error {
 	if progress == nil {
 		progress = func(format string, args ...any) {} // no-op
 	}
 
-	if err := createAnchorDirectory(progress); err != nil {
+	if err := createAnchorDirectory(ctx, progress); err != nil {
 		return err
 	}
 
-	if err := installPlistFile(progress); err != nil {
+	if err := installPlistFile(ctx, progress); err != nil {
 		return err
 	}
 
 	progress("Configuring pf anchor...\n")
-	if err := EnsurePfAnchor(); err != nil {
+	if err := EnsurePfAnchor(ctx); err != nil {
 		return fmt.Errorf("failed to configure pf anchor: %w", err)
 	}
 
+	// NOTE: loadLaunchDaemon and loadInitialPfRules must be called AFTER
+	// TransactFs commit, since they expect files to exist on disk.
+	// Caller should call LoadLaunchDaemon() after committing.
+	return nil
+}
+
+// LoadLaunchDaemon loads the LaunchDaemon after files have been committed.
+// Call this AFTER committing TransactFs changes to disk.
+func LoadLaunchDaemon(progress ProgressFunc) error {
+	if progress == nil {
+		progress = func(format string, args ...any) {}
+	}
 	if err := loadLaunchDaemon(progress); err != nil {
 		return err
 	}
-
 	return loadInitialPfRules(progress)
 }
 
-// UninstallHelper uninstalls the network helper and cleans up.
+// UninstallHelper unloads daemon and stages file deletions using TransactFs from context.
+// IMPORTANT: This unloads the daemon first, then stages file deletions. Caller must:
+// 1. Call this function (unloads daemon, stages file deletions)
+// 2. Commit the TransactFs with sudo
+// 3. Call FlushPfRulesAfterUninstall() after commit if needed
 // Returns errors as warnings - caller decides whether to fail.
-func UninstallHelper(progress ProgressFunc) (warnings []error) {
+func UninstallHelper(ctx context.Context, progress ProgressFunc) (warnings []error) {
 	if progress == nil {
 		progress = func(format string, args ...any) {}
 	}
 
+	// Unload daemon FIRST (before staging file deletions)
 	if err := unloadLaunchDaemon(progress); err != nil {
 		warnings = append(warnings, err)
 	}
 
-	if err := removePlistFile(progress); err != nil {
-		warnings = append(warnings, err)
-	}
-
-	if err := FlushPfRules(progress); err != nil {
+	// Stage file deletions
+	if err := removePlistFile(ctx, progress); err != nil {
 		warnings = append(warnings, err)
 	}
 
 	progress("Removing anchor from pf.conf...\n")
-	if err := RemovePfAnchor(); err != nil {
+	if err := RemovePfAnchor(ctx); err != nil {
 		warnings = append(warnings, fmt.Errorf("failed to remove anchor from pf.conf: %w", err))
 	}
 
-	if err := removeAnchorDirectory(progress); err != nil {
+	if err := removeAnchorDirectory(ctx, progress); err != nil {
 		warnings = append(warnings, err)
 	}
 
+	// NOTE: FlushPfRules should be called AFTER commit.
+	// Caller should call FlushPfRulesAfterUninstall() after committing.
 	return warnings
 }
 
-// IsHelperInstalled checks if the network helper is installed and loaded.
-func IsHelperInstalled() bool {
-	return IsLaunchDaemonLoaded() && FileExists(PfAnchorDir)
+// FlushPfRulesAfterUninstall flushes pf rules after uninstall files have been committed.
+// Call this AFTER committing TransactFs changes to disk.
+func FlushPfRulesAfterUninstall(progress ProgressFunc) error {
+	return FlushPfRules(progress)
 }
 
-// IsHelperNeedsUpdate checks if plist or pf.conf anchor needs update.
-func IsHelperNeedsUpdate() bool {
+// IsHelperInstalled checks if the network helper is installed using TransactFs from context.
+func IsHelperInstalled(ctx context.Context) bool {
+	return IsLaunchDaemonLoaded() && FileExists(ctx, PfAnchorDir)
+}
+
+// IsHelperNeedsUpdate checks if plist or pf.conf anchor needs update using TransactFs from context.
+func IsHelperNeedsUpdate(ctx context.Context) bool {
+	fs := util.MustGetFs(ctx)
+
 	// Check plist content
-	existingPlist, err := os.ReadFile(LaunchDaemonPath)
+	existingPlist, err := afero.ReadFile(fs, LaunchDaemonPath)
 	if err == nil && string(existingPlist) != launchDaemonPlist {
 		return true
 	}
 
 	// Check pf.conf anchor (old wildcard vs new single)
-	pfConf, err := os.ReadFile(PfConfPath)
+	pfConf, err := afero.ReadFile(fs, PfConfPath)
 	if err == nil {
 		content := string(pfConf)
 		hasNew := strings.Contains(content, `nat-anchor "alcatraz"`)
@@ -127,38 +156,32 @@ func IsHelperNeedsUpdate() bool {
 	return false
 }
 
-
 // createAnchorDirectory creates the pf anchor directory with proper permissions.
-func createAnchorDirectory(progress ProgressFunc) error {
+func createAnchorDirectory(ctx context.Context, progress ProgressFunc) error {
+	fs := util.MustGetFs(ctx)
 	progress("Creating %s...\n", PfAnchorDir)
-	if err := sudo.EnsurePath(PfAnchorDir); err != nil {
+	if err := fs.MkdirAll(PfAnchorDir, 0755); err != nil {
 		return fmt.Errorf("failed to create anchor directory: %w", err)
-	}
-	if err := sudo.EnsureChmod(PfAnchorDir, 0755, false); err != nil {
-		return fmt.Errorf("failed to set anchor directory permissions: %w", err)
 	}
 	return nil
 }
 
 // installPlistFile installs or updates the LaunchDaemon plist.
-func installPlistFile(progress ProgressFunc) error {
-	changed, err := sudo.EnsureFileContent(LaunchDaemonPath, launchDaemonPlist)
-	if err != nil {
-		return fmt.Errorf("failed to install plist: %w", err)
-	}
-	if !changed {
+func installPlistFile(ctx context.Context, progress ProgressFunc) error {
+	fs := util.MustGetFs(ctx)
+
+	// Check if content already matches
+	existingContent, err := afero.ReadFile(fs, LaunchDaemonPath)
+	if err == nil && string(existingContent) == launchDaemonPlist {
 		progress("Plist %s already up to date\n", LaunchDaemonPath)
 		return nil
 	}
 
 	progress("Installing %s...\n", LaunchDaemonPath)
 
-	// Set correct ownership and permissions
-	if err := sudo.Run("chown", "root:wheel", LaunchDaemonPath); err != nil {
-		return fmt.Errorf("failed to set plist ownership: %w", err)
-	}
-	if err := sudo.EnsureChmod(LaunchDaemonPath, 0644, false); err != nil {
-		return fmt.Errorf("failed to set plist permissions: %w", err)
+	// Write plist file
+	if err := afero.WriteFile(fs, LaunchDaemonPath, []byte(launchDaemonPlist), 0644); err != nil {
+		return fmt.Errorf("failed to install plist: %w", err)
 	}
 
 	return nil
@@ -216,12 +239,13 @@ func unloadLaunchDaemon(progress ProgressFunc) error {
 }
 
 // removePlistFile removes the LaunchDaemon plist file.
-func removePlistFile(progress ProgressFunc) error {
-	if !FileExists(LaunchDaemonPath) {
+func removePlistFile(ctx context.Context, progress ProgressFunc) error {
+	fs := util.MustGetFs(ctx)
+	if !FileExists(ctx, LaunchDaemonPath) {
 		return nil
 	}
 	progress("Removing %s...\n", LaunchDaemonPath)
-	if err := sudo.Run("rm", "-f", LaunchDaemonPath); err != nil {
+	if err := fs.Remove(LaunchDaemonPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove plist: %w", err)
 	}
 	return nil
@@ -238,13 +262,14 @@ func FlushPfRules(progress ProgressFunc) error {
 	return nil
 }
 
-// removeAnchorDirectory removes the pf anchor directory.
-func removeAnchorDirectory(progress ProgressFunc) error {
-	if !FileExists(PfAnchorDir) {
+// removeAnchorDirectory removes the pf anchor directory using TransactFs from context.
+func removeAnchorDirectory(ctx context.Context, progress ProgressFunc) error {
+	fs := util.MustGetFs(ctx)
+	if !FileExists(ctx, PfAnchorDir) {
 		return nil
 	}
 	progress("Removing %s...\n", PfAnchorDir)
-	if err := sudo.Run("rm", "-rf", PfAnchorDir); err != nil {
+	if err := fs.RemoveAll(PfAnchorDir); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove anchor directory: %w", err)
 	}
 	return nil

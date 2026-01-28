@@ -7,11 +7,15 @@
 package network
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/bolasblack/alcatraz/internal/util"
+	"github.com/spf13/afero"
 )
 
 // pf anchor constants for macOS NAT configuration.
@@ -25,17 +29,30 @@ const (
 	LANAccessWildcard = "*"
 )
 
-// parseLineValue extracts the value from a "key: value" line in command output.
-// Returns the trimmed value and true if found, empty string and false otherwise.
-func parseLineValue(output, prefix string) (string, bool) {
+// parseLineValues extracts values from "key: value" lines in command output.
+// Returns a slice of trimmed values (may be empty).
+func parseLineValues(output, prefix string) []string {
+	var values []string
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, prefix) {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
-				return strings.TrimSpace(parts[1]), true
+				if value := strings.TrimSpace(parts[1]); value != "" {
+					values = append(values, value)
+				}
 			}
 		}
+	}
+	return values
+}
+
+// parseLineValue extracts the first value from a "key: value" line in command output.
+// Returns the trimmed value and true if found, empty string and false otherwise.
+func parseLineValue(output, prefix string) (string, bool) {
+	values := parseLineValues(output, prefix)
+	if len(values) > 0 {
+		return values[0], true
 	}
 	return "", false
 }
@@ -72,23 +89,6 @@ func GetDefaultInterface() (string, error) {
 	return "", fmt.Errorf("interface not found in route output")
 }
 
-// parseAllLineValues extracts all values matching a "key: value" pattern from command output.
-// Returns a slice of trimmed values.
-func parseAllLineValues(output, prefix string) []string {
-	var values []string
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, prefix) {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				if value := strings.TrimSpace(parts[1]); value != "" {
-					values = append(values, value)
-				}
-			}
-		}
-	}
-	return values
-}
 
 // GetPhysicalInterfaces returns all physical network interfaces on macOS.
 // Uses `networksetup -listallhardwareports` to enumerate.
@@ -99,7 +99,7 @@ func GetPhysicalInterfaces() ([]string, error) {
 		return nil, fmt.Errorf("failed to list hardware ports: %w", err)
 	}
 
-	interfaces := parseAllLineValues(string(output), "Device:")
+	interfaces := parseLineValues(string(output), "Device:")
 	if len(interfaces) == 0 {
 		return nil, fmt.Errorf("interfaces not found in networksetup output")
 	}
@@ -122,12 +122,13 @@ func GenerateNATRules(subnet string, interfaces []string) string {
 	return rules.String()
 }
 
-// ReadExistingRuleInterfaces reads the existing rule file and extracts interface names.
+// ReadExistingRuleInterfaces reads the existing rule file using TransactFs from context.
 // Returns (interfaces, exists, error) where exists indicates if the file was found.
-func ReadExistingRuleInterfaces() (interfaces []string, exists bool, err error) {
+func ReadExistingRuleInterfaces(ctx context.Context) (interfaces []string, exists bool, err error) {
+	fs := util.MustGetFs(ctx)
 	sharedPath := filepath.Join(PfAnchorDir, SharedRuleFile)
 
-	data, err := os.ReadFile(sharedPath)
+	data, err := afero.ReadFile(fs, sharedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, false, nil
@@ -154,9 +155,9 @@ func ParseRuleInterfaces(content string) []string {
 	return interfaces
 }
 
-// NeedsRuleUpdate checks if the rule file needs to be updated.
+// NeedsRuleUpdate checks if the rule file needs to be updated using TransactFs from context.
 // Returns (needsUpdate, newInterfaces, error).
-func NeedsRuleUpdate() (bool, []string, error) {
+func NeedsRuleUpdate(ctx context.Context) (bool, []string, error) {
 	// Get current physical interfaces
 	currentInterfaces, err := GetPhysicalInterfaces()
 	if err != nil {
@@ -164,7 +165,7 @@ func NeedsRuleUpdate() (bool, []string, error) {
 	}
 
 	// Read existing rule interfaces
-	existingInterfaces, exists, err := ReadExistingRuleInterfaces()
+	existingInterfaces, exists, err := ReadExistingRuleInterfaces(ctx)
 	if err != nil {
 		return false, nil, err
 	}
@@ -190,16 +191,17 @@ func NeedsRuleUpdate() (bool, []string, error) {
 	return len(newInterfaces) > 0, newInterfaces, nil
 }
 
-// DeleteProjectFile removes the project-specific rule file.
+// DeleteProjectFile removes the project-specific rule file using TransactFs from context.
 // Returns (removeShared, flushWarning, error) where:
 //   - removeShared: true if the shared file should also be removed (no other projects)
 //   - flushWarning: non-nil if anchor flush failed (non-fatal)
-func DeleteProjectFile(projectPath string) (removeShared bool, flushWarning error, err error) {
+func DeleteProjectFile(ctx context.Context, projectPath string) (removeShared bool, flushWarning error, err error) {
+	fs := util.MustGetFs(ctx)
 	filename := ProjectFileName(projectPath)
 	projectFilePath := filepath.Join(PfAnchorDir, filename)
 
 	// Remove project file
-	if err := os.Remove(projectFilePath); err != nil && !os.IsNotExist(err) {
+	if err := fs.Remove(projectFilePath); err != nil && !os.IsNotExist(err) {
 		return false, nil, fmt.Errorf("failed to remove project file: %w", err)
 	}
 
@@ -207,7 +209,7 @@ func DeleteProjectFile(projectPath string) (removeShared bool, flushWarning erro
 	flushWarning = flushAnchor("alcatraz")
 
 	// Check if other project files exist
-	entries, err := os.ReadDir(PfAnchorDir)
+	entries, err := afero.ReadDir(fs, PfAnchorDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, flushWarning, nil
@@ -225,12 +227,13 @@ func DeleteProjectFile(projectPath string) (removeShared bool, flushWarning erro
 	return true, flushWarning, nil // No other projects, remove shared
 }
 
-// DeleteSharedRule removes the shared NAT rule file and flushes the anchor.
+// DeleteSharedRule removes the shared NAT rule file using TransactFs from context.
 // Returns (flushWarning, error) where flushWarning is non-nil if anchor flush failed (non-fatal).
-func DeleteSharedRule() (flushWarning error, err error) {
+func DeleteSharedRule(ctx context.Context) (flushWarning error, err error) {
+	fs := util.MustGetFs(ctx)
 	sharedPath := filepath.Join(PfAnchorDir, SharedRuleFile)
 
-	if err := os.Remove(sharedPath); err != nil && !os.IsNotExist(err) {
+	if err := fs.Remove(sharedPath); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to remove shared rule: %w", err)
 	}
 
@@ -258,8 +261,9 @@ func HasLANAccess(lanAccess []string) bool {
 	return false
 }
 
-// FileExists checks if a file or directory exists.
-func FileExists(path string) bool {
-	_, err := os.Stat(path)
+// FileExists checks if a file or directory exists using TransactFs from context.
+func FileExists(ctx context.Context, path string) bool {
+	fs := util.MustGetFs(ctx)
+	_, err := fs.Stat(path)
 	return err == nil
 }

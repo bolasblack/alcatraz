@@ -115,5 +115,3 @@ func IsOrbStack() (bool, error) {
 	}
 	return strings.Contains(string(output), "OrbStack"), nil
 }
-
-

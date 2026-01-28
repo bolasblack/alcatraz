@@ -13,6 +13,8 @@ import (
 	"github.com/bolasblack/alcatraz/internal/network"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
+	"github.com/bolasblack/alcatraz/internal/transact"
+	"github.com/bolasblack/alcatraz/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -192,9 +194,13 @@ func ensureNetworkHelper(cfg *config.Config, out io.Writer) error {
 
 	progressStep(out, "LAN access: OrbStack detected\n")
 
+	// Create TransactFs for all file operations
+	tfs := transact.New()
+	ctx := util.WithFs(context.Background(), tfs)
+
 	// Check if network helper is installed and up to date
-	installed := network.IsHelperInstalled()
-	needsUpdate := network.IsHelperNeedsUpdate()
+	installed := network.IsHelperInstalled(ctx)
+	needsUpdate := network.IsHelperNeedsUpdate(ctx)
 
 	if !installed {
 		progressStep(out, "Network configuration requires network-helper.\n")
@@ -207,14 +213,13 @@ func ensureNetworkHelper(cfg *config.Config, out io.Writer) error {
 		return nil // Already installed and up to date
 	}
 
-	// Install or update network helper
-	if err := network.InstallHelper(func(format string, args ...any) {
+	// Install or update network helper (stages files)
+	if err := network.InstallHelper(ctx, func(format string, args ...any) {
 		progressStep(out, format, args...)
 	}); err != nil {
 		return fmt.Errorf("failed to install network-helper: %w", err)
 	}
 
-	// Create NAT rules while sudo is cached
 	subnet, err := network.GetOrbStackSubnet()
 	if err != nil {
 		return fmt.Errorf("failed to get OrbStack subnet: %w", err)
@@ -224,8 +229,15 @@ func ensureNetworkHelper(cfg *config.Config, out io.Writer) error {
 		return fmt.Errorf("failed to get physical interfaces: %w", err)
 	}
 	rules := network.GenerateNATRules(subnet, interfaces)
-	if err := network.WriteSharedRule(rules); err != nil {
+	if err := network.WriteSharedRule(ctx, rules); err != nil {
 		return fmt.Errorf("failed to create NAT rules: %w", err)
+	}
+
+	// Commit staged file operations with sudo
+	if tfs.NeedsCommit() {
+		if err := commitWithSudo(tfs); err != nil {
+			return fmt.Errorf("failed to commit NAT rules: %w", err)
+		}
 	}
 	progressStep(out, "NAT rules created for all interfaces\n")
 
@@ -245,6 +257,10 @@ func configureNATRules(projectDir string, out io.Writer) error {
 		return nil // Docker Desktop works natively, no NAT rules needed
 	}
 
+	// Create TransactFs for batched file operations
+	tfs := transact.New()
+	ctx := util.WithFs(context.Background(), tfs)
+
 	// Get OrbStack subnet
 	subnet, err := network.GetOrbStackSubnet()
 	if err != nil {
@@ -254,7 +270,7 @@ func configureNATRules(projectDir string, out io.Writer) error {
 	progressStep(out, "OrbStack subnet: %s\n", subnet)
 
 	// Check if rule update is needed (new interfaces detected)
-	needsUpdate, newInterfaces, err := network.NeedsRuleUpdate()
+	needsUpdate, newInterfaces, err := network.NeedsRuleUpdate(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to check rule update: %w", err)
 	}
@@ -269,7 +285,7 @@ func configureNATRules(projectDir string, out io.Writer) error {
 			return fmt.Errorf("failed to get physical interfaces: %w", err)
 		}
 		rules := network.GenerateNATRules(subnet, interfaces)
-		if err := network.WriteSharedRule(rules); err != nil {
+		if err := network.WriteSharedRule(ctx, rules); err != nil {
 			return fmt.Errorf("failed to create shared NAT rule: %w", err)
 		}
 		progressStep(out, "NAT rules updated for all interfaces\n")
@@ -277,8 +293,15 @@ func configureNATRules(projectDir string, out io.Writer) error {
 
 	// Create project-specific file
 	projectContent := "# Project-specific rules for " + projectDir + "\n"
-	if err := network.WriteProjectFile(projectDir, projectContent); err != nil {
+	if err := network.WriteProjectFile(ctx, projectDir, projectContent); err != nil {
 		return fmt.Errorf("failed to create project file: %w", err)
+	}
+
+	// Commit all staged file operations with sudo
+	if tfs.NeedsCommit() {
+		if err := commitWithSudo(tfs); err != nil {
+			return fmt.Errorf("failed to commit NAT rules: %w", err)
+		}
 	}
 
 	progressStep(out, "LAN access configured\n")

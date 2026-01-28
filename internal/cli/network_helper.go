@@ -1,11 +1,16 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/bolasblack/alcatraz/internal/network"
+	"github.com/bolasblack/alcatraz/internal/sudo"
+	"github.com/bolasblack/alcatraz/internal/transact"
+	"github.com/bolasblack/alcatraz/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -85,10 +90,28 @@ func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("")
 
-	if err := network.InstallHelper(func(format string, args ...any) {
+	// Create TransactFs for batched file operations
+	tfs := transact.New()
+	ctx := util.WithFs(context.Background(), tfs)
+
+	if err := network.InstallHelper(ctx, func(format string, args ...any) {
 		progressStep(os.Stdout, format, args...)
 	}); err != nil {
 		return err
+	}
+
+	// Commit all staged file operations with sudo
+	if tfs.NeedsCommit() {
+		if err := commitWithSudo(tfs); err != nil {
+			return fmt.Errorf("failed to commit file changes: %w", err)
+		}
+	}
+
+	// Load LaunchDaemon after files are committed
+	if err := network.LoadLaunchDaemon(func(format string, args ...any) {
+		progressStep(os.Stdout, format, args...)
+	}); err != nil {
+		return fmt.Errorf("failed to load LaunchDaemon: %w", err)
 	}
 
 	fmt.Println("")
@@ -96,12 +119,19 @@ func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// fileExistsOS checks if a file exists using OS filesystem directly.
+// Used for pre-checks before TransactFs is created.
+func fileExistsOS(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // runNetworkHelperUninstall removes the LaunchDaemon and cleans up.
 // See AGD-023 for lifecycle details.
 func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
-	// Check if installed
-	plistExists := network.FileExists(network.LaunchDaemonPath)
-	dirExists := network.FileExists(network.PfAnchorDir)
+	// Check if installed (use OS filesystem for pre-checks)
+	plistExists := fileExistsOS(network.LaunchDaemonPath)
+	dirExists := fileExistsOS(network.PfAnchorDir)
 
 	if !plistExists && !dirExists && !network.IsLaunchDaemonLoaded() {
 		fmt.Println("Network helper is not installed.")
@@ -130,12 +160,30 @@ func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("")
 
+	// Create TransactFs for batched file operations
+	tfs := transact.New()
+	ctx := util.WithFs(context.Background(), tfs)
+
 	// Perform uninstallation using network package
-	warnings := network.UninstallHelper(func(format string, args ...any) {
+	warnings := network.UninstallHelper(ctx, func(format string, args ...any) {
 		fmt.Printf(format, args...)
 	})
 	for _, w := range warnings {
 		fmt.Printf("Warning: %v\n", w)
+	}
+
+	// Commit all staged file operations with sudo
+	if tfs.NeedsCommit() {
+		if err := commitWithSudo(tfs); err != nil {
+			return fmt.Errorf("failed to commit file changes: %w", err)
+		}
+	}
+
+	// Flush pf rules after files are removed
+	if err := network.FlushPfRulesAfterUninstall(func(format string, args ...any) {
+		fmt.Printf(format, args...)
+	}); err != nil {
+		fmt.Printf("Warning: %v\n", err)
 	}
 
 	fmt.Println("")
@@ -163,8 +211,8 @@ func printNetworkHelperStatus() {
 
 	fmt.Println("")
 
-	// Show helpful commands
-	if !network.IsLaunchDaemonLoaded() && !network.FileExists(network.LaunchDaemonPath) {
+	// Show helpful commands (use OS filesystem)
+	if !network.IsLaunchDaemonLoaded() && !fileExistsOS(network.LaunchDaemonPath) {
 		fmt.Println("Run 'alca network-helper install' to install the network helper.")
 	}
 }
@@ -173,7 +221,7 @@ func printLaunchDaemonStatus() {
 	fmt.Print("LaunchDaemon: ")
 	if network.IsLaunchDaemonLoaded() {
 		fmt.Println("Loaded")
-	} else if network.FileExists(network.LaunchDaemonPath) {
+	} else if fileExistsOS(network.LaunchDaemonPath) {
 		fmt.Println("Installed but not loaded")
 	} else {
 		fmt.Println("Not installed")
@@ -182,7 +230,7 @@ func printLaunchDaemonStatus() {
 
 func printAnchorDirectoryStatus() {
 	fmt.Print("Anchor directory: ")
-	if network.FileExists(network.PfAnchorDir) {
+	if fileExistsOS(network.PfAnchorDir) {
 		fmt.Printf("%s (exists)\n", network.PfAnchorDir)
 	} else {
 		fmt.Println("Not created")
@@ -192,7 +240,7 @@ func printAnchorDirectoryStatus() {
 func printRuleFiles() {
 	fmt.Println("")
 	fmt.Println("Rule files:")
-	if network.FileExists(network.PfAnchorDir) {
+	if fileExistsOS(network.PfAnchorDir) {
 		entries, err := os.ReadDir(network.PfAnchorDir)
 		if err != nil {
 			fmt.Printf("  Error reading directory: %v\n", err)
@@ -220,7 +268,7 @@ func printActivePfRules() {
 		fmt.Println("  (LaunchDaemon not loaded - rules may be stale)")
 	}
 
-	if !network.FileExists(network.PfAnchorDir) {
+	if !fileExistsOS(network.PfAnchorDir) {
 		fmt.Println("  (none)")
 		return
 	}
@@ -243,7 +291,7 @@ func printActivePfRules() {
 		if len(content) > 0 {
 			hasRules = true
 			fmt.Printf("  [%s]\n", entry.Name())
-			for _, line := range splitLines(string(content)) {
+			for _, line := range strings.Split(string(content), "\n") {
 				if line != "" {
 					fmt.Printf("    %s\n", line)
 				}
@@ -256,18 +304,24 @@ func printActivePfRules() {
 	}
 }
 
-// splitLines splits a string by newlines.
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
+
+// commitWithSudo commits TransactFs changes using sudo for privileged operations.
+// It generates a batch script from the pending operations and executes it with sudo.
+func commitWithSudo(tfs *transact.TransactFs) error {
+	_, err := tfs.Commit(func(ctx transact.CommitContext) (*transact.CommitOpsResult, error) {
+		if len(ctx.Ops) == 0 {
+			return nil, nil
 		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
+
+		// Generate batch script for all operations
+		script := transact.GenerateBatchScript(ctx.Ops)
+
+		// Execute with sudo
+		if err := sudo.RunScript(script); err != nil {
+			return nil, fmt.Errorf("sudo script execution failed: %w", err)
+		}
+
+		return nil, nil
+	})
+	return err
 }

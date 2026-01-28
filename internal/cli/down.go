@@ -9,6 +9,8 @@ import (
 
 	"github.com/bolasblack/alcatraz/internal/network"
 	"github.com/bolasblack/alcatraz/internal/runtime"
+	"github.com/bolasblack/alcatraz/internal/transact"
+	"github.com/bolasblack/alcatraz/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -80,8 +82,12 @@ func cleanupLANAccess(projectDir string, out io.Writer) error {
 		return nil
 	}
 
+	// Create TransactFs for file operations
+	tfs := transact.New()
+	ctx := util.WithFs(context.Background(), tfs)
+
 	// Delete project file and check if shared should be removed
-	removeShared, flushWarning, err := network.DeleteProjectFile(projectDir)
+	removeShared, flushWarning, err := network.DeleteProjectFile(ctx, projectDir)
 	if flushWarning != nil {
 		progressStep(out, "Warning: failed to flush anchor: %v\n", flushWarning)
 	}
@@ -91,12 +97,19 @@ func cleanupLANAccess(projectDir string, out io.Writer) error {
 
 	if removeShared {
 		progressStep(out, "No other LAN access projects, removing shared NAT rule\n")
-		flushWarning, err := network.DeleteSharedRule()
+		flushWarning, err := network.DeleteSharedRule(ctx)
 		if flushWarning != nil {
 			progressStep(out, "Warning: failed to flush anchor: %v\n", flushWarning)
 		}
 		if err != nil {
 			return err
+		}
+	}
+
+	// Commit file deletions (if any)
+	if tfs.NeedsCommit() {
+		if err := commitWithSudo(tfs); err != nil {
+			return fmt.Errorf("failed to commit file changes: %w", err)
 		}
 	}
 
