@@ -2,6 +2,7 @@
 title: "Environment Variable Configuration Design"
 description: "Design for [envs] section in .alca.toml with two-tier timing support"
 tags: config, cli
+updates: AGD-009
 ---
 
 ## Context

@@ -6,6 +6,8 @@
 
 decisions/AGD-012_runtime-config-setting.md -(u)-> decisions/AGD-009_cli-design.md
 decisions/AGD-014_list-cleanup-commands.md -(u)-> decisions/AGD-009_cli-design.md
+decisions/AGD-017_env-config-design.md -(u)-> decisions/AGD-009_cli-design.md
 decisions/AGD-020_remove-apple-containerization-runtime.md -(o)-> decisions/AGD-001_macos-isolation-solution.md
 decisions/AGD-022_config-includes-support.md -(u)-> decisions/AGD-009_cli-design.md
 decisions/AGD-023_macos-lan-access-pf-anchor.md -(u)-> decisions/AGD-005_defer-network-isolation.md
+decisions/AGD-025_mount-exclude-with-mutagen.md -(u)-> decisions/AGD-009_cli-design.md

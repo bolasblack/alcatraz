@@ -2,7 +2,7 @@
 title: "Alcatraz CLI Design"
 description: "CLI command structure, configuration format, and workflow design for the Alcatraz isolation tool"
 tags: cli, config
-updated_by: AGD-012, AGD-014, AGD-022
+updated_by: AGD-012, AGD-014, AGD-017, AGD-022, AGD-025
 ---
 
 ## Context
@@ -46,6 +46,7 @@ alca experimental reload    # Re-apply mounts without rebuilding container
 ```
 
 **Design decisions**:
+
 - `alca run <command>` instead of `alca claude` - generic, any command can be isolated
 - `alca up/down` instead of `setup/teardown` - shorter, familiar from docker-compose
 - `alca shell` removed - users can use `alca run bash`
@@ -74,6 +75,7 @@ mounts = [
 ```
 
 **Field decisions**:
+
 - `enter` field name chosen over `prepare`, `activate`, `shell_init`
 - `enter` default includes condition check: `[ -f flake.nix ] && exec nix develop`
 - `mounts` uses simple string array format `"source:target"` for MVP
@@ -92,12 +94,13 @@ alca down    # Stop and destroy container
 
 ### Runtime Auto-Detection
 
-| Platform | Priority |
-|----------|----------|
-| macOS | Apple Container (macOS 26+) > Docker |
-| Linux | Podman > Docker |
+| Platform | Priority                             |
+| -------- | ------------------------------------ |
+| macOS    | Apple Container (macOS 26+) > Docker |
+| Linux    | Podman > Docker                      |
 
 Go integration:
+
 - Docker/Podman: mature SDKs available
 - Apple Container: may need CLI wrapper (new technology)
 
@@ -108,6 +111,7 @@ Go integration:
 **Solution**: Use `nsenter + mount` to dynamically add mounts without rebuilding container.
 
 **Implementation phases**:
+
 1. MVP: Skip mounts if source doesn't exist
 2. Phase 2: `alca experimental reload` to manually re-apply mounts
 3. Phase 3: Daemon watch for auto-mount (if needed)
@@ -115,6 +119,7 @@ Go integration:
 ### Experimental Command Convention
 
 Unstable commands go under `alca experimental`:
+
 - Show warning on execution
 - May be removed in future versions
 
@@ -127,17 +132,20 @@ Reloading mounts...
 ## Consequences
 
 ### Positive
+
 - Simple, git-like CLI with minimal commands
 - Generic isolation tool, not tied to Claude Code
 - Familiar workflow for docker-compose users
 - Clear experimental/stable boundary
 
 ### Negative
+
 - No `alca shell` shortcut (minor inconvenience)
 - Dynamic mount requires privileged operations (nsenter)
 - Apple Container integration may need extra work
 
 ### Future Work
+
 - Network isolation (`[network]` section in config)
 - Global configuration file
 - Daemon for auto-mount watching
