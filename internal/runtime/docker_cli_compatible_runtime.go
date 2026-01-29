@@ -61,12 +61,16 @@ func (r *dockerCLICompatibleRuntime) Up(ctx context.Context, cfg *config.Config,
 		return nil
 	}
 
-	// Remove existing stopped container if any
+	// Start existing stopped container (no config drift - see up.go flow)
+	// If there was config drift, rebuildContainerIfNeeded() would have removed
+	// the container before calling Up(), so StateStopped means no drift.
 	if status.State == StateStopped {
-		util.ProgressStep(progressOut, "Removing stopped container: %s\n", status.Name)
-		if err := r.removeContainer(ctx, status.Name); err != nil {
-			return fmt.Errorf("failed to remove stopped container: %w", err)
+		util.ProgressStep(progressOut, "Starting stopped container: %s\n", status.Name)
+		if err := r.startContainer(ctx, status.Name); err != nil {
+			return fmt.Errorf("failed to start container: %w", err)
 		}
+		util.ProgressStep(progressOut, "Container started\n")
+		return nil
 	}
 
 	util.ProgressStep(progressOut, "Pulling image: %s\n", cfg.Image)
@@ -375,6 +379,16 @@ func (r *dockerCLICompatibleRuntime) removeContainer(ctx context.Context, name s
 			return nil
 		}
 		return fmt.Errorf("%s rm failed: %w: %s", r.command, err, string(output))
+	}
+	return nil
+}
+
+// startContainer starts a stopped container by name.
+func (r *dockerCLICompatibleRuntime) startContainer(ctx context.Context, name string) error {
+	cmd := exec.CommandContext(ctx, r.command, "start", name)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s start failed: %w: %s", r.command, err, string(output))
 	}
 	return nil
 }
