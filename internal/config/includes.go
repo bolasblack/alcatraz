@@ -4,33 +4,35 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 
 	toml "github.com/pelletier/go-toml/v2"
+	"github.com/spf13/afero"
+
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 // LoadWithIncludes loads config with includes support.
 // It processes includes recursively, merging configs in the order they are specified.
-func LoadWithIncludes(path string) (Config, error) {
-	return loadWithIncludes(path, make(map[string]bool))
+func LoadWithIncludes(env *util.Env, path string) (Config, error) {
+	return loadWithIncludes(env, path, make(map[string]bool))
 }
 
 // loadWithIncludes is the internal recursive implementation.
-func loadWithIncludes(path string, visited map[string]bool) (Config, error) {
+func loadWithIncludes(env *util.Env, path string, visited map[string]bool) (Config, error) {
 	absPath, err := validateAndMarkVisited(path, visited)
 	if err != nil {
 		return Config{}, err
 	}
 
-	raw, err := readRawConfig(path)
+	raw, err := readRawConfig(env, path)
 	if err != nil {
 		return Config{}, err
 	}
 
 	baseDir := filepath.Dir(absPath)
-	mergedConfig, err := processIncludes(raw.Includes, baseDir, visited)
+	mergedConfig, err := processIncludes(env, raw.Includes, baseDir, visited)
 	if err != nil {
 		return Config{}, err
 	}
@@ -60,8 +62,8 @@ func validateAndMarkVisited(path string, visited map[string]bool) (string, error
 }
 
 // readRawConfig reads and parses a TOML config file.
-func readRawConfig(path string) (RawConfig, error) {
-	data, err := os.ReadFile(path)
+func readRawConfig(env *util.Env, path string) (RawConfig, error) {
+	data, err := afero.ReadFile(env.Fs, path)
 	if err != nil {
 		return RawConfig{}, err
 	}
@@ -73,7 +75,7 @@ func readRawConfig(path string) (RawConfig, error) {
 }
 
 // processIncludes loads and merges all included configs.
-func processIncludes(includes []string, baseDir string, visited map[string]bool) (Config, error) {
+func processIncludes(env *util.Env, includes []string, baseDir string, visited map[string]bool) (Config, error) {
 	var merged Config
 	for _, pattern := range includes {
 		resolved := pattern
@@ -81,13 +83,13 @@ func processIncludes(includes []string, baseDir string, visited map[string]bool)
 			resolved = filepath.Join(baseDir, pattern)
 		}
 
-		files, err := expandGlob(resolved)
+		files, err := expandGlob(env, resolved)
 		if err != nil {
 			return Config{}, fmt.Errorf("failed to expand glob %s: %w", pattern, err)
 		}
 
 		for _, file := range files {
-			cfg, err := loadWithIncludes(file, visited)
+			cfg, err := loadWithIncludes(env, file, visited)
 			if err != nil {
 				return Config{}, fmt.Errorf("failed to load include %s: %w", file, err)
 			}
@@ -155,17 +157,17 @@ func isGlobPattern(pattern string) bool {
 // expandGlob expands a glob pattern and returns sorted matched files.
 // For literal paths (no glob characters), returns error if file doesn't exist.
 // For glob patterns, returns empty slice if no files match.
-func expandGlob(pattern string) ([]string, error) {
+func expandGlob(env *util.Env, pattern string) ([]string, error) {
 	if !isGlobPattern(pattern) {
 		// Literal path - must exist
-		if _, err := os.Stat(pattern); err != nil {
+		if _, err := env.Fs.Stat(pattern); err != nil {
 			return nil, err
 		}
 		return []string{pattern}, nil
 	}
 
 	// Glob pattern - empty result is OK
-	matches, err := filepath.Glob(pattern)
+	matches, err := afero.Glob(env.Fs, pattern)
 	if err != nil {
 		return nil, err
 	}

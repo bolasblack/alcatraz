@@ -11,8 +11,11 @@ import (
 	"slices"
 	"time"
 
-	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/google/uuid"
+	"github.com/spf13/afero"
+
+	"github.com/bolasblack/alcatraz/internal/config"
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 const (
@@ -52,7 +55,6 @@ type State struct {
 	Config *config.Config `json:"config,omitempty"`
 }
 
-
 // StateFilePath returns the path to the state file for the given project directory.
 func StateFilePath(projectDir string) string {
 	return filepath.Join(projectDir, StateDir, StateFilename)
@@ -70,10 +72,10 @@ func LabelFilter(projectID string) string {
 
 // Load reads the state file from the given project directory.
 // Returns nil and no error if the state file does not exist.
-func Load(projectDir string) (*State, error) {
+func Load(env *util.Env, projectDir string) (*State, error) {
 	path := StateFilePath(projectDir)
 
-	data, err := os.ReadFile(path)
+	data, err := afero.ReadFile(env.Fs, path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -91,9 +93,9 @@ func Load(projectDir string) (*State, error) {
 
 // Save writes the state file to the given project directory.
 // Creates the .alca directory if it does not exist.
-func Save(projectDir string, state *State) error {
+func Save(env *util.Env, projectDir string, state *State) error {
 	dir := StateDirPath(projectDir)
-	if err := os.MkdirAll(dir, stateDirPerm); err != nil {
+	if err := env.Fs.MkdirAll(dir, stateDirPerm); err != nil {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
 
@@ -103,7 +105,7 @@ func Save(projectDir string, state *State) error {
 	}
 
 	path := StateFilePath(projectDir)
-	if err := os.WriteFile(path, data, stateFilePerm); err != nil {
+	if err := afero.WriteFile(env.Fs, path, data, stateFilePerm); err != nil {
 		return fmt.Errorf("failed to write state file: %w", err)
 	}
 
@@ -112,8 +114,8 @@ func Save(projectDir string, state *State) error {
 
 // LoadOrCreate loads the state file if it exists, or creates a new one.
 // The runtimeName should be the name of the runtime being used (e.g., "Docker").
-func LoadOrCreate(projectDir string, runtimeName string) (*State, bool, error) {
-	state, err := Load(projectDir)
+func LoadOrCreate(env *util.Env, projectDir string, runtimeName string) (*State, bool, error) {
+	state, err := Load(env, projectDir)
 	if err != nil {
 		return nil, false, err
 	}
@@ -122,7 +124,7 @@ func LoadOrCreate(projectDir string, runtimeName string) (*State, bool, error) {
 		// Update runtime if changed
 		if state.Runtime != runtimeName {
 			state.Runtime = runtimeName
-			if err := Save(projectDir, state); err != nil {
+			if err := Save(env, projectDir, state); err != nil {
 				return nil, false, err
 			}
 		}
@@ -138,7 +140,7 @@ func LoadOrCreate(projectDir string, runtimeName string) (*State, bool, error) {
 		Runtime:       runtimeName,
 	}
 
-	if err := Save(projectDir, state); err != nil {
+	if err := Save(env, projectDir, state); err != nil {
 		return nil, true, err
 	}
 
@@ -146,9 +148,9 @@ func LoadOrCreate(projectDir string, runtimeName string) (*State, bool, error) {
 }
 
 // Delete removes the state file (but not the .alca directory).
-func Delete(projectDir string) error {
+func Delete(env *util.Env, projectDir string) error {
 	path := StateFilePath(projectDir)
-	err := os.Remove(path)
+	err := env.Fs.Remove(path)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to delete state file: %w", err)
 	}
@@ -317,4 +319,3 @@ func hasEnvLiteralDrift(a, b map[string]config.EnvValue) bool {
 	}
 	return false
 }
-

@@ -1,8 +1,13 @@
 package network
 
 import (
+	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/spf13/afero"
+
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 func TestProjectFileName(t *testing.T) {
@@ -130,6 +135,122 @@ func TestGenerateNATRules(t *testing.T) {
 	}
 }
 
+func TestParseLineValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		output   string
+		prefix   string
+		expected []string
+	}{
+		{
+			name:     "single value",
+			output:   "Device: en0",
+			prefix:   "Device:",
+			expected: []string{"en0"},
+		},
+		{
+			name:     "multiple values",
+			output:   "Device: en0\nDevice: en1\nDevice: en8",
+			prefix:   "Device:",
+			expected: []string{"en0", "en1", "en8"},
+		},
+		{
+			name:     "mixed lines",
+			output:   "Hardware Port: Wi-Fi\nDevice: en0\nEthernet Address: aa:bb:cc:dd:ee:ff",
+			prefix:   "Device:",
+			expected: []string{"en0"},
+		},
+		{
+			name:     "no matching lines",
+			output:   "Hardware Port: Wi-Fi\nEthernet Address: aa:bb:cc:dd:ee:ff",
+			prefix:   "Device:",
+			expected: nil,
+		},
+		{
+			name:     "empty output",
+			output:   "",
+			prefix:   "Device:",
+			expected: nil,
+		},
+		{
+			name:     "value with spaces",
+			output:   "network.subnet4: 192.168.138.0/23",
+			prefix:   "network.subnet4",
+			expected: []string{"192.168.138.0/23"},
+		},
+		{
+			name:     "empty value after colon",
+			output:   "Device:",
+			prefix:   "Device:",
+			expected: nil,
+		},
+		{
+			name:     "whitespace around value",
+			output:   "  interface:   en0  ",
+			prefix:   "interface:",
+			expected: []string{"en0"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseLineValues(tt.output, tt.prefix)
+			if !slices.Equal(result, tt.expected) {
+				t.Errorf("parseLineValues(%q, %q) = %v, want %v", tt.output, tt.prefix, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParseLineValue(t *testing.T) {
+	tests := []struct {
+		name          string
+		output        string
+		prefix        string
+		expectedValue string
+		expectedFound bool
+	}{
+		{
+			name:          "single value found",
+			output:        "interface: en0",
+			prefix:        "interface:",
+			expectedValue: "en0",
+			expectedFound: true,
+		},
+		{
+			name:          "multiple values returns first",
+			output:        "interface: en0\ninterface: en1",
+			prefix:        "interface:",
+			expectedValue: "en0",
+			expectedFound: true,
+		},
+		{
+			name:          "no match",
+			output:        "gateway: 192.168.1.1",
+			prefix:        "interface:",
+			expectedValue: "",
+			expectedFound: false,
+		},
+		{
+			name:          "empty output",
+			output:        "",
+			prefix:        "interface:",
+			expectedValue: "",
+			expectedFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value, found := parseLineValue(tt.output, tt.prefix)
+			if value != tt.expectedValue || found != tt.expectedFound {
+				t.Errorf("parseLineValue(%q, %q) = (%q, %v), want (%q, %v)",
+					tt.output, tt.prefix, value, found, tt.expectedValue, tt.expectedFound)
+			}
+		})
+	}
+}
+
 func TestParseRuleInterfaces(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -165,6 +286,130 @@ func TestParseRuleInterfaces(t *testing.T) {
 			result := ParseRuleInterfaces(tt.content)
 			if !slices.Equal(result, tt.expected) {
 				t.Errorf("ParseRuleInterfaces(%q) = %v, want %v", tt.content, result, tt.expected)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// Filesystem Function Tests (using MockFs)
+// =============================================================================
+
+// newTestEnv creates a test environment with in-memory filesystem.
+func newTestEnv(t *testing.T) (*util.Env, afero.Fs) {
+	t.Helper()
+	memFs := afero.NewMemMapFs()
+	env := &util.Env{Fs: memFs}
+	return env, memFs
+}
+
+func TestFileExists(t *testing.T) {
+	tests := []struct {
+		name     string
+		setup    func(afero.Fs) // Setup files in the base fs
+		path     string
+		expected bool
+	}{
+		{
+			name: "file exists",
+			setup: func(fs afero.Fs) {
+				_ = afero.WriteFile(fs, "/etc/test.conf", []byte("content"), 0644)
+			},
+			path:     "/etc/test.conf",
+			expected: true,
+		},
+		{
+			name: "directory exists",
+			setup: func(fs afero.Fs) {
+				_ = fs.MkdirAll("/etc/pf.anchors", 0755)
+			},
+			path:     "/etc/pf.anchors",
+			expected: true,
+		},
+		{
+			name:     "file does not exist",
+			setup:    func(fs afero.Fs) {},
+			path:     "/nonexistent/file",
+			expected: false,
+		},
+		{
+			name: "parent exists but file does not",
+			setup: func(fs afero.Fs) {
+				_ = fs.MkdirAll("/etc", 0755)
+			},
+			path:     "/etc/missing.conf",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env, memFs := newTestEnv(t)
+			tt.setup(memFs)
+
+			result := FileExists(env, tt.path)
+			if result != tt.expected {
+				t.Errorf("FileExists(env, %q) = %v, want %v", tt.path, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestReadExistingRuleInterfaces(t *testing.T) {
+	tests := []struct {
+		name               string
+		setup              func(afero.Fs)
+		expectedInterfaces []string
+		expectedExists     bool
+		expectError        bool
+	}{
+		{
+			name: "file exists with rules",
+			setup: func(fs afero.Fs) {
+				_ = fs.MkdirAll(PfAnchorDir, 0755)
+				content := "nat on en0 from 192.168.138.0/23 to any -> (en0)\nnat on en1 from 192.168.138.0/23 to any -> (en1)\n"
+				_ = afero.WriteFile(fs, filepath.Join(PfAnchorDir, SharedRuleFile), []byte(content), 0644)
+			},
+			expectedInterfaces: []string{"en0", "en1"},
+			expectedExists:     true,
+			expectError:        false,
+		},
+		{
+			name:               "file does not exist",
+			setup:              func(fs afero.Fs) {},
+			expectedInterfaces: nil,
+			expectedExists:     false,
+			expectError:        false,
+		},
+		{
+			name: "empty file",
+			setup: func(fs afero.Fs) {
+				_ = fs.MkdirAll(PfAnchorDir, 0755)
+				_ = afero.WriteFile(fs, filepath.Join(PfAnchorDir, SharedRuleFile), []byte(""), 0644)
+			},
+			expectedInterfaces: nil,
+			expectedExists:     true,
+			expectError:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env, memFs := newTestEnv(t)
+			tt.setup(memFs)
+
+			interfaces, exists, err := ReadExistingRuleInterfaces(env)
+			if tt.expectError && err == nil {
+				t.Error("expected error, got nil")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if exists != tt.expectedExists {
+				t.Errorf("exists = %v, want %v", exists, tt.expectedExists)
+			}
+			if !slices.Equal(interfaces, tt.expectedInterfaces) {
+				t.Errorf("interfaces = %v, want %v", interfaces, tt.expectedInterfaces)
 			}
 		})
 	}

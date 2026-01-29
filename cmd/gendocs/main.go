@@ -9,9 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bolasblack/alcatraz/internal/cli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
+
+	"github.com/bolasblack/alcatraz/internal/cli"
 )
 
 func main() {

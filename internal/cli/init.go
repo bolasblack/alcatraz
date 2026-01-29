@@ -7,9 +7,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/charmbracelet/huh"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+
+	"github.com/bolasblack/alcatraz/internal/config"
+	"github.com/bolasblack/alcatraz/internal/transact"
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 // ConfigFilename is the standard configuration file name.
@@ -29,10 +33,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Create transact filesystem for writing
+	tfs := transact.New()
+	env := util.NewEnv(tfs)
+
 	configPath := filepath.Join(cwd, ConfigFilename)
 
 	// Check if config already exists
-	if _, err := os.Stat(configPath); err == nil {
+	if _, err := env.Fs.Stat(configPath); err == nil {
 		return fmt.Errorf("configuration file already exists: %s", configPath)
 	}
 
@@ -57,8 +65,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to generate configuration: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+	if err := afero.WriteFile(env.Fs, configPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write configuration: %w", err)
+	}
+
+	// Commit the changes
+	if err := commitWithSudo(tfs); err != nil {
+		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 
 	progressDone(os.Stdout, "Created %s\n", configPath)

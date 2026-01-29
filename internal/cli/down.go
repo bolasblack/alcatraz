@@ -7,11 +7,12 @@ import (
 	"os"
 	goruntime "runtime"
 
+	"github.com/spf13/cobra"
+
 	"github.com/bolasblack/alcatraz/internal/network"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/transact"
 	"github.com/bolasblack/alcatraz/internal/util"
-	"github.com/spf13/cobra"
 )
 
 var downCmd = &cobra.Command{
@@ -31,8 +32,12 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Create TransactFs for file operations
+	tfs := transact.New()
+	env := util.NewEnv(tfs)
+
 	// Load config (optional) and select runtime
-	cfg, rt, err := loadConfigAndRuntimeOptional(cwd)
+	cfg, rt, err := loadConfigAndRuntimeOptional(env, cwd)
 	if err != nil {
 		return err
 	}
@@ -40,7 +45,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 	progressStep(out, "Using runtime: %s\n", rt.Name())
 
 	// Load state (optional - missing state is not an error for down)
-	st, err := loadStateOptional(cwd)
+	st, err := loadStateOptional(env, cwd)
 	if err != nil {
 		return err
 	}
@@ -84,10 +89,10 @@ func cleanupLANAccess(projectDir string, out io.Writer) error {
 
 	// Create TransactFs for file operations
 	tfs := transact.New()
-	ctx := util.WithFs(context.Background(), tfs)
+	env := util.NewEnv(tfs)
 
 	// Delete project file and check if shared should be removed
-	removeShared, flushWarning, err := network.DeleteProjectFile(ctx, projectDir)
+	removeShared, flushWarning, err := network.DeleteProjectFile(env, projectDir)
 	if flushWarning != nil {
 		progressStep(out, "Warning: failed to flush anchor: %v\n", flushWarning)
 	}
@@ -97,7 +102,7 @@ func cleanupLANAccess(projectDir string, out io.Writer) error {
 
 	if removeShared {
 		progressStep(out, "No other LAN access projects, removing shared NAT rule\n")
-		flushWarning, err := network.DeleteSharedRule(ctx)
+		flushWarning, err := network.DeleteSharedRule(env)
 		if flushWarning != nil {
 			progressStep(out, "Warning: failed to flush anchor: %v\n", flushWarning)
 		}

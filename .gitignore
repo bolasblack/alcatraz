@@ -2,8 +2,9 @@
 .claude/settings.local.json
 zhistory
 vendor
-out
 result
+out
+out_*
 
 .alca
 .alca.cache
@@ -18,3 +19,4 @@ docs/commands/*
 !.hugo/static
 !.hugo/layouts
 
+.custom-gcl.yml

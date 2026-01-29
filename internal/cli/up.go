@@ -9,13 +9,14 @@ import (
 	goruntime "runtime"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/network"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/bolasblack/alcatraz/internal/transact"
 	"github.com/bolasblack/alcatraz/internal/util"
-	"github.com/spf13/cobra"
 )
 
 var upCmd = &cobra.Command{
@@ -46,9 +47,13 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Create TransactFs for file operations
+	tfs := transact.New()
+	env := util.NewEnv(tfs)
+
 	// Load configuration
 	progressStep(out, "Loading config from %s\n", ConfigFilename)
-	cfg, _, err := loadConfigFromCwd(cwd)
+	cfg, _, err := loadConfigFromCwd(env, cwd)
 	if err != nil {
 		return err
 	}
@@ -67,7 +72,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load or create state
-	st, isNew, err := state.LoadOrCreate(cwd, rt.Name())
+	st, isNew, err := state.LoadOrCreate(env, cwd, rt.Name())
 	if err != nil {
 		return fmt.Errorf("failed to load state: %w", err)
 	}
@@ -94,7 +99,11 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// Update state with current config only when rebuilding or first time
 	if needsRebuild || isNew {
 		st.UpdateConfig(cfg)
-		if err := state.Save(cwd, st); err != nil {
+		if err := state.Save(env, cwd, st); err != nil {
+			return fmt.Errorf("failed to save state: %w", err)
+		}
+		// Commit state changes (state file is in project dir, no sudo needed)
+		if err := commitWithSudo(tfs); err != nil {
 			return fmt.Errorf("failed to save state: %w", err)
 		}
 	}
@@ -196,11 +205,11 @@ func ensureNetworkHelper(cfg *config.Config, out io.Writer) error {
 
 	// Create TransactFs for all file operations
 	tfs := transact.New()
-	ctx := util.WithFs(context.Background(), tfs)
+	env := util.NewEnv(tfs)
 
 	// Check if network helper is installed and up to date
-	installed := network.IsHelperInstalled(ctx)
-	needsUpdate := network.IsHelperNeedsUpdate(ctx)
+	installed := network.IsHelperInstalled(env)
+	needsUpdate := network.IsHelperNeedsUpdate(env)
 
 	if !installed {
 		progressStep(out, "Network configuration requires network-helper.\n")
@@ -214,7 +223,7 @@ func ensureNetworkHelper(cfg *config.Config, out io.Writer) error {
 	}
 
 	// Install or update network helper (stages files)
-	if err := network.InstallHelper(ctx, func(format string, args ...any) {
+	if err := network.InstallHelper(env, func(format string, args ...any) {
 		progressStep(out, format, args...)
 	}); err != nil {
 		return fmt.Errorf("failed to install network-helper: %w", err)
@@ -229,7 +238,7 @@ func ensureNetworkHelper(cfg *config.Config, out io.Writer) error {
 		return fmt.Errorf("failed to get physical interfaces: %w", err)
 	}
 	rules := network.GenerateNATRules(subnet, interfaces)
-	if err := network.WriteSharedRule(ctx, rules); err != nil {
+	if err := network.WriteSharedRule(env, rules); err != nil {
 		return fmt.Errorf("failed to create NAT rules: %w", err)
 	}
 
@@ -259,7 +268,7 @@ func configureNATRules(projectDir string, out io.Writer) error {
 
 	// Create TransactFs for batched file operations
 	tfs := transact.New()
-	ctx := util.WithFs(context.Background(), tfs)
+	env := util.NewEnv(tfs)
 
 	// Get OrbStack subnet
 	subnet, err := network.GetOrbStackSubnet()
@@ -270,7 +279,7 @@ func configureNATRules(projectDir string, out io.Writer) error {
 	progressStep(out, "OrbStack subnet: %s\n", subnet)
 
 	// Check if rule update is needed (new interfaces detected)
-	needsUpdate, newInterfaces, err := network.NeedsRuleUpdate(ctx)
+	needsUpdate, newInterfaces, err := network.NeedsRuleUpdate(env)
 	if err != nil {
 		return fmt.Errorf("failed to check rule update: %w", err)
 	}
@@ -285,7 +294,7 @@ func configureNATRules(projectDir string, out io.Writer) error {
 			return fmt.Errorf("failed to get physical interfaces: %w", err)
 		}
 		rules := network.GenerateNATRules(subnet, interfaces)
-		if err := network.WriteSharedRule(ctx, rules); err != nil {
+		if err := network.WriteSharedRule(env, rules); err != nil {
 			return fmt.Errorf("failed to create shared NAT rule: %w", err)
 		}
 		progressStep(out, "NAT rules updated for all interfaces\n")
@@ -293,7 +302,7 @@ func configureNATRules(projectDir string, out io.Writer) error {
 
 	// Create project-specific file
 	projectContent := "# Project-specific rules for " + projectDir + "\n"
-	if err := network.WriteProjectFile(ctx, projectDir, projectContent); err != nil {
+	if err := network.WriteProjectFile(env, projectDir, projectContent); err != nil {
 		return fmt.Errorf("failed to create project file: %w", err)
 	}
 

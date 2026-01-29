@@ -4,13 +4,13 @@
 package network
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 
-	"github.com/bolasblack/alcatraz/internal/util"
 	"github.com/spf13/afero"
+
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 // pf.conf constants.
@@ -24,12 +24,11 @@ const (
 // EnsurePfAnchor adds nat-anchor "alcatraz" to /etc/pf.conf if not present.
 // Also handles migration from old 'alcatraz/*' wildcard format.
 // IMPORTANT: nat-anchor lines must come BEFORE anchor lines in pf.conf.
-func EnsurePfAnchor(ctx context.Context) error {
-	fs := util.MustGetFs(ctx)
+func EnsurePfAnchor(env *util.Env) error {
 	anchorLine := `nat-anchor "alcatraz"`
 	oldAnchorLine := `nat-anchor "alcatraz/*"`
 
-	content, err := afero.ReadFile(fs, PfConfPath)
+	content, err := afero.ReadFile(env.Fs, PfConfPath)
 	if err != nil {
 		return fmt.Errorf("failed to read pf.conf: %w", err)
 	}
@@ -46,15 +45,14 @@ func EnsurePfAnchor(ctx context.Context) error {
 	newLines := parsePfConfAndRemoveOldAnchor(contentStr, oldAnchorLine)
 	newLines = insertAnchorLine(newLines, anchorLine)
 
-	return writePfConf(ctx, newLines)
+	return writePfConf(env, newLines)
 }
 
 // RemovePfAnchor removes nat-anchor "alcatraz" from /etc/pf.conf.
-func RemovePfAnchor(ctx context.Context) error {
-	fs := util.MustGetFs(ctx)
+func RemovePfAnchor(env *util.Env) error {
 	anchorLine := `nat-anchor "alcatraz"`
 
-	content, err := afero.ReadFile(fs, PfConfPath)
+	content, err := afero.ReadFile(env.Fs, PfConfPath)
 	if err != nil {
 		return fmt.Errorf("failed to read pf.conf: %w", err)
 	}
@@ -72,22 +70,21 @@ func RemovePfAnchor(ctx context.Context) error {
 		}
 	}
 
-	return writePfConf(ctx, newLines)
+	return writePfConf(env, newLines)
 }
 
 // WriteSharedRule writes the shared NAT rule file to the staging filesystem.
 // The actual file write with sudo will happen during commit.
-func WriteSharedRule(ctx context.Context, rules string) error {
-	fs := util.MustGetFs(ctx)
+func WriteSharedRule(env *util.Env, rules string) error {
 	sharedPath := filepath.Join(PfAnchorDir, SharedRuleFile)
 
 	// Ensure parent directory exists in staging
-	if err := fs.MkdirAll(PfAnchorDir, 0755); err != nil {
+	if err := env.Fs.MkdirAll(PfAnchorDir, 0755); err != nil {
 		return fmt.Errorf("failed to create anchor directory: %w", err)
 	}
 
 	// Stage the write
-	if err := afero.WriteFile(fs, sharedPath, []byte(rules), 0644); err != nil {
+	if err := afero.WriteFile(env.Fs, sharedPath, []byte(rules), 0644); err != nil {
 		return fmt.Errorf("failed to stage shared rule: %w", err)
 	}
 	return nil
@@ -95,18 +92,17 @@ func WriteSharedRule(ctx context.Context, rules string) error {
 
 // WriteProjectFile writes the project-specific rule file to the staging filesystem.
 // The actual file write with sudo will happen during commit.
-func WriteProjectFile(ctx context.Context, projectDir, content string) error {
-	fs := util.MustGetFs(ctx)
+func WriteProjectFile(env *util.Env, projectDir, content string) error {
 	filename := ProjectFileName(projectDir)
 	projectFilePath := filepath.Join(PfAnchorDir, filename)
 
 	// Ensure parent directory exists in staging
-	if err := fs.MkdirAll(PfAnchorDir, 0755); err != nil {
+	if err := env.Fs.MkdirAll(PfAnchorDir, 0755); err != nil {
 		return fmt.Errorf("failed to create anchor directory: %w", err)
 	}
 
 	// Stage the write
-	if err := afero.WriteFile(fs, projectFilePath, []byte(content), 0644); err != nil {
+	if err := afero.WriteFile(env.Fs, projectFilePath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to stage project file: %w", err)
 	}
 	return nil
@@ -198,15 +194,14 @@ func insertBeforeFirstAnchor(lines []string, anchorLine string) []string {
 
 // writePfConf writes the new pf.conf content to the staging filesystem.
 // The actual file write with sudo will happen during commit.
-func writePfConf(ctx context.Context, lines []string) error {
-	fs := util.MustGetFs(ctx)
+func writePfConf(env *util.Env, lines []string) error {
 	newContent := strings.Join(lines, "\n")
 	if !strings.HasSuffix(newContent, "\n") {
 		newContent += "\n"
 	}
 
 	// Stage the write - actual sudo write happens during commit
-	if err := afero.WriteFile(fs, PfConfPath, []byte(newContent), 0644); err != nil {
+	if err := afero.WriteFile(env.Fs, PfConfPath, []byte(newContent), 0644); err != nil {
 		return fmt.Errorf("failed to stage pf.conf: %w", err)
 	}
 

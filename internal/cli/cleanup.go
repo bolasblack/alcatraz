@@ -8,9 +8,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
-	"github.com/spf13/cobra"
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 var cleanupAll bool
@@ -36,8 +38,11 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Create env for read-only file operations
+	env := util.NewReadonlyOsEnv()
+
 	// Load config (optional) and select runtime
-	_, rt, err := loadConfigAndRuntimeOptional(cwd)
+	_, rt, err := loadConfigAndRuntimeOptional(env, cwd)
 	if err != nil {
 		return err
 	}
@@ -51,7 +56,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	// Find orphan containers
 	var orphans []runtime.ContainerInfo
 	for _, c := range containers {
-		isOrphan, _ := checkOrphanStatus(c)
+		isOrphan, _ := checkOrphanStatus(env, c)
 		if isOrphan {
 			orphans = append(orphans, c)
 		}
@@ -68,7 +73,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		// --all flag: skip interaction
 		toDelete = orphans
 	} else {
-		toDelete = selectOrphansInteractively(orphans)
+		toDelete = selectOrphansInteractively(env, orphans)
 	}
 
 	if len(toDelete) == 0 {
@@ -85,25 +90,25 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 
 // checkOrphanStatus checks if a container is orphaned and returns the reason.
 // Returns (isOrphan, reason).
-func checkOrphanStatus(c runtime.ContainerInfo) (bool, string) {
+func checkOrphanStatus(env *util.Env, c runtime.ContainerInfo) (bool, string) {
 	// No path label = orphan
 	if c.ProjectPath == "" {
 		return true, "no project path label"
 	}
 
 	// Directory doesn't exist = orphan
-	if _, err := os.Stat(c.ProjectPath); os.IsNotExist(err) {
+	if _, err := env.Fs.Stat(c.ProjectPath); os.IsNotExist(err) {
 		return true, "project directory does not exist"
 	}
 
 	// No state file = orphan
 	stateFile := state.StateFilePath(c.ProjectPath)
-	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
+	if _, err := env.Fs.Stat(stateFile); os.IsNotExist(err) {
 		return true, "state file (.alca/state.json) does not exist"
 	}
 
 	// Verify project ID matches
-	st, err := state.Load(c.ProjectPath)
+	st, err := state.Load(env, c.ProjectPath)
 	if err != nil {
 		return true, "failed to load state file"
 	}
@@ -118,10 +123,10 @@ func checkOrphanStatus(c runtime.ContainerInfo) (bool, string) {
 }
 
 // selectOrphansInteractively displays orphans and prompts for selection.
-func selectOrphansInteractively(orphans []runtime.ContainerInfo) []runtime.ContainerInfo {
+func selectOrphansInteractively(env *util.Env, orphans []runtime.ContainerInfo) []runtime.ContainerInfo {
 	fmt.Printf("Found %d orphan container(s):\n\n", len(orphans))
 	for i, c := range orphans {
-		_, reason := checkOrphanStatus(c)
+		_, reason := checkOrphanStatus(env, c)
 		projectPath := c.ProjectPath
 		if projectPath == "" {
 			projectPath = "(no path)"

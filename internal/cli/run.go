@@ -8,8 +8,10 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/spf13/cobra"
+
+	"github.com/bolasblack/alcatraz/internal/runtime"
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 var runCmd = &cobra.Command{
@@ -34,14 +36,17 @@ func runRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Create env for read-only file operations
+	env := util.NewReadonlyOsEnv()
+
 	// Load configuration and runtime
-	cfg, rt, err := loadConfigAndRuntime(cwd)
+	cfg, rt, err := loadConfigAndRuntime(env, cwd)
 	if err != nil {
 		return err
 	}
 
 	// Load state (required)
-	st, err := loadRequiredState(cwd)
+	st, err := loadRequiredState(env, cwd)
 	if err != nil {
 		return err
 	}
@@ -55,7 +60,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if status.State != runtime.StateRunning {
-		return fmt.Errorf(ErrMsgNotRunning)
+		return errors.New(ErrMsgNotRunning)
 	}
 
 	// Build command with optional enter prefix

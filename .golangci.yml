@@ -1,0 +1,42 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: vendor
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - fslint
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+    custom:
+      fslint:
+        type: module
+        description: Detects direct filesystem operations in internal packages
+        settings:
+          config: config/fslint.toml
+  exclusions:
+    paths:
+      - vendor
+      - .alca.cache
+    rules:
+      - path: _test\.go$
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/bolasblack/alcatraz

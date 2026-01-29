@@ -136,7 +136,9 @@ func (t *TransactFs) OpenFile(name string, flag int, perm os.FileMode) (afero.Fi
 		if _, err := t.staged.Stat(name); os.IsNotExist(err) {
 			if content, err := afero.ReadFile(t.actual, name); err == nil {
 				info, _ := t.actual.Stat(name)
-				afero.WriteFile(t.staged, name, content, info.Mode().Perm())
+				if err := afero.WriteFile(t.staged, name, content, info.Mode().Perm()); err != nil {
+					return nil, err
+				}
 			} else if flag&os.O_CREATE == 0 {
 				// File doesn't exist anywhere and not creating
 				return nil, err
@@ -529,4 +531,3 @@ func parentDir(path string) string {
 	}
 	return "."
 }
-

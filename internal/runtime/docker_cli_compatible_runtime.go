@@ -9,10 +9,11 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/term"
+
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/bolasblack/alcatraz/internal/util"
-	"golang.org/x/term"
 )
 
 // Constants for container runtime commands.

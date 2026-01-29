@@ -2,12 +2,16 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
-	"github.com/spf13/cobra"
+	"github.com/bolasblack/alcatraz/internal/transact"
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 // experimentalWarning is displayed before executing experimental commands.
@@ -42,16 +46,20 @@ func init() {
 // runReload re-applies the configuration to the running container.
 func runReload(cmd *cobra.Command, args []string) error {
 	// Show experimental warning
-	fmt.Fprint(cmd.OutOrStderr(), experimentalWarning)
-	fmt.Fprintln(cmd.OutOrStderr())
+	_, _ = fmt.Fprint(cmd.OutOrStderr(), experimentalWarning)
+	_, _ = fmt.Fprintln(cmd.OutOrStderr())
 
 	cwd, err := getCwd()
 	if err != nil {
 		return err
 	}
 
+	// Create TransactFs for file operations
+	tfs := transact.New()
+	env := util.NewEnv(tfs)
+
 	// Load configuration and runtime
-	cfg, rt, err := loadConfigAndRuntime(cwd)
+	cfg, rt, err := loadConfigAndRuntime(env, cwd)
 	if err != nil {
 		return err
 	}
@@ -59,7 +67,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 	progressStep(os.Stdout, "Using runtime: %s\n", rt.Name())
 
 	// Load state (required)
-	st, err := loadRequiredState(cwd)
+	st, err := loadRequiredState(env, cwd)
 	if err != nil {
 		return err
 	}
@@ -80,15 +88,20 @@ func runReload(cmd *cobra.Command, args []string) error {
 	// Reload the container
 	if err := rt.Reload(ctx, cfg, cwd, st); err != nil {
 		if err == runtime.ErrNotRunning {
-			return fmt.Errorf(ErrMsgNotRunning)
+			return errors.New(ErrMsgNotRunning)
 		}
 		return fmt.Errorf("failed to reload container: %w", err)
 	}
 
 	// Update state with current config
 	st.UpdateConfig(cfg)
-	if err := state.Save(cwd, st); err != nil {
+	if err := state.Save(env, cwd, st); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
+	}
+
+	// Commit file operations
+	if err := commitWithSudo(tfs); err != nil {
+		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 
 	progressDone(os.Stdout, "Configuration reloaded successfully.\n")

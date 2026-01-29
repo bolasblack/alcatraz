@@ -9,7 +9,7 @@ import (
 // Progress writes a progress message if not in quiet mode.
 func Progress(w io.Writer, format string, args ...any) {
 	if w != nil {
-		fmt.Fprintf(w, format, args...)
+		_, _ = fmt.Fprintf(w, format, args...)
 	}
 }
 

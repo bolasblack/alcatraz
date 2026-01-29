@@ -45,7 +45,7 @@ func TestTransactFs_Commit_Success(t *testing.T) {
 	tfs := New(WithActualFs(actualFs))
 
 	// Stage a file
-	afero.WriteFile(tfs,"/tmp/test", []byte("content"), 0644)
+	afero.WriteFile(tfs, "/tmp/test", []byte("content"), 0644)
 
 	// Commit with success callback
 	_, err := tfs.Commit(func(ctx CommitContext) (*CommitOpsResult, error) {
@@ -108,5 +108,149 @@ func TestExecuteOp(t *testing.T) {
 
 	if exists, _ := afero.Exists(fs, "/test/file"); exists {
 		t.Error("file should not exist after delete")
+	}
+}
+
+func TestGroupOpsBySudo(t *testing.T) {
+	tests := []struct {
+		name     string
+		ops      []FileOp
+		expected []OpGroup
+	}{
+		{
+			name:     "empty ops",
+			ops:      []FileOp{},
+			expected: nil,
+		},
+		{
+			name: "all same sudo value",
+			ops: []FileOp{
+				{Path: "/a", NeedSudo: false},
+				{Path: "/b", NeedSudo: false},
+				{Path: "/c", NeedSudo: false},
+			},
+			expected: []OpGroup{
+				{NeedSudo: false, Ops: []FileOp{{Path: "/a", NeedSudo: false}, {Path: "/b", NeedSudo: false}, {Path: "/c", NeedSudo: false}}},
+			},
+		},
+		{
+			name: "alternating sudo values",
+			ops: []FileOp{
+				{Path: "/a", NeedSudo: false},
+				{Path: "/b", NeedSudo: true},
+				{Path: "/c", NeedSudo: false},
+			},
+			expected: []OpGroup{
+				{NeedSudo: false, Ops: []FileOp{{Path: "/a", NeedSudo: false}}},
+				{NeedSudo: true, Ops: []FileOp{{Path: "/b", NeedSudo: true}}},
+				{NeedSudo: false, Ops: []FileOp{{Path: "/c", NeedSudo: false}}},
+			},
+		},
+		{
+			name: "consecutive groups",
+			ops: []FileOp{
+				{Path: "/a", NeedSudo: false},
+				{Path: "/b", NeedSudo: false},
+				{Path: "/c", NeedSudo: true},
+				{Path: "/d", NeedSudo: true},
+				{Path: "/e", NeedSudo: false},
+			},
+			expected: []OpGroup{
+				{NeedSudo: false, Ops: []FileOp{{Path: "/a", NeedSudo: false}, {Path: "/b", NeedSudo: false}}},
+				{NeedSudo: true, Ops: []FileOp{{Path: "/c", NeedSudo: true}, {Path: "/d", NeedSudo: true}}},
+				{NeedSudo: false, Ops: []FileOp{{Path: "/e", NeedSudo: false}}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GroupOpsBySudo(tt.ops)
+			if len(result) != len(tt.expected) {
+				t.Errorf("GroupOpsBySudo() returned %d groups, want %d", len(result), len(tt.expected))
+				return
+			}
+			for i, group := range result {
+				if group.NeedSudo != tt.expected[i].NeedSudo {
+					t.Errorf("group[%d].NeedSudo = %v, want %v", i, group.NeedSudo, tt.expected[i].NeedSudo)
+				}
+				if len(group.Ops) != len(tt.expected[i].Ops) {
+					t.Errorf("group[%d] has %d ops, want %d", i, len(group.Ops), len(tt.expected[i].Ops))
+				}
+			}
+		})
+	}
+}
+
+func TestExecuteGroupedOps(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	// Create groups with mixed sudo requirements
+	groups := []OpGroup{
+		{
+			NeedSudo: false,
+			Ops: []FileOp{
+				{Path: "/tmp/a", Op: OpCreate, Content: []byte("a"), Mode: 0644},
+				{Path: "/tmp/b", Op: OpCreate, Content: []byte("b"), Mode: 0644},
+			},
+		},
+	}
+
+	// Execute with mock sudo executor (should not be called for non-sudo ops)
+	sudoCalled := false
+	err := ExecuteGroupedOps(fs, groups, func(script string) error {
+		sudoCalled = true
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("ExecuteGroupedOps failed: %v", err)
+	}
+
+	if sudoCalled {
+		t.Error("sudo executor should not be called for non-sudo ops")
+	}
+
+	// Verify files were created
+	contentA, _ := afero.ReadFile(fs, "/tmp/a")
+	if string(contentA) != "a" {
+		t.Errorf("expected 'a', got %q", string(contentA))
+	}
+	contentB, _ := afero.ReadFile(fs, "/tmp/b")
+	if string(contentB) != "b" {
+		t.Errorf("expected 'b', got %q", string(contentB))
+	}
+}
+
+func TestExecuteGroupedOps_WithSudo(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	// Create groups with sudo requirement
+	groups := []OpGroup{
+		{
+			NeedSudo: true,
+			Ops: []FileOp{
+				{Path: "/etc/test", Op: OpCreate, Content: []byte("sudo"), Mode: 0644},
+			},
+		},
+	}
+
+	// Execute with mock sudo executor
+	var receivedScript string
+	err := ExecuteGroupedOps(fs, groups, func(script string) error {
+		receivedScript = script
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("ExecuteGroupedOps failed: %v", err)
+	}
+
+	// Verify sudo was called with correct script
+	if receivedScript == "" {
+		t.Error("sudo executor should be called for sudo ops")
+	}
+	if !strings.Contains(receivedScript, "/etc/test") {
+		t.Error("script should contain the file path")
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 var listCmd = &cobra.Command{
@@ -24,9 +26,12 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Create env for read-only file operations
+	env := util.NewReadonlyOsEnv()
+
 	// Load config (optional) and select runtime
 	// Log warning if config has issues but continue
-	cfg, rt, err := loadConfigAndRuntimeOptional(cwd)
+	cfg, rt, err := loadConfigAndRuntimeOptional(env, cwd)
 	if err != nil {
 		return err
 	}
@@ -45,7 +50,7 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	// Print table
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tSTATUS\tPROJECT ID\tPROJECT PATH\tCREATED")
+	_, _ = fmt.Fprintln(w, "NAME\tSTATUS\tPROJECT ID\tPROJECT PATH\tCREATED")
 
 	for _, c := range containers {
 		status := string(c.State)
@@ -62,11 +67,11 @@ func runList(cmd *cobra.Command, args []string) error {
 			createdAt = createdAt[:19]
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			c.Name, status, projectID, projectPath, createdAt)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	return nil
 }
 

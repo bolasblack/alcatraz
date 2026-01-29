@@ -1,5 +1,6 @@
-.PHONY: build test clean docs docs-markdown docs-man docs-html docs-serve vendor update-vendor-hash schema
+.PHONY: build test clean docs docs-markdown docs-man docs-html docs-serve vendor update-vendor-hash schema lint
 
+LINT_DIR := out_lint
 OUT_DIR := out
 BIN_DIR := $(OUT_DIR)/bin
 
@@ -10,10 +11,23 @@ $(BIN_DIR)/alca: $(shell find . -name '*.go' -type f)
 	go build -o $(BIN_DIR)/alca ./cmd/alca
 
 test:
-	go test ./...
+	go test -coverprofile=out_coverage ./...
+	go tool cover -html=out_coverage -o out_coverage.html
 
 clean:
-	rm -rf $(OUT_DIR)
+	rm -rf $(OUT_DIR) $(LINT_DIR)
+
+# ========= Linting =========
+CUSTOM_GCL := $(LINT_DIR)/custom-gcl
+
+$(CUSTOM_GCL): $(shell find tools/fslint -name '*.go' -type f) config/golangci-lint-custom.yml
+	@mkdir -p $(LINT_DIR)
+	@ln -sf config/golangci-lint-custom.yml .custom-gcl.yml
+	golangci-lint custom --destination=$(LINT_DIR) --name=custom-gcl
+	@rm -f .custom-gcl.yml
+
+lint: $(CUSTOM_GCL)
+	$(CUSTOM_GCL) run ./...
 
 # ========= Vendor management =========
 vendor:

@@ -22,9 +22,9 @@ var (
 type ContainerState string
 
 const (
-	StateUnknown ContainerState = "unknown"
-	StateRunning ContainerState = "running"
-	StateStopped ContainerState = "stopped"
+	StateUnknown  ContainerState = "unknown"
+	StateRunning  ContainerState = "running"
+	StateStopped  ContainerState = "stopped"
 	StateNotFound ContainerState = "not_found"
 )
 

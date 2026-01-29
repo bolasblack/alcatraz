@@ -1,11 +1,21 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
+
+	"github.com/bolasblack/alcatraz/internal/util"
 )
+
+// newTestEnv creates a test environment with in-memory filesystem.
+func newTestEnv(t *testing.T) (*util.Env, afero.Fs) {
+	t.Helper()
+	memFs := afero.NewMemMapFs()
+	env := &util.Env{Fs: memFs}
+	return env, memFs
+}
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
@@ -32,13 +42,13 @@ mounts = ["/host:/container", "/data:/data"]
 up = "apt update"
 enter = "bash"
 `
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, ".alca.toml")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	env, memFs := newTestEnv(t)
+	path := "/test/.alca.toml"
+	if err := afero.WriteFile(memFs, path, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(env, path)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
@@ -61,7 +71,8 @@ enter = "bash"
 }
 
 func TestLoadConfigNotFound(t *testing.T) {
-	_, err := LoadConfig("/nonexistent/path/.alca.toml")
+	env, _ := newTestEnv(t)
+	_, err := LoadConfig(env, "/nonexistent/path/.alca.toml")
 	if err == nil {
 		t.Error("expected error for nonexistent file, got nil")
 	}
@@ -79,39 +90,221 @@ REFERENCE = "${HOST_VAR}"
 value = "value2"
 override_on_enter = true
 `
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, ".alca.toml")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	env, memFs := newTestEnv(t)
+	path := "/test/.alca.toml"
+	if err := afero.WriteFile(memFs, path, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(env, path)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
 	// Test simple string env
-	if env, ok := cfg.Envs["SIMPLE"]; !ok {
+	if e, ok := cfg.Envs["SIMPLE"]; !ok {
 		t.Error("expected SIMPLE env to exist")
-	} else if env.Value != "value1" || env.OverrideOnEnter {
+	} else if e.Value != "value1" || e.OverrideOnEnter {
 		t.Errorf("SIMPLE env: got value=%q override=%v, want value='value1' override=false",
-			env.Value, env.OverrideOnEnter)
+			e.Value, e.OverrideOnEnter)
 	}
 
 	// Test reference env
-	if env, ok := cfg.Envs["REFERENCE"]; !ok {
+	if e, ok := cfg.Envs["REFERENCE"]; !ok {
 		t.Error("expected REFERENCE env to exist")
-	} else if env.Value != "${HOST_VAR}" {
-		t.Errorf("REFERENCE env: got value=%q, want '${HOST_VAR}'", env.Value)
+	} else if e.Value != "${HOST_VAR}" {
+		t.Errorf("REFERENCE env: got value=%q, want '${HOST_VAR}'", e.Value)
 	}
 
 	// Test complex object env
-	if env, ok := cfg.Envs["COMPLEX"]; !ok {
+	if e, ok := cfg.Envs["COMPLEX"]; !ok {
 		t.Error("expected COMPLEX env to exist")
-	} else if env.Value != "value2" || !env.OverrideOnEnter {
+	} else if e.Value != "value2" || !e.OverrideOnEnter {
 		t.Errorf("COMPLEX env: got value=%q override=%v, want value='value2' override=true",
-			env.Value, env.OverrideOnEnter)
+			e.Value, e.OverrideOnEnter)
 	}
+}
+
+func TestEnvValueValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{"static value", "hello", false},
+		{"valid reference", "${MY_VAR}", false},
+		{"valid with underscore", "${MY_VAR_NAME}", false},
+		{"valid with hyphen", "${MY-VAR}", false},
+		{"valid with numbers", "${VAR123}", false},
+		{"invalid nested braces", "${${VAR}}", true},
+		{"invalid partial syntax", "prefix${VAR}suffix", true},
+		{"invalid missing closing brace", "${VAR", true},
+		{"invalid empty var name", "${}", true},
+		{"invalid starts with number", "${123VAR}", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := EnvValue{Value: tt.value}
+			err := env.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestEnvValueExpand(t *testing.T) {
+	mockEnv := func(key string) string {
+		envs := map[string]string{
+			"HOME":   "/home/user",
+			"USER":   "testuser",
+			"EMPTY":  "",
+			"MY_VAR": "myvalue",
+		}
+		return envs[key]
+	}
+
+	tests := []struct {
+		name   string
+		value  string
+		expect string
+	}{
+		{"static value", "hello", "hello"},
+		{"expand HOME", "${HOME}", "/home/user"},
+		{"expand USER", "${USER}", "testuser"},
+		{"expand empty var", "${EMPTY}", ""},
+		{"expand undefined var", "${UNDEFINED}", ""},
+		{"expand MY_VAR", "${MY_VAR}", "myvalue"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := EnvValue{Value: tt.value}
+			got := env.Expand(mockEnv)
+			if got != tt.expect {
+				t.Errorf("Expand() = %q, want %q", got, tt.expect)
+			}
+		})
+	}
+}
+
+func TestEnvValueIsInterpolated(t *testing.T) {
+	tests := []struct {
+		name   string
+		value  string
+		expect bool
+	}{
+		{"static value", "hello", false},
+		{"with interpolation", "${VAR}", true},
+		{"partial interpolation", "prefix${VAR}", true},
+		{"no dollar", "VAR", false},
+		{"dollar without brace", "$VAR", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := EnvValue{Value: tt.value}
+			got := env.IsInterpolated()
+			if got != tt.expect {
+				t.Errorf("IsInterpolated() = %v, want %v", got, tt.expect)
+			}
+		})
+	}
+}
+
+func TestConfigNormalizeRuntime(t *testing.T) {
+	tests := []struct {
+		name    string
+		runtime RuntimeType
+		expect  RuntimeType
+	}{
+		{"empty defaults to auto", "", RuntimeAuto},
+		{"auto stays auto", RuntimeAuto, RuntimeAuto},
+		{"docker stays docker", RuntimeDocker, RuntimeDocker},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{Runtime: tt.runtime}
+			got := cfg.NormalizeRuntime()
+			if got != tt.expect {
+				t.Errorf("NormalizeRuntime() = %q, want %q", got, tt.expect)
+			}
+		})
+	}
+}
+
+func TestConfigMergedEnvs(t *testing.T) {
+	t.Run("nil envs returns defaults", func(t *testing.T) {
+		cfg := Config{Envs: nil}
+		merged := cfg.MergedEnvs()
+
+		// Check some default envs exist
+		if _, ok := merged["TERM"]; !ok {
+			t.Error("expected TERM in merged envs")
+		}
+		if _, ok := merged["LANG"]; !ok {
+			t.Error("expected LANG in merged envs")
+		}
+	})
+
+	t.Run("user envs override defaults", func(t *testing.T) {
+		cfg := Config{
+			Envs: map[string]EnvValue{
+				"TERM":   {Value: "custom-term", OverrideOnEnter: false},
+				"CUSTOM": {Value: "custom-value"},
+			},
+		}
+		merged := cfg.MergedEnvs()
+
+		// User TERM overrides default
+		if merged["TERM"].Value != "custom-term" {
+			t.Errorf("expected TERM='custom-term', got %q", merged["TERM"].Value)
+		}
+		if merged["TERM"].OverrideOnEnter != false {
+			t.Error("expected TERM.OverrideOnEnter=false")
+		}
+
+		// Custom env is added
+		if merged["CUSTOM"].Value != "custom-value" {
+			t.Errorf("expected CUSTOM='custom-value', got %q", merged["CUSTOM"].Value)
+		}
+
+		// Default LANG is preserved
+		if _, ok := merged["LANG"]; !ok {
+			t.Error("expected LANG in merged envs")
+		}
+	})
+}
+
+func TestConfigValidateEnvs(t *testing.T) {
+	t.Run("valid envs", func(t *testing.T) {
+		cfg := Config{
+			Envs: map[string]EnvValue{
+				"STATIC":    {Value: "value"},
+				"REFERENCE": {Value: "${HOME}"},
+			},
+		}
+		if err := cfg.ValidateEnvs(); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+	})
+
+	t.Run("invalid env", func(t *testing.T) {
+		cfg := Config{
+			Envs: map[string]EnvValue{
+				"BAD": {Value: "prefix${VAR}suffix"},
+			},
+		}
+		err := cfg.ValidateEnvs()
+		if err == nil {
+			t.Error("expected error for invalid env")
+		}
+		if !strings.Contains(err.Error(), "BAD") {
+			t.Errorf("expected error to mention 'BAD', got %v", err)
+		}
+	})
 }
 
 func TestGenerateConfig(t *testing.T) {
@@ -140,6 +333,75 @@ func TestGenerateConfig(t *testing.T) {
 			}
 			if !strings.Contains(content, SchemaComment) {
 				t.Error("expected schema comment in output")
+			}
+		})
+	}
+}
+
+func TestGenerateConfigUnknownTemplate(t *testing.T) {
+	// Unknown template should fall back to nix
+	content, err := GenerateConfig("unknown")
+	if err != nil {
+		t.Fatalf("GenerateConfig failed: %v", err)
+	}
+	if !strings.Contains(content, "nixos/nix") {
+		t.Error("expected unknown template to fall back to nix")
+	}
+}
+
+func TestInsertUpComment(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		comment string
+		want    string
+	}{
+		{
+			name: "inserts comment before up",
+			content: `image = "test"
+
+[commands]
+up = "test up"
+enter = "test enter"
+`,
+			comment: "my comment",
+			want: `image = "test"
+
+[commands]
+# my comment
+up = "test up"
+enter = "test enter"
+`,
+		},
+		{
+			name: "no commands section",
+			content: `image = "test"
+`,
+			comment: "my comment",
+			want: `image = "test"
+`,
+		},
+		{
+			name: "commands without up",
+			content: `image = "test"
+
+[commands]
+enter = "bash"
+`,
+			comment: "my comment",
+			want: `image = "test"
+
+[commands]
+enter = "bash"
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := insertUpComment(tt.content, tt.comment)
+			if got != tt.want {
+				t.Errorf("insertUpComment() =\n%q\nwant:\n%q", got, tt.want)
 			}
 		})
 	}

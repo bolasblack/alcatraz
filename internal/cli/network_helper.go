@@ -1,17 +1,18 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
+
 	"github.com/bolasblack/alcatraz/internal/network"
 	"github.com/bolasblack/alcatraz/internal/sudo"
 	"github.com/bolasblack/alcatraz/internal/transact"
 	"github.com/bolasblack/alcatraz/internal/util"
-	"github.com/spf13/cobra"
 )
 
 var networkHelperCmd = &cobra.Command{
@@ -92,9 +93,9 @@ func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
 
 	// Create TransactFs for batched file operations
 	tfs := transact.New()
-	ctx := util.WithFs(context.Background(), tfs)
+	env := util.NewEnv(tfs)
 
-	if err := network.InstallHelper(ctx, func(format string, args ...any) {
+	if err := network.InstallHelper(env, func(format string, args ...any) {
 		progressStep(os.Stdout, format, args...)
 	}); err != nil {
 		return err
@@ -119,19 +120,19 @@ func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// fileExistsOS checks if a file exists using OS filesystem directly.
-// Used for pre-checks before TransactFs is created.
-func fileExistsOS(path string) bool {
-	_, err := os.Stat(path)
+// fileExists checks if a file exists using the env filesystem.
+func fileExists(env *util.Env, path string) bool {
+	_, err := env.Fs.Stat(path)
 	return err == nil
 }
 
 // runNetworkHelperUninstall removes the LaunchDaemon and cleans up.
 // See AGD-023 for lifecycle details.
 func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
-	// Check if installed (use OS filesystem for pre-checks)
-	plistExists := fileExistsOS(network.LaunchDaemonPath)
-	dirExists := fileExistsOS(network.PfAnchorDir)
+	// Check if installed (use readonly env for pre-checks)
+	preCheckEnv := util.NewReadonlyOsEnv()
+	plistExists := fileExists(preCheckEnv, network.LaunchDaemonPath)
+	dirExists := fileExists(preCheckEnv, network.PfAnchorDir)
 
 	if !plistExists && !dirExists && !network.IsLaunchDaemonLoaded() {
 		fmt.Println("Network helper is not installed.")
@@ -162,10 +163,10 @@ func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
 
 	// Create TransactFs for batched file operations
 	tfs := transact.New()
-	ctx := util.WithFs(context.Background(), tfs)
+	env := util.NewEnv(tfs)
 
 	// Perform uninstallation using network package
-	warnings := network.UninstallHelper(ctx, func(format string, args ...any) {
+	warnings := network.UninstallHelper(env, func(format string, args ...any) {
 		progressStep(os.Stdout, format, args...)
 	})
 	for _, w := range warnings {
@@ -197,51 +198,52 @@ func runNetworkHelperStatus(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-
 // printNetworkHelperStatus prints the current network helper status.
 func printNetworkHelperStatus() {
+	env := util.NewReadonlyOsEnv()
+
 	fmt.Println("Network Helper Status")
 	fmt.Println("=====================")
 	fmt.Println("")
 
-	printLaunchDaemonStatus()
-	printAnchorDirectoryStatus()
-	printRuleFiles()
-	printActivePfRules()
+	printLaunchDaemonStatus(env)
+	printAnchorDirectoryStatus(env)
+	printRuleFiles(env)
+	printActivePfRules(env)
 
 	fmt.Println("")
 
-	// Show helpful commands (use OS filesystem)
-	if !network.IsLaunchDaemonLoaded() && !fileExistsOS(network.LaunchDaemonPath) {
+	// Show helpful commands
+	if !network.IsLaunchDaemonLoaded() && !fileExists(env, network.LaunchDaemonPath) {
 		fmt.Println("Run 'alca network-helper install' to install the network helper.")
 	}
 }
 
-func printLaunchDaemonStatus() {
+func printLaunchDaemonStatus(env *util.Env) {
 	fmt.Print("LaunchDaemon: ")
 	if network.IsLaunchDaemonLoaded() {
 		fmt.Println("Loaded")
-	} else if fileExistsOS(network.LaunchDaemonPath) {
+	} else if fileExists(env, network.LaunchDaemonPath) {
 		fmt.Println("Installed but not loaded")
 	} else {
 		fmt.Println("Not installed")
 	}
 }
 
-func printAnchorDirectoryStatus() {
+func printAnchorDirectoryStatus(env *util.Env) {
 	fmt.Print("Anchor directory: ")
-	if fileExistsOS(network.PfAnchorDir) {
+	if fileExists(env, network.PfAnchorDir) {
 		fmt.Printf("%s (exists)\n", network.PfAnchorDir)
 	} else {
 		fmt.Println("Not created")
 	}
 }
 
-func printRuleFiles() {
+func printRuleFiles(env *util.Env) {
 	fmt.Println("")
 	fmt.Println("Rule files:")
-	if fileExistsOS(network.PfAnchorDir) {
-		entries, err := os.ReadDir(network.PfAnchorDir)
+	if fileExists(env, network.PfAnchorDir) {
+		entries, err := afero.ReadDir(env.Fs, network.PfAnchorDir)
 		if err != nil {
 			fmt.Printf("  Error reading directory: %v\n", err)
 		} else if len(entries) == 0 {
@@ -258,7 +260,7 @@ func printRuleFiles() {
 	}
 }
 
-func printActivePfRules() {
+func printActivePfRules(env *util.Env) {
 	fmt.Println("")
 	fmt.Println("Active pf rules:")
 
@@ -268,12 +270,12 @@ func printActivePfRules() {
 		fmt.Println("  (LaunchDaemon not loaded - rules may be stale)")
 	}
 
-	if !fileExistsOS(network.PfAnchorDir) {
+	if !fileExists(env, network.PfAnchorDir) {
 		fmt.Println("  (none)")
 		return
 	}
 
-	entries, err := os.ReadDir(network.PfAnchorDir)
+	entries, err := afero.ReadDir(env.Fs, network.PfAnchorDir)
 	if err != nil {
 		fmt.Printf("  Error reading directory: %v\n", err)
 		return
@@ -284,7 +286,7 @@ func printActivePfRules() {
 		if entry.IsDir() {
 			continue
 		}
-		content, err := os.ReadFile(filepath.Join(network.PfAnchorDir, entry.Name()))
+		content, err := afero.ReadFile(env.Fs, filepath.Join(network.PfAnchorDir, entry.Name()))
 		if err != nil {
 			continue
 		}
@@ -304,21 +306,20 @@ func printActivePfRules() {
 	}
 }
 
-
-// commitWithSudo commits TransactFs changes using sudo for privileged operations.
-// It generates a batch script from the pending operations and executes it with sudo.
+// commitWithSudo commits TransactFs changes, intelligently grouping operations
+// by sudo requirement and executing each group with the appropriate method.
 func commitWithSudo(tfs *transact.TransactFs) error {
 	_, err := tfs.Commit(func(ctx transact.CommitContext) (*transact.CommitOpsResult, error) {
 		if len(ctx.Ops) == 0 {
 			return nil, nil
 		}
 
-		// Generate batch script for all operations
-		script := transact.GenerateBatchScript(ctx.Ops)
+		// Group operations by NeedSudo while preserving order
+		groups := transact.GroupOpsBySudo(ctx.Ops)
 
-		// Execute with sudo
-		if err := sudo.RunScript(script); err != nil {
-			return nil, fmt.Errorf("sudo script execution failed: %w", err)
+		// Execute each group with the appropriate method
+		if err := transact.ExecuteGroupedOps(ctx.BaseFs, groups, sudo.RunScript); err != nil {
+			return nil, err
 		}
 
 		return nil, nil

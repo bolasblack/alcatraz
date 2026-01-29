@@ -1,37 +1,36 @@
 package cli
 
 import (
-	"os"
 	"testing"
+
+	"github.com/spf13/afero"
+
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
-func TestFileExistsOS(t *testing.T) {
-	// Test with existing file
-	tmpFile, err := os.CreateTemp("", "test-file-exists-*")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	tmpFile.Close()
-	defer os.Remove(tmpFile.Name())
+func TestFileExists(t *testing.T) {
+	env := util.NewTestEnv()
 
-	if !fileExistsOS(tmpFile.Name()) {
-		t.Errorf("fileExistsOS(%q) = false, want true", tmpFile.Name())
+	// Test with existing file
+	if err := afero.WriteFile(env.Fs, "/test-file", []byte("content"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	if !fileExists(env, "/test-file") {
+		t.Errorf("fileExists(/test-file) = false, want true")
 	}
 
 	// Test with existing directory
-	tmpDir, err := os.MkdirTemp("", "test-dir-exists-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
+	if err := env.Fs.MkdirAll("/test-dir", 0755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
 
-	if !fileExistsOS(tmpDir) {
-		t.Errorf("fileExistsOS(%q) = false, want true for directory", tmpDir)
+	if !fileExists(env, "/test-dir") {
+		t.Errorf("fileExists(/test-dir) = false, want true for directory")
 	}
 
 	// Test with non-existing path
-	nonExistent := "/tmp/this-path-should-not-exist-12345"
-	if fileExistsOS(nonExistent) {
-		t.Errorf("fileExistsOS(%q) = true, want false", nonExistent)
+	if fileExists(env, "/non-existent") {
+		t.Errorf("fileExists(/non-existent) = true, want false")
 	}
 }

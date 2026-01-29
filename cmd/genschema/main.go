@@ -13,7 +13,7 @@ import (
 func main() {
 	r := jsonschema.Reflector{
 		// Use toml tag for property names since config is for .alca.toml files
-		FieldNameTag:             "toml",
+		FieldNameTag:               "toml",
 		RequiredFromJSONSchemaTags: true,
 	}
 

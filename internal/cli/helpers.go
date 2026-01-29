@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/bolasblack/alcatraz/internal/config"
-	"github.com/bolasblack/alcatraz/internal/util"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 // Common error messages for CLI commands.
@@ -23,12 +24,12 @@ const (
 
 // loadConfigFromCwd loads configuration from the current working directory.
 // Returns the config and config path, or an error with user-friendly message.
-func loadConfigFromCwd(cwd string) (*config.Config, string, error) {
+func loadConfigFromCwd(env *util.Env, cwd string) (*config.Config, string, error) {
 	configPath := filepath.Join(cwd, ConfigFilename)
-	cfg, err := config.LoadConfig(configPath)
+	cfg, err := config.LoadConfig(env, configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, configPath, fmt.Errorf(ErrMsgConfigNotFound)
+			return nil, configPath, errors.New(ErrMsgConfigNotFound)
 		}
 		return nil, configPath, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -37,16 +38,16 @@ func loadConfigFromCwd(cwd string) (*config.Config, string, error) {
 
 // loadConfigOptional loads configuration, returning zero config if not found.
 // Use this for commands that can work without a config file.
-func loadConfigOptional(cwd string) (config.Config, string) {
+func loadConfigOptional(env *util.Env, cwd string) (config.Config, string) {
 	configPath := filepath.Join(cwd, ConfigFilename)
-	cfg, _ := config.LoadConfig(configPath)
+	cfg, _ := config.LoadConfig(env, configPath)
 	return cfg, configPath
 }
 
 // loadConfigAndRuntime loads config and selects the appropriate runtime.
 // This is the most common pattern for commands that need both.
-func loadConfigAndRuntime(cwd string) (*config.Config, runtime.Runtime, error) {
-	cfg, _, err := loadConfigFromCwd(cwd)
+func loadConfigAndRuntime(env *util.Env, cwd string) (*config.Config, runtime.Runtime, error) {
+	cfg, _, err := loadConfigFromCwd(env, cwd)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -61,8 +62,8 @@ func loadConfigAndRuntime(cwd string) (*config.Config, runtime.Runtime, error) {
 
 // loadConfigAndRuntimeOptional loads config (optional) and selects runtime.
 // Use for commands like 'list' and 'cleanup' that work without config.
-func loadConfigAndRuntimeOptional(cwd string) (config.Config, runtime.Runtime, error) {
-	cfg, _ := loadConfigOptional(cwd)
+func loadConfigAndRuntimeOptional(env *util.Env, cwd string) (config.Config, runtime.Runtime, error) {
+	cfg, _ := loadConfigOptional(env, cwd)
 
 	rt, err := runtime.SelectRuntime(&cfg)
 	if err != nil {
@@ -74,21 +75,21 @@ func loadConfigAndRuntimeOptional(cwd string) (config.Config, runtime.Runtime, e
 
 // loadRequiredState loads state file and returns error if not found.
 // Use for commands that require an existing container state.
-func loadRequiredState(cwd string) (*state.State, error) {
-	st, err := state.Load(cwd)
+func loadRequiredState(env *util.Env, cwd string) (*state.State, error) {
+	st, err := state.Load(env, cwd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load state: %w", err)
 	}
 	if st == nil {
-		return nil, fmt.Errorf(ErrMsgStateNotFound)
+		return nil, errors.New(ErrMsgStateNotFound)
 	}
 	return st, nil
 }
 
 // loadStateOptional loads state file, returning nil without error if not found.
 // Use for commands where missing state is acceptable (e.g., down).
-func loadStateOptional(cwd string) (*state.State, error) {
-	st, err := state.Load(cwd)
+func loadStateOptional(env *util.Env, cwd string) (*state.State, error) {
+	st, err := state.Load(env, cwd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load state: %w", err)
 	}
@@ -102,33 +103,33 @@ func displayConfigDrift(w io.Writer, drift *state.DriftChanges, runtimeChanged b
 		return false
 	}
 
-	fmt.Fprintln(w, "Configuration has changed since last container creation:")
+	_, _ = fmt.Fprintln(w, "Configuration has changed since last container creation:")
 
 	if runtimeChanged {
-		fmt.Fprintf(w, "  Runtime: %s → %s\n", oldRuntime, newRuntime)
+		_, _ = fmt.Fprintf(w, "  Runtime: %s → %s\n", oldRuntime, newRuntime)
 	}
 
 	if drift != nil {
 		if drift.Image != nil {
-			fmt.Fprintf(w, "  Image: %s → %s\n", drift.Image[0], drift.Image[1])
+			_, _ = fmt.Fprintf(w, "  Image: %s → %s\n", drift.Image[0], drift.Image[1])
 		}
 		if drift.Mounts {
-			fmt.Fprintf(w, "  Mounts: changed\n")
+			_, _ = fmt.Fprintf(w, "  Mounts: changed\n")
 		}
 		if drift.Workdir != nil {
-			fmt.Fprintf(w, "  Workdir: %s → %s\n", drift.Workdir[0], drift.Workdir[1])
+			_, _ = fmt.Fprintf(w, "  Workdir: %s → %s\n", drift.Workdir[0], drift.Workdir[1])
 		}
 		if drift.CommandUp != nil {
-			fmt.Fprintf(w, "  Commands.up: changed\n")
+			_, _ = fmt.Fprintf(w, "  Commands.up: changed\n")
 		}
 		if drift.Memory != nil {
-			fmt.Fprintf(w, "  Resources.memory: %s → %s\n", drift.Memory[0], drift.Memory[1])
+			_, _ = fmt.Fprintf(w, "  Resources.memory: %s → %s\n", drift.Memory[0], drift.Memory[1])
 		}
 		if drift.CPUs != nil {
-			fmt.Fprintf(w, "  Resources.cpus: %d → %d\n", drift.CPUs[0], drift.CPUs[1])
+			_, _ = fmt.Fprintf(w, "  Resources.cpus: %d → %d\n", drift.CPUs[0], drift.CPUs[1])
 		}
 		if drift.Envs {
-			fmt.Fprintf(w, "  Envs: changed\n")
+			_, _ = fmt.Fprintf(w, "  Envs: changed\n")
 		}
 	}
 

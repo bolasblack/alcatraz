@@ -28,7 +28,7 @@ func (w *TransactFsFile) Close() error {
 	w.tfs.mu.Unlock()
 
 	if w.dirFile != nil {
-		w.dirFile.Close()
+		_ = w.dirFile.Close()
 	}
 	if w.inner != nil {
 		return w.inner.Close()

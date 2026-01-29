@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/invopop/jsonschema"
+
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 // Commands defines the lifecycle commands for the container.
@@ -210,8 +212,8 @@ type RawConfig struct {
 // LoadConfig reads and parses a configuration file from the given path.
 // Supports includes directive for composable configuration.
 // Applies defaults for missing fields: runtime defaults to "auto", workdir to "/workspace".
-func LoadConfig(path string) (Config, error) {
-	cfg, err := LoadWithIncludes(path)
+func LoadConfig(env *util.Env, path string) (Config, error) {
+	cfg, err := LoadWithIncludes(env, path)
 	if err != nil {
 		return Config{}, err
 	}

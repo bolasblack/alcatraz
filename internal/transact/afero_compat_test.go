@@ -29,12 +29,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"syscall"
 	"testing"
-
 	"time"
-	"sort"
+
 	"github.com/spf13/afero"
 )
 

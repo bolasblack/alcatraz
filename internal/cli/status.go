@@ -6,10 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/cobra"
+
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
-	"github.com/spf13/cobra"
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 var statusCmd = &cobra.Command{
@@ -27,10 +29,13 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Create env for read-only file operations
+	env := util.NewReadonlyOsEnv()
+
 	configPath := filepath.Join(cwd, ConfigFilename)
 
 	// Check if config exists
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+	if _, err := env.Fs.Stat(configPath); os.IsNotExist(err) {
 		fmt.Println("Status: Not initialized")
 		fmt.Println("")
 		fmt.Println("Run 'alca init' to create a configuration file.")
@@ -42,7 +47,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println("")
 
 	// Load config
-	cfg, err := config.LoadConfig(configPath)
+	cfg, err := config.LoadConfig(env, configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -60,7 +65,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println("")
 
 	// Load state (optional for status)
-	st, err := state.Load(cwd)
+	st, err := state.Load(env, cwd)
 	if err != nil {
 		fmt.Printf("State: Error loading state: %v\n", err)
 		return nil
