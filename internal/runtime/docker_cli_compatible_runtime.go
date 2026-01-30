@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -39,23 +38,30 @@ func (r *dockerCLICompatibleRuntime) Name() string {
 }
 
 // Available checks if the CLI is installed and accessible.
-func (r *dockerCLICompatibleRuntime) Available() bool {
+func (r *dockerCLICompatibleRuntime) Available(env *RuntimeEnv) bool {
 	var versionFormat string
 	if r.command == "docker" {
 		versionFormat = "{{.Server.Version}}"
 	} else {
 		versionFormat = "{{.Version}}"
 	}
-	cmd := exec.Command(r.command, "version", "--format", versionFormat)
-	return cmd.Run() == nil
+
+	_, err := env.Cmd.Run(r.command, "version", "--format", versionFormat)
+	return err == nil
 }
 
 // Up creates and starts a container.
-func (r *dockerCLICompatibleRuntime) Up(ctx context.Context, cfg *config.Config, projectDir string, st *state.State, progressOut io.Writer) error {
+func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, progressOut io.Writer) error {
+	// Validate mount excludes compatibility (blocks rootless Podman + excludes)
+	// See AGD-025 for rationale
+	if err := ValidateMountExcludes(env, r, cfg); err != nil {
+		return fmt.Errorf("%w: remove exclude config, use rootful Podman, or use Docker", err)
+	}
+
 	name := st.ContainerName
 
 	// Check if container already exists
-	status, err := r.Status(ctx, projectDir, st)
+	status, err := r.Status(env, projectDir, st)
 	if err == nil && status.State == StateRunning {
 		util.ProgressStep(progressOut, "Container already running: %s\n", name)
 		return nil
@@ -66,28 +72,40 @@ func (r *dockerCLICompatibleRuntime) Up(ctx context.Context, cfg *config.Config,
 	// the container before calling Up(), so StateStopped means no drift.
 	if status.State == StateStopped {
 		util.ProgressStep(progressOut, "Starting stopped container: %s\n", status.Name)
-		if err := r.startContainer(ctx, status.Name); err != nil {
+		if err := r.startContainer(env, status.Name); err != nil {
 			return fmt.Errorf("failed to start container: %w", err)
 		}
 		util.ProgressStep(progressOut, "Container started\n")
+
+		// Re-setup Mutagen syncs for stopped container restart
+		// Container ID may have changed, need to refresh syncs
+		if err := r.setupMutagenSyncs(env, cfg, st, name, progressOut); err != nil {
+			return fmt.Errorf("failed to setup Mutagen syncs: %w", err)
+		}
+
 		return nil
 	}
 
 	util.ProgressStep(progressOut, "Pulling image: %s\n", cfg.Image)
 
-	args := r.buildRunArgs(cfg, projectDir, st, name)
+	args := r.buildRunArgs(env, cfg, projectDir, st, name)
 
 	util.ProgressStep(progressOut, "Creating container: %s\n", name)
-	cmd := exec.CommandContext(ctx, r.command, args...)
-	output, err := cmd.CombinedOutput()
+	output, err := env.Cmd.Run(r.command, args...)
 	if err != nil {
 		return fmt.Errorf("%s run failed: %w: %s", r.command, err, string(output))
 	}
 	util.ProgressStep(progressOut, "Container started\n")
 
+	// Setup Mutagen syncs for mounts that require it
+	// See AGD-025 for platform-specific mount optimization
+	if err := r.setupMutagenSyncs(env, cfg, st, name, progressOut); err != nil {
+		return fmt.Errorf("failed to setup Mutagen syncs: %w", err)
+	}
+
 	// Run the up command if specified
 	if cfg.Commands.Up != "" {
-		if err := r.executeUpCommand(ctx, name, cfg.Commands.Up, progressOut); err != nil {
+		if err := r.executeUpCommand(env, name, cfg.Commands.Up, progressOut); err != nil {
 			return err
 		}
 	}
@@ -96,7 +114,7 @@ func (r *dockerCLICompatibleRuntime) Up(ctx context.Context, cfg *config.Config,
 }
 
 // buildRunArgs constructs the arguments for the container run command.
-func (r *dockerCLICompatibleRuntime) buildRunArgs(cfg *config.Config, projectDir string, st *state.State, name string) []string {
+func (r *dockerCLICompatibleRuntime) buildRunArgs(env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, name string) []string {
 	args := []string{
 		"run", "-d",
 		"--name", name,
@@ -108,9 +126,16 @@ func (r *dockerCLICompatibleRuntime) buildRunArgs(cfg *config.Config, projectDir
 		args = append(args, "--label", fmt.Sprintf("%s=%s", key, value))
 	}
 
-	// Add mounts
+	// Add mounts (only those not requiring Mutagen sync)
+	// Mounts with excludes are handled separately via Mutagen.
+	// See AGD-025 for mount strategy decisions.
+	platform := DetectPlatform(env)
 	for _, mount := range cfg.Mounts {
-		args = append(args, "-v", mount)
+		if ShouldUseMutagen(platform, mount.HasExcludes()) {
+			// Skip - will be handled by Mutagen sync in setupMutagenSyncs()
+			continue
+		}
+		args = append(args, "-v", mount.String())
 	}
 
 	// Mount project directory
@@ -139,47 +164,108 @@ func (r *dockerCLICompatibleRuntime) buildRunArgs(cfg *config.Config, projectDir
 }
 
 // executeUpCommand runs the post-creation setup command.
-func (r *dockerCLICompatibleRuntime) executeUpCommand(ctx context.Context, containerName, command string, progressOut io.Writer) error {
+func (r *dockerCLICompatibleRuntime) executeUpCommand(env *RuntimeEnv, containerName, command string, progressOut io.Writer) error {
 	util.ProgressStep(progressOut, "Running setup command...\n")
 	execArgs := []string{"exec", containerName, "sh", "-c", command}
-	cmd := exec.CommandContext(ctx, r.command, execArgs...)
-	cmd.Stdout = progressOut
-	cmd.Stderr = progressOut
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("up command failed: %w", err)
+	output, err := env.Cmd.Run(r.command, execArgs...)
+	if err != nil {
+		return fmt.Errorf("up command failed: %w: %s", err, string(output))
 	}
 	return nil
 }
 
+// setupMutagenSyncs creates Mutagen sync sessions for mounts that require it.
+// See AGD-025 for platform-specific mount optimization decisions.
+func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *config.Config, st *state.State, containerName string, progressOut io.Writer) error {
+	platform := DetectPlatform(env)
+
+	// First, terminate any existing syncs for this project to avoid duplicates
+	if err := TerminateProjectSyncs(env, st.ProjectID); err != nil {
+		// Log warning but continue - old syncs may not exist
+		util.ProgressStep(progressOut, "Warning: failed to clean up old Mutagen syncs: %v\n", err)
+	}
+
+	// Get container ID for Mutagen target URL
+	containerID, err := r.getContainerID(env, containerName)
+	if err != nil {
+		return fmt.Errorf("failed to get container ID: %w", err)
+	}
+
+	// Setup syncs for mounts that require Mutagen
+	for i, mount := range cfg.Mounts {
+		if !ShouldUseMutagen(platform, mount.HasExcludes()) {
+			continue
+		}
+
+		util.ProgressStep(progressOut, "Setting up Mutagen sync for %s -> %s\n", mount.Source, mount.Target)
+
+		sync := MutagenSync{
+			Name:    MutagenSessionName(st.ProjectID, i),
+			Source:  mount.Source,
+			Target:  MutagenTarget(containerID, mount.Target),
+			Ignores: mount.Exclude,
+		}
+
+		if err := sync.Create(env); err != nil {
+			return fmt.Errorf("failed to create Mutagen sync for %s: %w", mount.Source, err)
+		}
+	}
+
+	return nil
+}
+
+// getContainerID returns the container ID for a given container name.
+func (r *dockerCLICompatibleRuntime) getContainerID(env *RuntimeEnv, containerName string) (string, error) {
+	output, err := env.Cmd.Run(r.command, "inspect", "--format", "{{.Id}}", containerName)
+	if err != nil {
+		return "", fmt.Errorf("failed to inspect container: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
 // Down stops and removes the container.
-func (r *dockerCLICompatibleRuntime) Down(ctx context.Context, projectDir string, st *state.State) error {
-	status, err := r.Status(ctx, projectDir, st)
+func (r *dockerCLICompatibleRuntime) Down(env *RuntimeEnv, projectDir string, st *state.State) error {
+	status, err := r.Status(env, projectDir, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
 
 	if status.State == StateNotFound {
+		// Still try to clean up any orphaned Mutagen syncs
+		if st != nil {
+			_ = TerminateProjectSyncs(env, st.ProjectID)
+		}
 		return nil
 	}
 
 	containerName := status.Name
 
+	// Terminate Mutagen syncs before stopping container
+	// See AGD-025 for Mutagen integration design
+	if st != nil {
+		if err := TerminateProjectSyncs(env, st.ProjectID); err != nil {
+			// Log warning but continue with container removal
+			// Mutagen sessions will be orphaned but can be cleaned up manually
+			util.ProgressStep(nil, "Warning: failed to terminate Mutagen syncs: %v\n", err)
+		}
+	}
+
 	// Stop the container
-	stopCmd := exec.CommandContext(ctx, r.command, "stop", containerName)
-	if output, err := stopCmd.CombinedOutput(); err != nil {
+	output, err := env.Cmd.Run(r.command, "stop", containerName)
+	if err != nil {
 		if !containsNoSuchContainer(string(output)) {
 			return fmt.Errorf("%s stop failed: %w: %s", r.command, err, string(output))
 		}
 	}
 
-	return r.removeContainer(ctx, containerName)
+	return r.removeContainer(env, containerName)
 }
 
 // Exec runs a command inside the container.
 // For interactive commands, this uses syscall.Exec to replace the current process.
 // See AGD-017 for environment variable design.
-func (r *dockerCLICompatibleRuntime) Exec(ctx context.Context, cfg *config.Config, projectDir string, st *state.State, command []string) error {
-	status, err := r.Status(ctx, projectDir, st)
+func (r *dockerCLICompatibleRuntime) Exec(env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, command []string) error {
+	status, err := r.Status(env, projectDir, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -237,28 +323,26 @@ func (r *dockerCLICompatibleRuntime) buildExecArgs(cfg *config.Config, container
 //
 // This dual approach ensures backward compatibility while preferring the more robust
 // label-based identification for newer containers.
-func (r *dockerCLICompatibleRuntime) Status(ctx context.Context, projectDir string, st *state.State) (ContainerStatus, error) {
+func (r *dockerCLICompatibleRuntime) Status(env *RuntimeEnv, projectDir string, st *state.State) (ContainerStatus, error) {
 	if st == nil {
 		return ContainerStatus{State: StateNotFound}, nil
 	}
 
 	// Primary: find by label (authoritative for labeled containers)
-	status, err := r.findContainerByLabel(ctx, st.ProjectID)
+	status, err := r.findContainerByLabel(env, st.ProjectID)
 	if err == nil && status.State != StateNotFound {
 		return status, nil
 	}
 
 	// Fallback: inspect by name (backward compatibility)
-	return r.inspectContainer(ctx, st.ContainerName)
+	return r.inspectContainer(env, st.ContainerName)
 }
 
 // inspectContainer gets container status by name.
-func (r *dockerCLICompatibleRuntime) inspectContainer(ctx context.Context, containerName string) (ContainerStatus, error) {
-	cmd := exec.CommandContext(ctx, r.command, "inspect",
+func (r *dockerCLICompatibleRuntime) inspectContainer(env *RuntimeEnv, containerName string) (ContainerStatus, error) {
+	output, err := env.Cmd.Run(r.command, "inspect",
 		"--format", "{{.State.Status}}|{{.Id}}|{{.Name}}|{{.Config.Image}}|{{.State.StartedAt}}",
 		containerName)
-
-	output, err := cmd.Output()
 	if err != nil {
 		return ContainerStatus{State: StateNotFound}, nil
 	}
@@ -278,13 +362,11 @@ func (r *dockerCLICompatibleRuntime) inspectContainer(ctx context.Context, conta
 }
 
 // findContainerByLabel finds a container by its project label.
-func (r *dockerCLICompatibleRuntime) findContainerByLabel(ctx context.Context, projectID string) (ContainerStatus, error) {
+func (r *dockerCLICompatibleRuntime) findContainerByLabel(env *RuntimeEnv, projectID string) (ContainerStatus, error) {
 	labelFilter := state.LabelFilter(projectID)
-	cmd := exec.CommandContext(ctx, r.command, "ps", "-a",
+	output, err := env.Cmd.Run(r.command, "ps", "-a",
 		"--filter", labelFilter,
 		"--format", "{{.Names}}")
-
-	output, err := cmd.Output()
 	if err != nil {
 		return ContainerStatus{State: StateNotFound}, nil
 	}
@@ -294,12 +376,12 @@ func (r *dockerCLICompatibleRuntime) findContainerByLabel(ctx context.Context, p
 		return ContainerStatus{State: StateNotFound}, nil
 	}
 
-	return r.inspectContainer(ctx, name)
+	return r.inspectContainer(env, name)
 }
 
 // Reload re-applies configuration by recreating the container.
-func (r *dockerCLICompatibleRuntime) Reload(ctx context.Context, cfg *config.Config, projectDir string, st *state.State) error {
-	status, err := r.Status(ctx, projectDir, st)
+func (r *dockerCLICompatibleRuntime) Reload(env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State) error {
+	status, err := r.Status(env, projectDir, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -308,11 +390,11 @@ func (r *dockerCLICompatibleRuntime) Reload(ctx context.Context, cfg *config.Con
 		return ErrNotRunning
 	}
 
-	if err := r.Down(ctx, projectDir, st); err != nil {
+	if err := r.Down(env, projectDir, st); err != nil {
 		return fmt.Errorf("failed to stop container for reload: %w", err)
 	}
 
-	if err := r.Up(ctx, cfg, projectDir, st, nil); err != nil {
+	if err := r.Up(env, cfg, projectDir, st, nil); err != nil {
 		return fmt.Errorf("failed to restart container: %w", err)
 	}
 
@@ -321,13 +403,11 @@ func (r *dockerCLICompatibleRuntime) Reload(ctx context.Context, cfg *config.Con
 
 // ListContainers returns all containers managed by alca.
 // Uses batch inspect to avoid N+1 query pattern (single docker inspect call for all containers).
-func (r *dockerCLICompatibleRuntime) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
+func (r *dockerCLICompatibleRuntime) ListContainers(env *RuntimeEnv) ([]ContainerInfo, error) {
 	// Get names of all alca-managed containers
-	psCmd := exec.CommandContext(ctx, r.command, "ps", "-a",
+	output, err := env.Cmd.Run(r.command, "ps", "-a",
 		"--filter", "label="+state.LabelProjectID,
 		"--format", "{{.Names}}")
-
-	output, err := psCmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
@@ -350,12 +430,12 @@ func (r *dockerCLICompatibleRuntime) ListContainers(ctx context.Context) ([]Cont
 	}
 
 	// Batch inspect all containers in a single call
-	return r.batchInspectContainers(ctx, validNames)
+	return r.batchInspectContainers(env, validNames)
 }
 
 // batchInspectContainers inspects multiple containers in a single docker/podman call.
 // This avoids the N+1 query pattern where we'd call inspect separately for each container.
-func (r *dockerCLICompatibleRuntime) batchInspectContainers(ctx context.Context, names []string) ([]ContainerInfo, error) {
+func (r *dockerCLICompatibleRuntime) batchInspectContainers(env *RuntimeEnv, names []string) ([]ContainerInfo, error) {
 	// Build format string for inspect output
 	// Using a unique separator (|||) to avoid conflicts with data values
 	format := fmt.Sprintf("{{.Name}}|||{{.State.Status}}|||{{.Created}}|||{{.Config.Image}}|||{{index .Config.Labels \"%s\"}}|||{{index .Config.Labels \"%s\"}}",
@@ -365,8 +445,7 @@ func (r *dockerCLICompatibleRuntime) batchInspectContainers(ctx context.Context,
 	args := []string{"inspect", "--format", format}
 	args = append(args, names...)
 
-	cmd := exec.CommandContext(ctx, r.command, args...)
-	output, err := cmd.Output()
+	output, err := env.Cmd.Run(r.command, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect containers: %w", err)
 	}
@@ -400,14 +479,13 @@ func (r *dockerCLICompatibleRuntime) batchInspectContainers(ctx context.Context,
 }
 
 // RemoveContainer removes a container by name.
-func (r *dockerCLICompatibleRuntime) RemoveContainer(ctx context.Context, name string) error {
-	return r.removeContainer(ctx, name)
+func (r *dockerCLICompatibleRuntime) RemoveContainer(env *RuntimeEnv, name string) error {
+	return r.removeContainer(env, name)
 }
 
 // removeContainer removes a container by name (internal).
-func (r *dockerCLICompatibleRuntime) removeContainer(ctx context.Context, name string) error {
-	cmd := exec.CommandContext(ctx, r.command, "rm", "-f", name)
-	output, err := cmd.CombinedOutput()
+func (r *dockerCLICompatibleRuntime) removeContainer(env *RuntimeEnv, name string) error {
+	output, err := env.Cmd.Run(r.command, "rm", "-f", name)
 	if err != nil {
 		if containsNoSuchContainer(string(output)) {
 			return nil
@@ -418,9 +496,8 @@ func (r *dockerCLICompatibleRuntime) removeContainer(ctx context.Context, name s
 }
 
 // startContainer starts a stopped container by name.
-func (r *dockerCLICompatibleRuntime) startContainer(ctx context.Context, name string) error {
-	cmd := exec.CommandContext(ctx, r.command, "start", name)
-	output, err := cmd.CombinedOutput()
+func (r *dockerCLICompatibleRuntime) startContainer(env *RuntimeEnv, name string) error {
+	output, err := env.Cmd.Run(r.command, "start", name)
 	if err != nil {
 		return fmt.Errorf("%s start failed: %w: %s", r.command, err, string(output))
 	}

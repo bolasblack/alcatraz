@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -39,8 +38,11 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// Create env for read-only file operations
 	env := util.NewReadonlyOsEnv()
 
+	// Create runtime environment once for all runtime operations
+	runtimeEnv := runtime.NewRuntimeEnv()
+
 	// Load configuration and runtime
-	cfg, rt, err := loadConfigAndRuntime(env, cwd)
+	cfg, rt, err := loadConfigAndRuntime(env, runtimeEnv, cwd)
 	if err != nil {
 		return err
 	}
@@ -51,10 +53,8 @@ func runRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ctx := context.Background()
-
 	// Check if container is running
-	status, err := rt.Status(ctx, cwd, st)
+	status, err := rt.Status(runtimeEnv, cwd, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -80,7 +80,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		execCmd = args
 	}
 
-	err = rt.Exec(ctx, cfg, cwd, st, execCmd)
+	err = rt.Exec(runtimeEnv, cfg, cwd, st, execCmd)
 	if err != nil {
 		// Pass through exit codes instead of reporting as error
 		var exitErr *exec.ExitError

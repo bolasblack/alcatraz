@@ -72,8 +72,11 @@ func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
 	tfs := transact.New()
 	env := util.NewEnv(tfs)
 
+	// Create runtime environment once for all runtime operations
+	runtimeEnv := runtime.NewRuntimeEnv()
+
 	// Detect runtime for network helper
-	runtimeName, err := detectRuntimeForNetworkHelper()
+	runtimeName, err := detectRuntimeForNetworkHelper(runtimeEnv)
 	if err != nil {
 		return err
 	}
@@ -122,7 +125,10 @@ func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
 	tfs := transact.New()
 	env := util.NewEnv(tfs)
 
-	runtimeName, err := detectRuntimeForNetworkHelper()
+	// Create runtime environment once for all runtime operations
+	runtimeEnv := runtime.NewRuntimeEnv()
+
+	runtimeName, err := detectRuntimeForNetworkHelper(runtimeEnv)
 	if err != nil {
 		return err
 	}
@@ -169,7 +175,10 @@ func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
 func runNetworkHelperStatus(cmd *cobra.Command, args []string) error {
 	env := util.NewReadonlyOsEnv()
 
-	runtimeName, err := detectRuntimeForNetworkHelper()
+	// Create runtime environment once for all runtime operations
+	runtimeEnv := runtime.NewRuntimeEnv()
+
+	runtimeName, err := detectRuntimeForNetworkHelper(runtimeEnv)
 	if err != nil {
 		return err
 	}
@@ -238,8 +247,8 @@ func printActivePfRules(status network.DetailedStatusInfo) {
 
 // detectRuntimeForNetworkHelper returns the runtime name for network helper operations.
 // Returns "orbstack" if OrbStack is detected, "docker" otherwise.
-func detectRuntimeForNetworkHelper() (string, error) {
-	isOrbStack, err := runtime.IsOrbStack()
+func detectRuntimeForNetworkHelper(runtimeEnv *runtime.RuntimeEnv) (string, error) {
+	isOrbStack, err := runtime.IsOrbStack(runtimeEnv)
 	if err != nil {
 		return "", fmt.Errorf("failed to detect runtime: %w", err)
 	}

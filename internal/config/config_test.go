@@ -68,6 +68,9 @@ enter = "bash"
 	if len(cfg.Mounts) != 2 {
 		t.Errorf("expected 2 mounts, got %d", len(cfg.Mounts))
 	}
+	if cfg.Mounts[0].Source != "/host" || cfg.Mounts[0].Target != "/container" {
+		t.Errorf("expected mount[0] to be /host:/container, got %v", cfg.Mounts[0])
+	}
 }
 
 func TestLoadConfigNotFound(t *testing.T) {
@@ -402,6 +405,399 @@ func TestRawEnvValueMapJSONSchema(t *testing.T) {
 	// Verify AdditionalProperties is false (strict schema)
 	if objSchema.AdditionalProperties == nil {
 		t.Error("expected AdditionalProperties to be set to false schema")
+	}
+}
+
+func TestParseMount(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		want     MountConfig
+		wantErr  bool
+		errMatch string
+	}{
+		{
+			name:  "simple mount",
+			input: "/host:/container",
+			want:  MountConfig{Source: "/host", Target: "/container"},
+		},
+		{
+			name:  "readonly mount",
+			input: "/host:/container:ro",
+			want:  MountConfig{Source: "/host", Target: "/container", Readonly: true},
+		},
+		{
+			name:  "relative paths",
+			input: "./cache:/root/.cache",
+			want:  MountConfig{Source: "./cache", Target: "/root/.cache"},
+		},
+		{
+			name:     "too few parts",
+			input:    "/host",
+			wantErr:  true,
+			errMatch: "invalid mount format",
+		},
+		{
+			name:     "too many parts",
+			input:    "/a:/b:/c:/d",
+			wantErr:  true,
+			errMatch: "invalid mount format",
+		},
+		{
+			name:     "invalid option",
+			input:    "/host:/container:rw",
+			wantErr:  true,
+			errMatch: "invalid mount option",
+		},
+		{
+			name:     "empty source",
+			input:    ":/container",
+			wantErr:  true,
+			errMatch: "source cannot be empty",
+		},
+		{
+			name:     "empty target",
+			input:    "/host:",
+			wantErr:  true,
+			errMatch: "target cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseMount(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseMount() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err != nil {
+				if tt.errMatch != "" && !strings.Contains(err.Error(), tt.errMatch) {
+					t.Errorf("ParseMount() error = %v, want error containing %q", err, tt.errMatch)
+				}
+				return
+			}
+			if !got.Equals(tt.want) {
+				t.Errorf("ParseMount() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMountConfigString(t *testing.T) {
+	tests := []struct {
+		name  string
+		mount MountConfig
+		want  string
+	}{
+		{
+			name:  "simple mount",
+			mount: MountConfig{Source: "/host", Target: "/container"},
+			want:  "/host:/container",
+		},
+		{
+			name:  "readonly mount",
+			mount: MountConfig{Source: "/host", Target: "/container", Readonly: true},
+			want:  "/host:/container:ro",
+		},
+		{
+			name:  "mount with excludes returns empty string",
+			mount: MountConfig{Source: "/host", Target: "/container", Exclude: []string{"*.tmp"}},
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.mount.String()
+			if got != tt.want {
+				t.Errorf("MountConfig.String() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMountConfigEquals(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b MountConfig
+		want bool
+	}{
+		{
+			name: "equal simple mounts",
+			a:    MountConfig{Source: "/a", Target: "/b"},
+			b:    MountConfig{Source: "/a", Target: "/b"},
+			want: true,
+		},
+		{
+			name: "different source",
+			a:    MountConfig{Source: "/a", Target: "/b"},
+			b:    MountConfig{Source: "/c", Target: "/b"},
+			want: false,
+		},
+		{
+			name: "different target",
+			a:    MountConfig{Source: "/a", Target: "/b"},
+			b:    MountConfig{Source: "/a", Target: "/c"},
+			want: false,
+		},
+		{
+			name: "different readonly",
+			a:    MountConfig{Source: "/a", Target: "/b", Readonly: true},
+			b:    MountConfig{Source: "/a", Target: "/b", Readonly: false},
+			want: false,
+		},
+		{
+			name: "equal with excludes",
+			a:    MountConfig{Source: "/a", Target: "/b", Exclude: []string{"*.tmp", "*.log"}},
+			b:    MountConfig{Source: "/a", Target: "/b", Exclude: []string{"*.tmp", "*.log"}},
+			want: true,
+		},
+		{
+			name: "different excludes length",
+			a:    MountConfig{Source: "/a", Target: "/b", Exclude: []string{"*.tmp"}},
+			b:    MountConfig{Source: "/a", Target: "/b", Exclude: []string{"*.tmp", "*.log"}},
+			want: false,
+		},
+		{
+			name: "different excludes content",
+			a:    MountConfig{Source: "/a", Target: "/b", Exclude: []string{"*.tmp"}},
+			b:    MountConfig{Source: "/a", Target: "/b", Exclude: []string{"*.log"}},
+			want: false,
+		},
+		{
+			name: "nil vs empty excludes",
+			a:    MountConfig{Source: "/a", Target: "/b", Exclude: nil},
+			b:    MountConfig{Source: "/a", Target: "/b", Exclude: []string{}},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.a.Equals(tt.b)
+			if got != tt.want {
+				t.Errorf("MountConfig.Equals() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMountsEqual(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b []MountConfig
+		want bool
+	}{
+		{
+			name: "both nil",
+			a:    nil,
+			b:    nil,
+			want: true,
+		},
+		{
+			name: "nil vs empty",
+			a:    nil,
+			b:    []MountConfig{},
+			want: true,
+		},
+		{
+			name: "equal slices",
+			a:    []MountConfig{{Source: "/a", Target: "/b"}},
+			b:    []MountConfig{{Source: "/a", Target: "/b"}},
+			want: true,
+		},
+		{
+			name: "different length",
+			a:    []MountConfig{{Source: "/a", Target: "/b"}},
+			b:    []MountConfig{{Source: "/a", Target: "/b"}, {Source: "/c", Target: "/d"}},
+			want: false,
+		},
+		{
+			name: "different content",
+			a:    []MountConfig{{Source: "/a", Target: "/b"}},
+			b:    []MountConfig{{Source: "/c", Target: "/d"}},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MountsEqual(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("MountsEqual() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMountConfigHasExcludes(t *testing.T) {
+	tests := []struct {
+		name  string
+		mount MountConfig
+		want  bool
+	}{
+		{
+			name:  "no excludes",
+			mount: MountConfig{Source: "/a", Target: "/b"},
+			want:  false,
+		},
+		{
+			name:  "empty excludes",
+			mount: MountConfig{Source: "/a", Target: "/b", Exclude: []string{}},
+			want:  false,
+		},
+		{
+			name:  "with excludes",
+			mount: MountConfig{Source: "/a", Target: "/b", Exclude: []string{"*.tmp"}},
+			want:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.mount.HasExcludes()
+			if got != tt.want {
+				t.Errorf("MountConfig.HasExcludes() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigWithMounts(t *testing.T) {
+	t.Run("simple string mounts", func(t *testing.T) {
+		content := `
+image = "ubuntu:latest"
+mounts = ["/host:/container", "/data:/data:ro"]
+`
+		env, memFs := newTestEnv(t)
+		path := "/test/.alca.toml"
+		if err := afero.WriteFile(memFs, path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		cfg, err := LoadConfig(env, path)
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+
+		if len(cfg.Mounts) != 2 {
+			t.Fatalf("expected 2 mounts, got %d", len(cfg.Mounts))
+		}
+		if cfg.Mounts[0].Source != "/host" || cfg.Mounts[0].Target != "/container" {
+			t.Errorf("mount[0] = %v, want source=/host target=/container", cfg.Mounts[0])
+		}
+		if cfg.Mounts[1].Source != "/data" || cfg.Mounts[1].Target != "/data" || !cfg.Mounts[1].Readonly {
+			t.Errorf("mount[1] = %v, want source=/data target=/data readonly=true", cfg.Mounts[1])
+		}
+	})
+
+	t.Run("extended object mounts", func(t *testing.T) {
+		content := `
+image = "ubuntu:latest"
+
+[[mounts]]
+source = "/Users/me/project"
+target = "/workspace"
+readonly = false
+exclude = ["**/.env.prod", "**/secrets/"]
+`
+		env, memFs := newTestEnv(t)
+		path := "/test/.alca.toml"
+		if err := afero.WriteFile(memFs, path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		cfg, err := LoadConfig(env, path)
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+
+		if len(cfg.Mounts) != 1 {
+			t.Fatalf("expected 1 mount, got %d", len(cfg.Mounts))
+		}
+		m := cfg.Mounts[0]
+		if m.Source != "/Users/me/project" {
+			t.Errorf("mount.Source = %q, want /Users/me/project", m.Source)
+		}
+		if m.Target != "/workspace" {
+			t.Errorf("mount.Target = %q, want /workspace", m.Target)
+		}
+		if m.Readonly {
+			t.Error("mount.Readonly should be false")
+		}
+		if len(m.Exclude) != 2 {
+			t.Fatalf("expected 2 excludes, got %d", len(m.Exclude))
+		}
+		if m.Exclude[0] != "**/.env.prod" || m.Exclude[1] != "**/secrets/" {
+			t.Errorf("mount.Exclude = %v, want [**/.env.prod, **/secrets/]", m.Exclude)
+		}
+	})
+
+	t.Run("multiple object mounts", func(t *testing.T) {
+		// Note: TOML doesn't allow mixing inline array and array table syntax
+		// for the same key. Use all object format or all string format per file.
+		content := `
+image = "ubuntu:latest"
+
+[[mounts]]
+source = "/simple"
+target = "/simple"
+
+[[mounts]]
+source = "/extended"
+target = "/extended"
+exclude = ["*.tmp"]
+`
+		env, memFs := newTestEnv(t)
+		path := "/test/.alca.toml"
+		if err := afero.WriteFile(memFs, path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		cfg, err := LoadConfig(env, path)
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+
+		if len(cfg.Mounts) != 2 {
+			t.Fatalf("expected 2 mounts, got %d", len(cfg.Mounts))
+		}
+		if !cfg.Mounts[1].HasExcludes() {
+			t.Error("expected second mount to have excludes")
+		}
+	})
+}
+
+func TestRawMountSliceJSONSchema(t *testing.T) {
+	schema := RawMountSlice{}.JSONSchema()
+
+	if schema.Type != "array" {
+		t.Errorf("expected type 'array', got %q", schema.Type)
+	}
+
+	if schema.Items == nil {
+		t.Fatal("expected Items to be set")
+	}
+
+	if schema.Items.OneOf == nil || len(schema.Items.OneOf) != 2 {
+		t.Fatalf("expected OneOf with 2 schemas, got %v", schema.Items.OneOf)
+	}
+
+	// First option should be string
+	strSchema := schema.Items.OneOf[0]
+	if strSchema.Type != "string" {
+		t.Errorf("expected first OneOf to be string, got %q", strSchema.Type)
+	}
+
+	// Second option should be object
+	objSchema := schema.Items.OneOf[1]
+	if objSchema.Type != "object" {
+		t.Errorf("expected second OneOf to be object, got %q", objSchema.Type)
+	}
+
+	// Check required fields
+	if len(objSchema.Required) != 2 {
+		t.Errorf("expected 2 required fields, got %d", len(objSchema.Required))
 	}
 }
 

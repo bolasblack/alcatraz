@@ -1,6 +1,9 @@
 package util
 
-import "os/exec"
+import (
+	"context"
+	"os/exec"
+)
 
 // CommandRunner executes external commands.
 type CommandRunner interface {
@@ -20,16 +23,28 @@ type CommandRunner interface {
 	SudoRunScript(script string) error
 }
 
-// DefaultCommandRunner uses os/exec.
-type DefaultCommandRunner struct{}
+// ContextCommandRunner implements CommandRunner with context support.
+type ContextCommandRunner struct {
+	ctx context.Context
+}
 
-func (DefaultCommandRunner) Run(name string, args ...string) ([]byte, error) {
-	cmd := exec.Command(name, args...)
+// NewCommandRunner creates a new ContextCommandRunner with context.Background().
+func NewCommandRunner() *ContextCommandRunner {
+	return &ContextCommandRunner{ctx: context.Background()}
+}
+
+// WithContext returns a new ContextCommandRunner with the given context.
+func (r *ContextCommandRunner) WithContext(ctx context.Context) *ContextCommandRunner {
+	return &ContextCommandRunner{ctx: ctx}
+}
+
+func (r *ContextCommandRunner) Run(name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(r.ctx, name, args...) //nolint:fslint // CommandRunner is the abstraction layer
 	return cmd.CombinedOutput()
 }
 
-func (DefaultCommandRunner) RunQuiet(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
+func (r *ContextCommandRunner) RunQuiet(name string, args ...string) (string, error) {
+	cmd := exec.CommandContext(r.ctx, name, args...) //nolint:fslint // CommandRunner is the abstraction layer
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(output), err
@@ -37,14 +52,14 @@ func (DefaultCommandRunner) RunQuiet(name string, args ...string) (string, error
 	return "", nil
 }
 
-func (DefaultCommandRunner) SudoRun(name string, args ...string) error {
-	return sudoRun(name, args...)
+func (r *ContextCommandRunner) SudoRun(name string, args ...string) error {
+	return sudoRunContext(r.ctx, name, args...)
 }
 
-func (DefaultCommandRunner) SudoRunQuiet(name string, args ...string) (string, error) {
-	return sudoRunQuiet(name, args...)
+func (r *ContextCommandRunner) SudoRunQuiet(name string, args ...string) (string, error) {
+	return sudoRunQuietContext(r.ctx, name, args...)
 }
 
-func (DefaultCommandRunner) SudoRunScript(script string) error {
-	return sudoRunScript(script)
+func (r *ContextCommandRunner) SudoRunScript(script string) error {
+	return sudoRunScriptContext(r.ctx, script)
 }

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -58,8 +57,11 @@ func runReload(cmd *cobra.Command, args []string) error {
 	tfs := transact.New()
 	env := util.NewEnv(tfs)
 
+	// Create runtime environment once for all runtime operations
+	runtimeEnv := runtime.NewRuntimeEnv()
+
 	// Load configuration and runtime
-	cfg, rt, err := loadConfigAndRuntime(env, cwd)
+	cfg, rt, err := loadConfigAndRuntime(env, runtimeEnv, cwd)
 	if err != nil {
 		return err
 	}
@@ -73,8 +75,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check current status
-	ctx := context.Background()
-	status, err := rt.Status(ctx, cwd, st)
+	status, err := rt.Status(runtimeEnv, cwd, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -86,7 +87,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 	util.ProgressStep(os.Stdout, "Reloading configuration...\n")
 
 	// Reload the container
-	if err := rt.Reload(ctx, cfg, cwd, st); err != nil {
+	if err := rt.Reload(runtimeEnv, cfg, cwd, st); err != nil {
 		if err == runtime.ErrNotRunning {
 			return errors.New(ErrMsgNotRunning)
 		}

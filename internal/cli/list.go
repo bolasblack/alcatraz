@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
@@ -29,16 +29,18 @@ func runList(cmd *cobra.Command, args []string) error {
 	// Create env for read-only file operations
 	env := util.NewReadonlyOsEnv()
 
+	// Create runtime environment once for all runtime operations
+	runtimeEnv := runtime.NewRuntimeEnv()
+
 	// Load config (optional) and select runtime
 	// Log warning if config has issues but continue
-	cfg, rt, err := loadConfigAndRuntimeOptional(env, cwd)
+	cfg, rt, err := loadConfigAndRuntimeOptional(env, runtimeEnv, cwd)
 	if err != nil {
 		return err
 	}
 	_ = cfg // Config loaded for runtime selection only
 
-	ctx := context.Background()
-	containers, err := rt.ListContainers(ctx)
+	containers, err := rt.ListContainers(runtimeEnv)
 	if err != nil {
 		return fmt.Errorf("failed to list containers: %w", err)
 	}

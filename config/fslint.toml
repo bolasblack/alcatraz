@@ -57,3 +57,9 @@ allowed_packages = ["internal/transact"]
     "TempFile",
     "TempDir",
 ]
+
+# Command execution - use CommandRunner interface for testability
+"os/exec" = [
+    "Command",
+    "CommandContext",
+]

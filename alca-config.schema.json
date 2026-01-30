@@ -59,11 +59,7 @@
           "description": "Lifecycle commands"
         },
         "mounts": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "Additional bind mounts (source:target[:ro])"
+          "$ref": "#/$defs/RawMountSlice"
         },
         "resources": {
           "$ref": "#/$defs/Resources",
@@ -106,6 +102,48 @@
       },
       "type": "object",
       "description": "Environment variables for the container"
+    },
+    "RawMountSlice": {
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Simple format: source:target[:ro]"
+          },
+          {
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Host path (required)"
+              },
+              "target": {
+                "type": "string",
+                "description": "Container path (required)"
+              },
+              "readonly": {
+                "type": "boolean",
+                "description": "Read-only mount (default: false)"
+              },
+              "exclude": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "description": "Glob patterns to exclude (optional)"
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "source",
+              "target"
+            ],
+            "description": "Extended format with excludes"
+          }
+        ]
+      },
+      "type": "array",
+      "description": "Additional bind mounts"
     },
     "Resources": {
       "properties": {

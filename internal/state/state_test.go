@@ -162,7 +162,7 @@ func TestSaveWithConfig(t *testing.T) {
 		Image:   "ubuntu:latest",
 		Workdir: "/app",
 		Runtime: config.RuntimeDocker,
-		Mounts:  []string{"/host:/container"},
+		Mounts:  []config.MountConfig{{Source: "/host", Target: "/container"}},
 	}
 	state := &State{
 		ProjectID:     "test-id",
@@ -389,7 +389,7 @@ func TestDetectConfigDrift_NoChanges(t *testing.T) {
 			Up:    "apt update",
 			Enter: "bash",
 		},
-		Mounts: []string{"/host:/container"},
+		Mounts: []config.MountConfig{{Source: "/host", Target: "/container"}},
 		Resources: config.Resources{
 			Memory: "4g",
 			CPUs:   2,
@@ -413,7 +413,7 @@ func TestDetectConfigDrift_NoChanges(t *testing.T) {
 			Up:    "apt update",
 			Enter: "bash",
 		},
-		Mounts: []string{"/host:/container"},
+		Mounts: []config.MountConfig{{Source: "/host", Target: "/container"}},
 		Resources: config.Resources{
 			Memory: "4g",
 			CPUs:   2,
@@ -545,11 +545,11 @@ func TestDetectConfigDrift_ResourcesChange(t *testing.T) {
 func TestDetectConfigDrift_MountsChange(t *testing.T) {
 	state := &State{
 		Config: &config.Config{
-			Mounts: []string{"/old:/old"},
+			Mounts: []config.MountConfig{{Source: "/old", Target: "/old"}},
 		},
 	}
 	current := &config.Config{
-		Mounts: []string{"/new:/new"},
+		Mounts: []config.MountConfig{{Source: "/new", Target: "/new"}},
 	}
 
 	changes := state.DetectConfigDrift(current)

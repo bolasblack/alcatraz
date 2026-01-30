@@ -1,7 +1,7 @@
 ---
 title: "Mount Exclude Implementation with Mutagen"
 description: "Use Mutagen file sync for mount filtering instead of FUSE, with platform-specific optimization"
-tags: file-isolation, config, macos, linux
+tags: file-isolation, config, macos, linux, runtime
 updates: AGD-009
 ---
 
@@ -126,19 +126,49 @@ Use **Mutagen** for mount filtering with platform-specific optimization:
 
 ### Platform Strategy
 
-| Platform               | Condition    | Mount Method |
-| ---------------------- | ------------ | ------------ |
-| macOS + Docker Desktop | Always       | Mutagen      |
-| macOS + OrbStack       | Has excludes | Mutagen      |
-| macOS + OrbStack       | No excludes  | Bind mount   |
-| Linux                  | Has excludes | Mutagen      |
-| Linux                  | No excludes  | Bind mount   |
+| Platform                   | Condition    | Mount Method | Status       |
+| -------------------------- | ------------ | ------------ | ------------ |
+| macOS + Docker Desktop     | Always       | Mutagen      | ✅ Supported |
+| macOS + OrbStack           | Has excludes | Mutagen      | ✅ Supported |
+| macOS + OrbStack           | No excludes  | Bind mount   | ✅ Supported |
+| Linux + Docker             | Has excludes | Mutagen      | ✅ Supported |
+| Linux + Docker             | No excludes  | Bind mount   | ✅ Supported |
+| Linux + Rootful Podman     | Has excludes | Mutagen      | ✅ Supported |
+| Linux + Rootful Podman     | No excludes  | Bind mount   | ✅ Supported |
+| Linux + Rootless Podman    | Has excludes | —            | ❌ Blocked   |
+| Linux + Rootless Podman    | No excludes  | Bind mount   | ✅ Supported |
 
 **Rationale**:
 
 - Docker Desktop (free) on macOS has poor bind mount performance (~35% of native), Mutagen brings it to ~90-95%
 - OrbStack already achieves 75-95% native performance, Mutagen overhead unnecessary without excludes
 - Linux bind mounts are native performance (100%), Mutagen adds sync latency (50-200ms)
+
+### Rootless Podman Limitation
+
+**Mutagen does not work reliably with rootless Podman** due to:
+
+1. **Label length limit**: Mutagen follows Kubernetes conventions with a 63-character label limit. Rootless Podman uses long socket paths like `/home/[username]/.local/share/containers/storage/...` which easily exceed this limit.
+
+2. **No native Podman transport**: Mutagen's transport layer is designed for Docker. It requires Podman's Docker compatibility layer, which has inconsistencies in rootless mode.
+
+3. **Volume creation failures**: When Mutagen creates volumes for sync, the label length issue causes volume creation to fail.
+
+**Podman Native Alternatives Evaluated**
+
+Podman has some mount features that Docker doesn't have (like glob mount), but none meet our exclude requirements:
+
+| Approach                 | Result | Issue                                 |
+| ------------------------ | ------ | ------------------------------------- |
+| Glob mount (`type=glob`) | ❌     | Include-only pattern, not exclude     |
+| Overlay mount (`:O`)     | ❌     | Files still visible, only protects host |
+| tmpfs overlay            | ❌     | Empty file/dir, not "not exist"       |
+| Multiple bind mounts     | ⚠️     | Manual, doesn't scale                 |
+
+**Implementation**: Block `alca up` when mount excludes are configured on rootless Podman, with clear error message offering alternatives:
+1. Remove `exclude` from mount configuration
+2. Use rootful Podman
+3. Use Docker instead
 
 ### Mutagen Integration
 

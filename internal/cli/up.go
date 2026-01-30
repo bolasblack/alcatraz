@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -57,13 +56,25 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Create runtime environment once for all runtime operations
+	runtimeEnv := runtime.NewRuntimeEnv()
+
 	// Select runtime based on config
 	util.ProgressStep(out, "Detecting runtime...\n")
-	rt, err := runtime.SelectRuntimeWithOutput(cfg, out)
+	rt, err := runtime.SelectRuntimeWithOutput(runtimeEnv, cfg, out)
 	if err != nil {
 		return fmt.Errorf("failed to select runtime: %w", err)
 	}
 	util.ProgressStep(out, "Detected runtime: %s\n", rt.Name())
+
+	// Validate mount excludes compatibility with runtime
+	// See AGD-025 for rootless Podman + Mutagen limitations
+	if err := runtime.ValidateMountExcludes(runtimeEnv, rt, cfg); err != nil {
+		return fmt.Errorf("%w\n\nAlternatives:\n"+
+			"  1. Remove 'exclude' from mount configuration\n"+
+			"  2. Use rootful Podman (sudo podman)\n"+
+			"  3. Use Docker instead", err)
+	}
 
 	// Network helper (handles all platform-specific logic)
 	nh := network.New(cfg.Network, rt.Name())
@@ -86,17 +97,15 @@ func runUp(cmd *cobra.Command, args []string) error {
 		util.ProgressStep(out, "Created new state file: %s\n", state.StateFilePath(cwd))
 	}
 
-	ctx := context.Background()
-
 	// Check for configuration drift and handle rebuild
-	needsRebuild, err := handleConfigDrift(ctx, cfg, st, rt, out, force)
+	needsRebuild, err := handleConfigDrift(cfg, st, rt, out, force)
 	if err != nil {
 		return err
 	}
 
 	// If rebuild needed, remove existing container first
 	if needsRebuild {
-		if err := rebuildContainerIfNeeded(ctx, cfg, st, rt, cwd, out); err != nil {
+		if err := rebuildContainerIfNeeded(runtimeEnv, cfg, st, rt, cwd, out); err != nil {
 			return err
 		}
 	}
@@ -114,7 +123,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	// Start container
-	if err := rt.Up(ctx, cfg, cwd, st, out); err != nil {
+	if err := rt.Up(runtimeEnv, cfg, cwd, st, out); err != nil {
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
@@ -124,7 +133,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 // handleConfigDrift checks for configuration drift and prompts user if needed.
 // Returns true if rebuild is needed.
-func handleConfigDrift(ctx context.Context, cfg *config.Config, st *state.State, rt runtime.Runtime, out io.Writer, force bool) (bool, error) {
+func handleConfigDrift(cfg *config.Config, st *state.State, rt runtime.Runtime, out io.Writer, force bool) (bool, error) {
 	runtimeChanged := st.Runtime != rt.Name()
 	drift := st.DetectConfigDrift(cfg)
 
@@ -154,7 +163,7 @@ func handleConfigDrift(ctx context.Context, cfg *config.Config, st *state.State,
 }
 
 // rebuildContainerIfNeeded removes the existing container for rebuild.
-func rebuildContainerIfNeeded(ctx context.Context, cfg *config.Config, st *state.State, rt runtime.Runtime, cwd string, out io.Writer) error {
+func rebuildContainerIfNeeded(runtimeEnv *runtime.RuntimeEnv, cfg *config.Config, st *state.State, rt runtime.Runtime, cwd string, out io.Writer) error {
 	// Determine which runtime to use for cleanup
 	cleanupRt := rt
 	runtimeChanged := st.Runtime != rt.Name()
@@ -166,11 +175,10 @@ func rebuildContainerIfNeeded(ctx context.Context, cfg *config.Config, st *state
 			util.ProgressStep(out, "Runtime changed: %s → %s\n", st.Runtime, rt.Name())
 		}
 	}
-
-	status, _ := cleanupRt.Status(ctx, cwd, st)
+	status, _ := cleanupRt.Status(runtimeEnv, cwd, st)
 	if status.State != runtime.StateNotFound {
 		util.ProgressStep(out, "Removing existing container for rebuild...\n")
-		if err := cleanupRt.Down(ctx, cwd, st); err != nil {
+		if err := cleanupRt.Down(runtimeEnv, cwd, st); err != nil {
 			return fmt.Errorf("failed to remove container for rebuild: %w", err)
 		}
 	}

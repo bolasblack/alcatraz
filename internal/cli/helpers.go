@@ -39,21 +39,21 @@ func loadConfigFromCwd(env *util.Env, cwd string) (*config.Config, string, error
 
 // loadConfigOptional loads configuration, returning zero config if not found.
 // Use this for commands that can work without a config file.
-func loadConfigOptional(env *util.Env, cwd string) (config.Config, string) {
+func loadConfigOptional(env *util.Env, cwd string) (*config.Config, string) {
 	configPath := filepath.Join(cwd, ConfigFilename)
 	cfg, _ := config.LoadConfig(env, configPath)
-	return cfg, configPath
+	return &cfg, configPath
 }
 
 // loadConfigAndRuntime loads config and selects the appropriate runtime.
 // This is the most common pattern for commands that need both.
-func loadConfigAndRuntime(env *util.Env, cwd string) (*config.Config, runtime.Runtime, error) {
+func loadConfigAndRuntime(env *util.Env, runtimeEnv *runtime.RuntimeEnv, cwd string) (*config.Config, runtime.Runtime, error) {
 	cfg, _, err := loadConfigFromCwd(env, cwd)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	rt, err := runtime.SelectRuntime(cfg)
+	rt, err := runtime.SelectRuntime(runtimeEnv, cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to select runtime: %w", err)
 	}
@@ -63,10 +63,10 @@ func loadConfigAndRuntime(env *util.Env, cwd string) (*config.Config, runtime.Ru
 
 // loadConfigAndRuntimeOptional loads config (optional) and selects runtime.
 // Use for commands like 'list' and 'cleanup' that work without config.
-func loadConfigAndRuntimeOptional(env *util.Env, cwd string) (config.Config, runtime.Runtime, error) {
+func loadConfigAndRuntimeOptional(env *util.Env, runtimeEnv *runtime.RuntimeEnv, cwd string) (*config.Config, runtime.Runtime, error) {
 	cfg, _ := loadConfigOptional(env, cwd)
 
-	rt, err := runtime.SelectRuntime(&cfg)
+	rt, err := runtime.SelectRuntime(runtimeEnv, cfg)
 	if err != nil {
 		return cfg, nil, fmt.Errorf("failed to select runtime: %w", err)
 	}

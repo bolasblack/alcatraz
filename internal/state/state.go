@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -213,7 +212,7 @@ func enforceConfigFieldCompleteness(cfg *config.Config) {
 		Workdir   string
 		Runtime   config.RuntimeType
 		Commands  config.Commands
-		Mounts    []string
+		Mounts    []config.MountConfig
 		Resources config.Resources
 		Envs      map[string]config.EnvValue
 		Network   config.Network
@@ -238,6 +237,17 @@ func enforceConfigFieldCompleteness(cfg *config.Config) {
 	}
 	for _, v := range cfg.Envs {
 		_ = fieldsEnvValue(v)
+		break // Only need to check one value for type compatibility
+	}
+
+	type fieldsMountConfig struct {
+		Source   string
+		Target   string
+		Readonly bool
+		Exclude  []string
+	}
+	for _, m := range cfg.Mounts {
+		_ = fieldsMountConfig(m)
 		break // Only need to check one value for type compatibility
 	}
 }
@@ -276,7 +286,7 @@ func compareConfigs(old, new *config.Config) *DriftChanges {
 	if old.Resources.CPUs != new.Resources.CPUs {
 		c.CPUs = &[2]int{old.Resources.CPUs, new.Resources.CPUs}
 	}
-	if !slices.Equal(old.Mounts, new.Mounts) {
+	if !config.MountsEqual(old.Mounts, new.Mounts) {
 		c.Mounts = true
 	}
 	if hasEnvLiteralDrift(old.Envs, new.Envs) {

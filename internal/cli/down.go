@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/network"
+	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/transact"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
@@ -34,8 +34,11 @@ func runDown(cmd *cobra.Command, args []string) error {
 	tfs := transact.New()
 	env := util.NewEnv(tfs)
 
+	// Create runtime environment once for all runtime operations
+	runtimeEnv := runtime.NewRuntimeEnv()
+
 	// Load config (optional) and select runtime
-	cfg, rt, err := loadConfigAndRuntimeOptional(env, cwd)
+	cfg, rt, err := loadConfigAndRuntimeOptional(env, runtimeEnv, cwd)
 	if err != nil {
 		return err
 	}
@@ -55,8 +58,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	// Stop container
 	util.ProgressStep(out, "Stopping container...\n")
-	ctx := context.Background()
-	if err := rt.Down(ctx, cwd, st); err != nil {
+	if err := rt.Down(runtimeEnv, cwd, st); err != nil {
 		return fmt.Errorf("failed to stop container: %w", err)
 	}
 

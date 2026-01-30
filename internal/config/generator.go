@@ -61,8 +61,11 @@ func getTemplateConfig(template Template) TemplateConfig {
 	case TemplateNix:
 		return TemplateConfig{
 			Config: Config{
-				Image:  "nixos/nix",
-				Mounts: []string{".alca.cache/go:/root/go", ".alca.cache/mise:/root/.local/share/mise"},
+				Image: "nixos/nix",
+				Mounts: []MountConfig{
+					{Source: ".alca.cache/go", Target: "/root/go"},
+					{Source: ".alca.cache/mise", Target: "/root/.local/share/mise"},
+				},
 				Commands: Commands{
 					Up:    "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command true",
 					Enter: "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command",
@@ -78,8 +81,11 @@ func getTemplateConfig(template Template) TemplateConfig {
 	case TemplateDebian:
 		return TemplateConfig{
 			Config: Config{
-				Image:  "debian:bookworm-slim",
-				Mounts: []string{".alca.cache/go:/root/go", ".alca.cache/mise:/root/.local/share/mise"},
+				Image: "debian:bookworm-slim",
+				Mounts: []MountConfig{
+					{Source: ".alca.cache/go", Target: "/root/go"},
+					{Source: ".alca.cache/mise", Target: "/root/.local/share/mise"},
+				},
 				Commands: Commands{
 					Up: `apt update -y && apt install -y curl
 install -dm 755 /etc/apt/keyrings
@@ -94,8 +100,7 @@ export PATH="/extra-bin:$PATH"
 ' >> ~/.bashrc
 . ~/.bashrc`,
 				},
-				Envs: map[string]EnvValue{
-				},
+				Envs: map[string]EnvValue{},
 			},
 			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prepare the environment",
@@ -137,7 +142,7 @@ func configToRaw(c Config) RawConfig {
 		Workdir   string
 		Runtime   RuntimeType
 		Commands  Commands
-		Mounts    []string
+		Mounts    []MountConfig
 		Resources Resources
 		Envs      map[string]EnvValue
 		Network   Network
@@ -151,14 +156,55 @@ func configToRaw(c Config) RawConfig {
 			envs[k] = v
 		}
 	}
+
+	// Convert MountConfig to raw format
+	// Use string format for simple mounts, object format for mounts with excludes
+	var mounts RawMountSlice
+	if len(c.Mounts) > 0 {
+		mounts = make(RawMountSlice, len(c.Mounts))
+		for i, m := range c.Mounts {
+			if m.CanBeSimpleString() {
+				// Use simple string format
+				mounts[i] = m.String()
+			} else {
+				// Use object format for mounts with excludes
+				mounts[i] = mountConfigToMap(m)
+			}
+		}
+	}
+
 	return RawConfig{
 		Image:     c.Image,
 		Workdir:   c.Workdir,
 		Runtime:   c.Runtime,
 		Commands:  c.Commands,
-		Mounts:    c.Mounts,
+		Mounts:    mounts,
 		Resources: c.Resources,
 		Envs:      envs,
 		Network:   c.Network,
 	}
+}
+
+// mountConfigToMap converts MountConfig to map for TOML serialization.
+func mountConfigToMap(m MountConfig) map[string]any {
+	// Mirror type ensures all MountConfig fields are explicitly handled (AGD-015).
+	type fields struct {
+		Source   string
+		Target   string
+		Readonly bool
+		Exclude  []string
+	}
+	_ = fields(m)
+
+	result := map[string]any{
+		"source": m.Source,
+		"target": m.Target,
+	}
+	if m.Readonly {
+		result["readonly"] = m.Readonly
+	}
+	if len(m.Exclude) > 0 {
+		result["exclude"] = m.Exclude
+	}
+	return result
 }

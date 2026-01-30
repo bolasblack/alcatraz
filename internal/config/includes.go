@@ -101,6 +101,20 @@ func processIncludes(env *util.Env, includes []string, baseDir string, visited m
 
 // rawToConfig converts RawConfig to Config without applying defaults.
 func rawToConfig(raw RawConfig) (Config, error) {
+	// Mirror type ensures all RawConfig fields are explicitly handled (AGD-015).
+	type rawConfigFields struct {
+		Includes  []string
+		Image     string
+		Workdir   string
+		Runtime   RuntimeType
+		Commands  Commands
+		Mounts    RawMountSlice
+		Resources Resources
+		Envs      RawEnvValueMap
+		Network   Network
+	}
+	_ = rawConfigFields(raw)
+
 	// Convert raw envs to EnvValue
 	envs := make(map[string]EnvValue)
 	for key, val := range raw.Envs {
@@ -111,16 +125,85 @@ func rawToConfig(raw RawConfig) (Config, error) {
 		envs[key] = env
 	}
 
+	// Convert raw mounts to MountConfig
+	mounts, err := parseMounts(raw.Mounts)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		Image:     raw.Image,
 		Workdir:   raw.Workdir,
 		Runtime:   raw.Runtime,
 		Commands:  raw.Commands,
-		Mounts:    raw.Mounts,
+		Mounts:    mounts,
 		Resources: raw.Resources,
 		Envs:      envs,
 		Network:   raw.Network,
 	}, nil
+}
+
+// parseMounts converts raw mount values to MountConfig slice.
+// Accepts both string format ("source:target[:ro]") and object format.
+func parseMounts(raw []any) ([]MountConfig, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+
+	mounts := make([]MountConfig, 0, len(raw))
+	for i, val := range raw {
+		m, err := parseMountValue(val)
+		if err != nil {
+			return nil, fmt.Errorf("mount[%d]: %w", i, err)
+		}
+		mounts = append(mounts, m)
+	}
+	return mounts, nil
+}
+
+// parseMountValue converts a single raw mount value to MountConfig.
+func parseMountValue(val any) (MountConfig, error) {
+	switch v := val.(type) {
+	case string:
+		return ParseMount(v)
+	case map[string]any:
+		return parseMountObject(v)
+	default:
+		return MountConfig{}, fmt.Errorf("invalid type: %T", val)
+	}
+}
+
+// parseMountObject parses a mount object with source, target, readonly, exclude fields.
+func parseMountObject(m map[string]any) (MountConfig, error) {
+	var mc MountConfig
+
+	source, ok := m["source"].(string)
+	if !ok || source == "" {
+		return MountConfig{}, fmt.Errorf("mount source is required")
+	}
+	mc.Source = source
+
+	target, ok := m["target"].(string)
+	if !ok || target == "" {
+		return MountConfig{}, fmt.Errorf("mount target is required")
+	}
+	mc.Target = target
+
+	if readonly, ok := m["readonly"].(bool); ok {
+		mc.Readonly = readonly
+	}
+
+	if exclude, ok := m["exclude"].([]any); ok {
+		for i, e := range exclude {
+			s, ok := e.(string)
+			if !ok {
+				return MountConfig{}, fmt.Errorf("exclude[%d]: expected string, got %T", i, e)
+			}
+			mc.Exclude = append(mc.Exclude, s)
+		}
+	}
+
+	return mc, nil
 }
 
 // parseEnvValue converts a raw value to EnvValue.
@@ -188,7 +271,7 @@ func mergeConfigs(base, overlay Config) Config {
 		Workdir   string
 		Runtime   RuntimeType
 		Commands  Commands
-		Mounts    []string
+		Mounts    []MountConfig
 		Resources Resources
 		Envs      map[string]EnvValue
 		Network   Network

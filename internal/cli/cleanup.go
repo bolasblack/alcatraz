@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -48,14 +47,15 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	// Create env for read-only file operations
 	env := util.NewReadonlyOsEnv()
 
+	// Create runtime environment once for all runtime operations
+	runtimeEnv := runtime.NewRuntimeEnv()
+
 	// Load config (optional) and select runtime
-	_, rt, err := loadConfigAndRuntimeOptional(env, cwd)
+	_, rt, err := loadConfigAndRuntimeOptional(env, runtimeEnv, cwd)
 	if err != nil {
 		return err
 	}
-
-	ctx := context.Background()
-	containers, err := rt.ListContainers(ctx)
+	containers, err := rt.ListContainers(runtimeEnv)
 	if err != nil {
 		return fmt.Errorf("failed to list containers: %w", err)
 	}
@@ -89,7 +89,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	}
 
 	// Delete containers
-	deleted := deleteContainers(ctx, rt, toDelete)
+	deleted := deleteContainers(runtimeEnv, rt, toDelete)
 	fmt.Println("") // spacing after inline progress
 	util.ProgressDone(os.Stdout, "Removed %d container(s).\n", deleted)
 	return nil
@@ -201,11 +201,11 @@ func orphansToContainerInfos(orphans []orphanContainer) []runtime.ContainerInfo 
 }
 
 // deleteContainers removes the given containers and returns the count of successfully deleted.
-func deleteContainers(ctx context.Context, rt runtime.Runtime, containers []runtime.ContainerInfo) int {
+func deleteContainers(runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime, containers []runtime.ContainerInfo) int {
 	deleted := 0
 	for _, c := range containers {
 		util.ProgressStep(os.Stdout, "Removing %s... ", c.Name)
-		if err := rt.RemoveContainer(ctx, c.Name); err != nil {
+		if err := rt.RemoveContainer(runtimeEnv, c.Name); err != nil {
 			util.Progress(os.Stdout, "failed: %v\n", err)
 		} else {
 			util.Progress(os.Stdout, "done\n")

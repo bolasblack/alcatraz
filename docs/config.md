@@ -198,7 +198,9 @@ enter = "[ -f flake.nix ] && exec nix develop"
 
 ### mounts
 
-Additional mount points beyond the default project mount.
+Additional mount points beyond the default project mount. Supports both simple string format and extended object format with exclude patterns.
+
+#### Simple String Format
 
 ```toml
 mounts = [
@@ -207,11 +209,64 @@ mounts = [
 ]
 ```
 
-- **Type**: array of strings
+- **Format**: `"host_path:container_path"` or `"host_path:container_path:ro"`
+- **Options**: `ro` (read-only)
+
+#### Extended Object Format
+
+Use the extended format when you need to exclude files from being visible inside the container. See [AGD-025](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-025_mount-exclude-with-mutagen.md) for design rationale.
+
+```toml
+[[mounts]]
+source = "/Users/me/project"
+target = "/workspace"
+readonly = false
+exclude = [
+  "**/.env.prod",
+  "**/.env.local",
+  "**/secrets/",
+  "**/*.key",
+]
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `source` | string | Yes | - | Host path |
+| `target` | string | Yes | - | Container path |
+| `readonly` | bool | No | `false` | Read-only mount |
+| `exclude` | array | No | `[]` | Glob patterns to exclude |
+
+#### Exclude Patterns
+
+Exclude patterns follow gitignore-like syntax (Mutagen ignore format):
+
+| Pattern | Matches |
+|---------|---------|
+| `**/` | Any directory depth |
+| `*.ext` | Files with extension |
+| `dir/` | Directory (trailing slash) |
+| `**/.env` | `.env` file at any depth |
+| `**/secrets/` | `secrets/` directory at any depth |
+
+**Recommended excludes for Node.js projects:**
+
+```toml
+[[mounts]]
+source = "."
+target = "/workspace"
+exclude = [
+  "node_modules/",     # Container runs its own npm install
+  ".pnpm-store/",      # pnpm cache
+  "dist/",             # Build output
+  ".next/",            # Next.js cache
+]
+```
+
+**Note**: When excludes are specified, Alcatraz uses [Mutagen](https://mutagen.io/) for file synchronization instead of direct bind mounts. This provides file filtering but introduces 50-200ms sync latency.
+
+- **Type**: array (strings or objects)
 - **Required**: No
 - **Default**: `[]`
-- **Format**: `"host_path:container_path"` or `"host_path:container_path:options"`
-- **Options**: `ro` (read-only), `rw` (read-write, default)
 
 ### resources.memory
 

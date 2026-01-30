@@ -1,0 +1,125 @@
+// Package runtime provides container runtime abstraction for Alcatraz.
+// This file implements Mutagen file sync integration for mount exclude support.
+// See AGD-025 for Mutagen integration design decisions.
+package runtime
+
+import (
+	"fmt"
+	"strings"
+)
+
+// MutagenSync manages a Mutagen sync session.
+// Each session syncs files from a host source to a container target,
+// with optional ignore patterns for excluding files.
+type MutagenSync struct {
+	Name    string   // Session name (unique per project+mount)
+	Source  string   // Host path
+	Target  string   // Container path (format: docker://container-id/path)
+	Ignores []string // Patterns to ignore (gitignore-like syntax)
+}
+
+// Create creates a new Mutagen sync session.
+// CLI command: mutagen sync create --name=<name> [--ignore=<pattern>]... <source> <target>
+func (m *MutagenSync) Create(env *RuntimeEnv) error {
+	args := m.buildCreateArgs()
+	output, err := env.Cmd.Run("mutagen", args...)
+	if err != nil {
+		return fmt.Errorf("mutagen sync create failed: %w: %s", err, string(output))
+	}
+	return nil
+}
+
+// Terminate terminates a Mutagen sync session.
+// CLI command: mutagen sync terminate <name>
+func (m *MutagenSync) Terminate(env *RuntimeEnv) error {
+	args := m.buildTerminateArgs()
+	output, err := env.Cmd.Run("mutagen", args...)
+	if err != nil {
+		if strings.Contains(string(output), "no matching sessions") {
+			return nil
+		}
+		return fmt.Errorf("mutagen sync terminate failed: %w: %s", err, string(output))
+	}
+	return nil
+}
+
+// buildCreateArgs constructs the arguments for mutagen sync create.
+func (m *MutagenSync) buildCreateArgs() []string {
+	args := []string{"sync", "create", "--name=" + m.Name}
+
+	// Add ignore patterns
+	for _, pattern := range m.Ignores {
+		args = append(args, "--ignore="+pattern)
+	}
+
+	// Add source and target
+	args = append(args, m.Source, m.Target)
+
+	return args
+}
+
+// buildTerminateArgs constructs the arguments for mutagen sync terminate.
+func (m *MutagenSync) buildTerminateArgs() []string {
+	return []string{"sync", "terminate", m.Name}
+}
+
+// ListMutagenSyncs lists all Mutagen sync sessions matching a name prefix.
+// CLI command: mutagen sync list --template='{{.Name}}'
+func ListMutagenSyncs(env *RuntimeEnv, namePrefix string) ([]string, error) {
+	args := buildListSyncsArgs()
+	output, err := env.Cmd.Run("mutagen", args...)
+	if err != nil {
+		return []string{}, nil
+	}
+	return parseMutagenListOutput(string(output), namePrefix), nil
+}
+
+// buildListSyncsArgs constructs the arguments for mutagen sync list.
+func buildListSyncsArgs() []string {
+	return []string{"sync", "list", "--template={{.Name}}"}
+}
+
+// parseMutagenListOutput parses the output of mutagen sync list and filters by prefix.
+func parseMutagenListOutput(output string, namePrefix string) []string {
+	var result []string
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for _, line := range lines {
+		name := strings.TrimSpace(line)
+		if name != "" && strings.HasPrefix(name, namePrefix) {
+			result = append(result, name)
+		}
+	}
+	return result
+}
+
+// MutagenSessionName generates a unique session name for a project mount.
+// Format: alca-<projectID>-<mountIndex>
+func MutagenSessionName(projectID string, mountIndex int) string {
+	return fmt.Sprintf("alca-%s-%d", projectID, mountIndex)
+}
+
+// MutagenTarget generates a Mutagen target URL for a container path.
+// Format: docker://<containerID>/<path>
+func MutagenTarget(containerID string, path string) string {
+	return fmt.Sprintf("docker://%s%s", containerID, path)
+}
+
+// TerminateProjectSyncs terminates all Mutagen sync sessions for a project.
+// Used during container cleanup (down command).
+func TerminateProjectSyncs(env *RuntimeEnv, projectID string) error {
+	prefix := fmt.Sprintf("alca-%s-", projectID)
+	sessions, err := ListMutagenSyncs(env, prefix)
+	if err != nil {
+		return err
+	}
+
+	var lastErr error
+	for _, name := range sessions {
+		sync := MutagenSync{Name: name}
+		if err := sync.Terminate(env); err != nil {
+			lastErr = err
+		}
+	}
+
+	return lastErr
+}

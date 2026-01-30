@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,6 +31,9 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// Create env for read-only file operations
 	env := util.NewReadonlyOsEnv()
 
+	// Create runtime environment once for all runtime operations
+	runtimeEnv := runtime.NewRuntimeEnv()
+
 	configPath := filepath.Join(cwd, ConfigFilename)
 
 	// Check if config exists
@@ -53,7 +55,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Select runtime
-	rt, err := runtime.SelectRuntime(&cfg)
+	rt, err := runtime.SelectRuntime(runtimeEnv, &cfg)
 	if err != nil {
 		fmt.Println("Runtime: None available")
 		fmt.Println("")
@@ -82,8 +84,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println("")
 
 	// Get container status
-	ctx := context.Background()
-	status, err := rt.Status(ctx, cwd, st)
+	status, err := rt.Status(runtimeEnv, cwd, st)
 	if err != nil {
 		fmt.Println("Container: Error getting status")
 		return nil

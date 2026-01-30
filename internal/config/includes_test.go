@@ -476,7 +476,10 @@ func TestConfigToRaw(t *testing.T) {
 			Up:    "up cmd",
 			Enter: "enter cmd",
 		},
-		Mounts: []string{"/a:/a", "/b:/b"},
+		Mounts: []MountConfig{
+			{Source: "/a", Target: "/a"},
+			{Source: "/b", Target: "/b"},
+		},
 		Resources: Resources{
 			Memory: "4g",
 			CPUs:   2,
@@ -535,7 +538,7 @@ func TestMergeConfigs(t *testing.T) {
 	base := Config{
 		Image:   "base:latest",
 		Workdir: "/base",
-		Mounts:  []string{"/base:/base"},
+		Mounts:  []MountConfig{{Source: "/base", Target: "/base"}},
 		Commands: Commands{
 			Up:    "base up",
 			Enter: "base enter",
@@ -551,7 +554,7 @@ func TestMergeConfigs(t *testing.T) {
 
 	overlay := Config{
 		Image:  "overlay:latest",
-		Mounts: []string{"/overlay:/overlay"},
+		Mounts: []MountConfig{{Source: "/overlay", Target: "/overlay"}},
 		Commands: Commands{
 			Up: "overlay up",
 		},

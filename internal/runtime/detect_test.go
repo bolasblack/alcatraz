@@ -1,40 +1,15 @@
 package runtime
 
 import (
-	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/state"
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
-func TestIsOrbStack(t *testing.T) {
-	// Skip if Docker is not available
-	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("docker not available, skipping test")
-	}
-
-	result, err := IsOrbStack()
-	if err != nil {
-		// If Docker is installed but not running, skip
-		if strings.Contains(err.Error(), "Cannot connect to the Docker daemon") {
-			t.Skip("docker daemon not running, skipping test")
-		}
-		t.Fatalf("IsOrbStack failed: %v", err)
-	}
-
-	// We can't assert the result since it depends on the environment.
-	// Just verify that the function returns without error and returns a boolean.
-	t.Logf("IsOrbStack returned: %v", result)
-}
-
-func TestIsOrbStackDockerNotAvailable(t *testing.T) {
-	// This test verifies error handling when docker is not available.
-	// We can't easily test this without mocking, so we just document the expected behavior.
-	// When docker is not found, IsOrbStack should return false with an error.
-	t.Log("IsOrbStack returns (false, error) when docker is not available")
-}
+// IsOrbStack tests moved to runtime_mock_test.go (mock-based, deterministic).
 
 func TestAll(t *testing.T) {
 	runtimes := All()
@@ -94,64 +69,33 @@ func TestPodmanName(t *testing.T) {
 	}
 }
 
-func TestSelectRuntimeWithDockerConfig(t *testing.T) {
-	// Skip if Docker is not available
-	docker := NewDocker()
-	if !docker.Available() {
-		t.Skip("docker not available, skipping test")
-	}
+func TestSelectRuntime_DockerExplicit(t *testing.T) {
+	mock := util.NewMockCommandRunner()
+	mock.ExpectSuccess("docker version --format {{.Server.Version}}", []byte("24.0.0"))
+	env := &RuntimeEnv{Cmd: mock}
 
-	cfg := &config.Config{
-		Runtime: "docker",
-	}
-
-	rt, err := SelectRuntime(cfg)
+	cfg := &config.Config{Runtime: "docker"}
+	rt, err := SelectRuntime(env, cfg)
 	if err != nil {
 		t.Fatalf("SelectRuntime failed: %v", err)
 	}
-
 	if rt.Name() != "Docker" {
-		t.Errorf("expected Docker runtime, got %s", rt.Name())
+		t.Errorf("expected Docker, got %s", rt.Name())
 	}
 }
 
-func TestSelectRuntimeWithAutoConfig(t *testing.T) {
-	cfg := &config.Config{
-		Runtime: "auto",
-	}
+func TestSelectRuntime_DockerNotAvailable(t *testing.T) {
+	mock := util.NewMockCommandRunner()
+	mock.ExpectFailure("docker version --format {{.Server.Version}}", errCommandNotFound)
+	env := &RuntimeEnv{Cmd: mock}
 
-	rt, err := SelectRuntime(cfg)
-	if err != nil {
-		// No runtime available is acceptable
-		t.Logf("SelectRuntime returned error (no runtime available): %v", err)
-		return
-	}
-
-	// Should return a valid runtime
-	if rt.Name() != "Docker" && rt.Name() != "Podman" {
-		t.Errorf("unexpected runtime: %s", rt.Name())
-	}
-	t.Logf("SelectRuntime returned: %s", rt.Name())
-}
-
-func TestSelectRuntimeDockerNotAvailable(t *testing.T) {
-	// Skip if Docker IS available (we want to test the error case)
-	docker := NewDocker()
-	if docker.Available() {
-		t.Skip("docker is available, cannot test error case")
-	}
-
-	cfg := &config.Config{
-		Runtime: "docker",
-	}
-
-	_, err := SelectRuntime(cfg)
+	cfg := &config.Config{Runtime: "docker"}
+	_, err := SelectRuntime(env, cfg)
 	if err == nil {
 		t.Error("expected error when Docker not available")
 	}
-
 	if !strings.Contains(err.Error(), "Docker not available") {
-		t.Errorf("unexpected error message: %v", err)
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -251,7 +195,10 @@ func TestBuildRunArgs(t *testing.T) {
 			cfg: &config.Config{
 				Image:   "test-image",
 				Workdir: "/workspace",
-				Mounts:  []string{"/host/data:/container/data", "/host/cache:/container/cache:ro"},
+				Mounts: []config.MountConfig{
+					{Source: "/host/data", Target: "/container/data"},
+					{Source: "/host/cache", Target: "/container/cache", Readonly: true},
+				},
 			},
 			projectDir: "/project",
 			state: &state.State{
@@ -331,7 +278,8 @@ func TestBuildRunArgs(t *testing.T) {
 				displayName: "Docker",
 				command:     "docker",
 			}
-			args := rt.buildRunArgs(tt.cfg, tt.projectDir, tt.state, tt.contName)
+			mockCmd := util.NewMockCommandRunner().AllowUnexpected()
+			args := rt.buildRunArgs(&RuntimeEnv{Cmd: mockCmd}, tt.cfg, tt.projectDir, tt.state, tt.contName)
 
 			argsStr := strings.Join(args, " ")
 			for _, want := range tt.wantParts {
