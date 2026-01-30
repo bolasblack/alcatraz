@@ -15,8 +15,8 @@ import (
 
 // Commands defines the lifecycle commands for the container.
 type Commands struct {
-	Up    string `toml:"up,omitempty" json:"up,omitempty" jsonschema:"description=Command to run when starting the container"`
-	Enter string `toml:"enter,omitempty" json:"enter,omitempty" jsonschema:"description=Command to run when entering an existing container"`
+	Up    string `toml:"up,omitempty,multiline" json:"up,omitempty" jsonschema:"description=Command to run when starting the container"`
+	Enter string `toml:"enter,omitempty,multiline" json:"enter,omitempty" jsonschema:"description=Command to run when entering an existing container"`
 }
 
 // Resources defines container resource limits.

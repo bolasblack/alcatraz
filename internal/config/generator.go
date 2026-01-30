@@ -30,15 +30,19 @@ const SchemaComment = "#:schema https://raw.githubusercontent.com/bolasblack/alc
 // TemplateConfig holds a Config and its associated comment.
 type TemplateConfig struct {
 	Config    Config
-	UpComment string // Comment to insert before the "up" command
+	Includes  []string // Config files to include (RawConfig-only field)
+	UpComment string   // Comment to insert before the "up" command
 }
 
 // GenerateConfig returns the TOML content for the given template.
 func GenerateConfig(template Template) (string, error) {
 	tc := getTemplateConfig(template)
 
+	raw := configToRaw(tc.Config)
+	raw.Includes = tc.Includes
+
 	var buf bytes.Buffer
-	if err := toml.NewEncoder(&buf).Encode(configToRaw(tc.Config)); err != nil {
+	if err := toml.NewEncoder(&buf).Encode(raw); err != nil {
 		return "", fmt.Errorf("encode template: %w", err)
 	}
 
@@ -63,7 +67,12 @@ func getTemplateConfig(template Template) TemplateConfig {
 					Up:    "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command true",
 					Enter: "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command",
 				},
+				Envs: map[string]EnvValue{
+					"NIXPKGS_ALLOW_UNFREE": {Value: "1"},
+					"NIX_CONFIG":           {Value: "extra-experimental-features = nix-command flakes"},
+				},
 			},
+			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prebuild, to reduce the time costs on enter",
 		}
 	case TemplateDebian:
@@ -77,9 +86,18 @@ install -dm 755 /etc/apt/keyrings
 curl -fSs https://mise.jdx.dev/gpg-key.pub | tee /etc/apt/keyrings/mise-archive-keyring.asc 1> /dev/null
 echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.jdx.dev/deb stable main" | tee /etc/apt/sources.list.d/mise.list
 apt update -y
-apt install -y mise`,
+apt install -y mise
+
+echo '
+export PATH="/root/.local/share/mise/shims:$PATH"
+export PATH="/extra-bin:$PATH"
+' >> ~/.bashrc
+. ~/.bashrc`,
+				},
+				Envs: map[string]EnvValue{
 				},
 			},
+			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prepare the environment",
 		}
 	default:
