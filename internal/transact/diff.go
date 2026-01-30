@@ -151,15 +151,32 @@ func ComputeDiff(staged, actual afero.Fs, paths, deletedPaths []string) ([]FileO
 
 // needsSudo determines if a path requires sudo for modification.
 // Checks actual write permission using unix.Access().
+// For non-existent paths, walks up the directory tree to find the nearest
+// existing ancestor and checks its write permission.
 func needsSudo(path string) bool {
-	// Check if we can write to the file
+	// Check if we can write to the file itself
 	if err := unix.Access(path, unix.W_OK); err == nil {
 		return false // Can write without sudo
 	}
-	// File doesn't exist or no permission, check parent directory
+
+	// File doesn't exist or no write permission.
+	// Walk up the directory tree to find the nearest existing ancestor.
 	dir := filepath.Dir(path)
+	for dir != "/" && dir != "." {
+		if err := unix.Access(dir, unix.W_OK); err == nil {
+			return false // Can write to an ancestor without sudo
+		}
+		// If the directory exists but isn't writable, we need sudo
+		if _, statErr := os.Stat(dir); statErr == nil {
+			return true
+		}
+		// Directory doesn't exist, keep walking up
+		dir = filepath.Dir(dir)
+	}
+
+	// Reached root — check root writability (unlikely writable)
 	if err := unix.Access(dir, unix.W_OK); err == nil {
-		return false // Can write to parent without sudo
+		return false
 	}
 	return true // Need sudo
 }

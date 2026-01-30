@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	goruntime "runtime"
 
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/network"
-	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/transact"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
@@ -42,7 +40,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	progressStep(out, "Using runtime: %s\n", rt.Name())
+	util.ProgressStep(out, "Using runtime: %s\n", rt.Name())
 
 	// Load state (optional - missing state is not an error for down)
 	st, err := loadStateOptional(env, cwd)
@@ -51,73 +49,29 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	if st == nil {
-		progressStep(out, "No state file found. Container may not exist.\n")
+		util.ProgressStep(out, "No state file found. Container may not exist.\n")
 		return nil
 	}
 
 	// Stop container
-	progressStep(out, "Stopping container...\n")
+	util.ProgressStep(out, "Stopping container...\n")
 	ctx := context.Background()
 	if err := rt.Down(ctx, cwd, st); err != nil {
 		return fmt.Errorf("failed to stop container: %w", err)
 	}
 
-	// Clean up LAN access if configured (macOS + OrbStack only)
-	// See AGD-023 for design decisions.
-	if goruntime.GOOS == "darwin" && network.HasLANAccess(cfg.Network.LANAccess) {
-		if err := cleanupLANAccess(cwd, out); err != nil {
-			// Don't fail on cleanup errors, just warn
-			progressStep(out, "Warning: failed to clean up LAN access: %v\n", err)
+	// Network cleanup
+	nh := network.New(cfg.Network, rt.Name())
+	if nh != nil {
+		if err := nh.Teardown(env, cwd); err != nil {
+			util.ProgressStep(out, "Warning: failed to cleanup network: %v\n", err)
+		}
+
+		if err := commitIfNeeded(env, tfs, out, "Removing firewall rules"); err != nil {
+			util.ProgressStep(out, "Warning: failed to commit: %v\n", err)
 		}
 	}
 
-	progressDone(out, "Container stopped\n")
-	return nil
-}
-
-// cleanupLANAccess removes LAN access configuration for the project.
-// See AGD-023 for implementation details.
-func cleanupLANAccess(projectDir string, out io.Writer) error {
-	// Only clean up for OrbStack
-	isOrbStack, err := runtime.IsOrbStack()
-	if err != nil {
-		return fmt.Errorf("failed to detect runtime: %w", err)
-	}
-	if !isOrbStack {
-		return nil
-	}
-
-	// Create TransactFs for file operations
-	tfs := transact.New()
-	env := util.NewEnv(tfs)
-
-	// Delete project file and check if shared should be removed
-	removeShared, flushWarning, err := network.DeleteProjectFile(env, projectDir)
-	if flushWarning != nil {
-		progressStep(out, "Warning: failed to flush anchor: %v\n", flushWarning)
-	}
-	if err != nil {
-		return err
-	}
-
-	if removeShared {
-		progressStep(out, "No other LAN access projects, removing shared NAT rule\n")
-		flushWarning, err := network.DeleteSharedRule(env)
-		if flushWarning != nil {
-			progressStep(out, "Warning: failed to flush anchor: %v\n", flushWarning)
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	// Commit file deletions (if any)
-	if tfs.NeedsCommit() {
-		if err := commitWithSudo(tfs); err != nil {
-			return fmt.Errorf("failed to commit file changes: %w", err)
-		}
-	}
-
-	progressStep(out, "LAN access cleaned up\n")
+	util.ProgressDone(out, "Container stopped\n")
 	return nil
 }

@@ -166,6 +166,16 @@ func TestNeedsSudo(t *testing.T) {
 			t.Errorf("needsSudo(\"/tmp/test\") = true, expected false for writable path")
 		}
 	})
+
+	// Test non-existent intermediate directory under a writable parent.
+	// This is the state.json bug: .alca/ doesn't exist yet, but the project
+	// directory (parent) is writable — should NOT require sudo.
+	t.Run("non-existent subdir under /tmp", func(t *testing.T) {
+		got := needsSudo("/tmp/nonexistent-dir-abc123/subdir/file.json")
+		if got {
+			t.Errorf("needsSudo with non-existent subdir under /tmp = true, expected false")
+		}
+	})
 }
 
 func TestOpTypeString(t *testing.T) {

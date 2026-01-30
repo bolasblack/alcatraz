@@ -349,6 +349,62 @@ func TestGenerateConfigUnknownTemplate(t *testing.T) {
 	}
 }
 
+func TestRawEnvValueMapJSONSchema(t *testing.T) {
+	schema := RawEnvValueMap{}.JSONSchema()
+
+	// Verify top-level schema structure
+	if schema.Type != "object" {
+		t.Errorf("expected type 'object', got %q", schema.Type)
+	}
+
+	if schema.Description != "Environment variables for the container" {
+		t.Errorf("expected description 'Environment variables for the container', got %q", schema.Description)
+	}
+
+	// Verify AdditionalProperties contains the env value schema
+	if schema.AdditionalProperties == nil {
+		t.Fatal("expected AdditionalProperties to be set")
+	}
+
+	envSchema := schema.AdditionalProperties
+	if envSchema.OneOf == nil || len(envSchema.OneOf) != 2 {
+		t.Fatalf("expected OneOf with 2 schemas, got %v", envSchema.OneOf)
+	}
+
+	// First option should be string
+	strSchema := envSchema.OneOf[0]
+	if strSchema.Type != "string" {
+		t.Errorf("expected first OneOf to be string, got %q", strSchema.Type)
+	}
+
+	// Second option should be object with value and override_on_enter properties
+	objSchema := envSchema.OneOf[1]
+	if objSchema.Type != "object" {
+		t.Errorf("expected second OneOf to be object, got %q", objSchema.Type)
+	}
+
+	if objSchema.Properties == nil {
+		t.Fatal("expected Properties to be set on object schema")
+	}
+
+	// Check value property exists
+	valueProp := objSchema.Properties.GetPair("value")
+	if valueProp == nil {
+		t.Error("expected 'value' property in object schema")
+	}
+
+	// Check override_on_enter property exists
+	overrideProp := objSchema.Properties.GetPair("override_on_enter")
+	if overrideProp == nil {
+		t.Error("expected 'override_on_enter' property in object schema")
+	}
+
+	// Verify AdditionalProperties is false (strict schema)
+	if objSchema.AdditionalProperties == nil {
+		t.Error("expected AdditionalProperties to be set to false schema")
+	}
+}
+
 func TestInsertUpComment(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -249,6 +249,8 @@ func TestInsertAnchorLine(t *testing.T) {
 // =============================================================================
 
 func TestEnsurePfAnchor(t *testing.T) {
+	h := newPfHelper()
+
 	tests := []struct {
 		name            string
 		initialContent  string
@@ -314,10 +316,10 @@ anchor "com.apple/*"
 			env, memFs := newTestEnv(t)
 
 			// Setup: write initial pf.conf
-			_ = afero.WriteFile(memFs, PfConfPath, []byte(tt.initialContent), 0644)
+			_ = afero.WriteFile(memFs, pfConfPath, []byte(tt.initialContent), 0644)
 
 			// Execute
-			err := EnsurePfAnchor(env)
+			err := h.ensurePfAnchor(env)
 			if tt.expectError && err == nil {
 				t.Error("expected error, got nil")
 			}
@@ -326,7 +328,7 @@ anchor "com.apple/*"
 			}
 
 			// Verify
-			content, err := afero.ReadFile(env.Fs, PfConfPath)
+			content, err := afero.ReadFile(env.Fs, pfConfPath)
 			if err != nil {
 				t.Fatalf("failed to read pf.conf: %v", err)
 			}
@@ -338,6 +340,8 @@ anchor "com.apple/*"
 }
 
 func TestRemovePfAnchor(t *testing.T) {
+	h := newPfHelper()
+
 	tests := []struct {
 		name            string
 		initialContent  string
@@ -376,10 +380,10 @@ anchor "com.apple/*"
 			env, memFs := newTestEnv(t)
 
 			// Setup
-			_ = afero.WriteFile(memFs, PfConfPath, []byte(tt.initialContent), 0644)
+			_ = afero.WriteFile(memFs, pfConfPath, []byte(tt.initialContent), 0644)
 
 			// Execute
-			err := RemovePfAnchor(env)
+			err := h.removePfAnchor(env)
 			if tt.expectError && err == nil {
 				t.Error("expected error, got nil")
 			}
@@ -388,7 +392,7 @@ anchor "com.apple/*"
 			}
 
 			// Verify
-			content, err := afero.ReadFile(env.Fs, PfConfPath)
+			content, err := afero.ReadFile(env.Fs, pfConfPath)
 			if err != nil {
 				t.Fatalf("failed to read pf.conf: %v", err)
 			}
@@ -400,6 +404,8 @@ anchor "com.apple/*"
 }
 
 func TestWriteSharedRule(t *testing.T) {
+	h := newPfHelper()
+
 	tests := []struct {
 		name        string
 		rules       string
@@ -427,7 +433,7 @@ func TestWriteSharedRule(t *testing.T) {
 			env, _ := newTestEnv(t)
 
 			// Execute
-			err := WriteSharedRule(env, tt.rules)
+			err := h.writeSharedRule(env, tt.rules)
 			if tt.expectError && err == nil {
 				t.Error("expected error, got nil")
 			}
@@ -436,7 +442,7 @@ func TestWriteSharedRule(t *testing.T) {
 			}
 
 			// Verify
-			sharedPath := filepath.Join(PfAnchorDir, SharedRuleFile)
+			sharedPath := filepath.Join(pfAnchorDir, sharedRuleFile)
 			content, err := afero.ReadFile(env.Fs, sharedPath)
 			if err != nil {
 				t.Fatalf("failed to read shared rule file: %v", err)
@@ -449,6 +455,8 @@ func TestWriteSharedRule(t *testing.T) {
 }
 
 func TestWriteProjectFile(t *testing.T) {
+	h := newPfHelper()
+
 	tests := []struct {
 		name        string
 		projectDir  string
@@ -474,7 +482,7 @@ func TestWriteProjectFile(t *testing.T) {
 			env, _ := newTestEnv(t)
 
 			// Execute
-			err := WriteProjectFile(env, tt.projectDir, tt.content)
+			err := h.writeProjectFile(env, tt.projectDir, tt.content)
 			if tt.expectError && err == nil {
 				t.Error("expected error, got nil")
 			}
@@ -483,7 +491,7 @@ func TestWriteProjectFile(t *testing.T) {
 			}
 
 			// Verify
-			expectedPath := filepath.Join(PfAnchorDir, ProjectFileName(tt.projectDir))
+			expectedPath := filepath.Join(pfAnchorDir, h.projectFileName(tt.projectDir))
 			content, err := afero.ReadFile(env.Fs, expectedPath)
 			if err != nil {
 				t.Fatalf("failed to read project file: %v", err)

@@ -7,27 +7,47 @@ scan_dirs = ["internal/"]
 
 # Package paths that are allowed to use filesystem operations directly.
 # These packages and their subpackages will be skipped during linting.
-allowed_packages = ["internal/transact", "internal/sudo"]
+allowed_packages = ["internal/transact"]
 
 # Forbidden function calls by package.
 # Format: { "package_path" = ["function1", "function2", ...] }
 [forbidden_calls]
 "os" = [
-    "Open",
+    # File creation/opening
     "Create",
+    "CreateTemp",
+    "Open",
     "OpenFile",
-    "ReadFile",
-    "WriteFile",
-    "Remove",
-    "RemoveAll",
+    "OpenInRoot",
+    "OpenRoot",
+    # Directory operations
     "Mkdir",
     "MkdirAll",
+    "MkdirTemp",
+    "Chdir",
+    "ReadDir",
+    # File read/write
+    "ReadFile",
+    "WriteFile",
+    "Truncate",
+    # File metadata
     "Stat",
     "Lstat",
-    "ReadDir",
-    "Rename",
     "Chmod",
     "Chown",
+    "Lchown",
+    "Chtimes",
+    "Rename",
+    # File deletion
+    "Remove",
+    "RemoveAll",
+    # Symbolic/hard links
+    "Symlink",
+    "Readlink",
+    "Link",
+    # Filesystem utilities
+    "DirFS",
+    "CopyFS",
 ]
 
 "io/ioutil" = [

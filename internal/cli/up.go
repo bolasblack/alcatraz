@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	goruntime "runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -52,23 +51,29 @@ func runUp(cmd *cobra.Command, args []string) error {
 	env := util.NewEnv(tfs)
 
 	// Load configuration
-	progressStep(out, "Loading config from %s\n", ConfigFilename)
+	util.ProgressStep(out, "Loading config from %s\n", ConfigFilename)
 	cfg, _, err := loadConfigFromCwd(env, cwd)
 	if err != nil {
 		return err
 	}
 
 	// Select runtime based on config
-	progressStep(out, "Detecting runtime...\n")
+	util.ProgressStep(out, "Detecting runtime...\n")
 	rt, err := runtime.SelectRuntimeWithOutput(cfg, out)
 	if err != nil {
 		return fmt.Errorf("failed to select runtime: %w", err)
 	}
-	progressStep(out, "Detected runtime: %s\n", rt.Name())
+	util.ProgressStep(out, "Detected runtime: %s\n", rt.Name())
 
-	// Early check - fail fast if network-helper needed but user declines
-	if err := ensureNetworkHelper(cfg, out); err != nil {
-		return err
+	// Network helper (handles all platform-specific logic)
+	nh := network.New(cfg.Network, rt.Name())
+	if nh != nil {
+		if err := setupNetwork(nh, env, tfs, cwd, out); err != nil {
+			return err
+		}
+		// Reset tfs/env for subsequent operations since network setup may have committed
+		tfs = transact.New()
+		env = util.NewEnv(tfs)
 	}
 
 	// Load or create state
@@ -78,7 +83,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	if isNew {
-		progressStep(out, "Created new state file: %s\n", state.StateFilePath(cwd))
+		util.ProgressStep(out, "Created new state file: %s\n", state.StateFilePath(cwd))
 	}
 
 	ctx := context.Background()
@@ -102,8 +107,8 @@ func runUp(cmd *cobra.Command, args []string) error {
 		if err := state.Save(env, cwd, st); err != nil {
 			return fmt.Errorf("failed to save state: %w", err)
 		}
-		// Commit state changes (state file is in project dir, no sudo needed)
-		if err := commitWithSudo(tfs); err != nil {
+		// Commit state changes (project dir, normally no sudo needed)
+		if err := commitWithSudo(env, tfs, out, ""); err != nil {
 			return fmt.Errorf("failed to save state: %w", err)
 		}
 	}
@@ -113,15 +118,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
-	// Configure NAT rules if LAN access enabled (macOS only)
-	// See AGD-023 for design decisions.
-	if goruntime.GOOS == "darwin" && network.HasLANAccess(cfg.Network.LANAccess) {
-		if err := configureNATRules(cwd, out); err != nil {
-			return fmt.Errorf("failed to configure LAN access: %w", err)
-		}
-	}
-
-	progressDone(out, "Environment ready\n")
+	util.ProgressDone(out, "Environment ready\n")
 	return nil
 }
 
@@ -136,12 +133,12 @@ func handleConfigDrift(ctx context.Context, cfg *config.Config, st *state.State,
 	}
 
 	if force {
-		progressStep(out, "Configuration changed, rebuilding container (-f)\n")
+		util.ProgressStep(out, "Configuration changed, rebuilding container (-f)\n")
 		return true, nil
 	}
 
 	// Show drift and ask for confirmation
-	displayConfigDrift(os.Stdout, drift, runtimeChanged, st.Runtime, rt.Name())
+	displayConfigDrift(out, drift, runtimeChanged, st.Runtime, rt.Name())
 	fmt.Print("Rebuild container with new configuration? [y/N] ")
 
 	reader := bufio.NewReader(os.Stdin)
@@ -166,13 +163,13 @@ func rebuildContainerIfNeeded(ctx context.Context, cfg *config.Config, st *state
 		// Runtime changed - use old runtime to remove old container
 		if oldRt := runtime.ByName(st.Runtime); oldRt != nil {
 			cleanupRt = oldRt
-			progressStep(out, "Runtime changed: %s → %s\n", st.Runtime, rt.Name())
+			util.ProgressStep(out, "Runtime changed: %s → %s\n", st.Runtime, rt.Name())
 		}
 	}
 
 	status, _ := cleanupRt.Status(ctx, cwd, st)
 	if status.State != runtime.StateNotFound {
-		progressStep(out, "Removing existing container for rebuild...\n")
+		util.ProgressStep(out, "Removing existing container for rebuild...\n")
 		if err := cleanupRt.Down(ctx, cwd, st); err != nil {
 			return fmt.Errorf("failed to remove container for rebuild: %w", err)
 		}
@@ -181,138 +178,55 @@ func rebuildContainerIfNeeded(ctx context.Context, cfg *config.Config, st *state
 	return nil
 }
 
-// ensureNetworkHelper checks if network-helper is needed and installed.
-// Call EARLY in runUp(), before drift check.
-// Returns error if user declines install.
+// setupNetwork configures network helper for LAN access.
 // See AGD-023 for design decisions.
-func ensureNetworkHelper(cfg *config.Config, out io.Writer) error {
-	// Only applies to macOS with LAN access configured
-	if goruntime.GOOS != "darwin" || !network.HasLANAccess(cfg.Network.LANAccess) {
-		return nil
+func setupNetwork(nh network.NetworkHelper, env *util.Env, tfs *transact.TransactFs, projectDir string, out io.Writer) error {
+	progress := func(format string, args ...any) {
+		util.ProgressStep(out, format, args...)
 	}
 
-	// Check runtime
-	isOrbStack, err := runtime.IsOrbStack()
-	if err != nil {
-		return fmt.Errorf("failed to detect runtime: %w", err)
-	}
-	if !isOrbStack {
-		progressStep(out, "LAN access: Docker Desktop detected, works natively\n")
-		return nil
-	}
-
-	progressStep(out, "LAN access: OrbStack detected\n")
-
-	// Create TransactFs for all file operations
-	tfs := transact.New()
-	env := util.NewEnv(tfs)
-
-	// Check if network helper is installed and up to date
-	installed := network.IsHelperInstalled(env)
-	needsUpdate := network.IsHelperNeedsUpdate(env)
-
-	if !installed {
-		progressStep(out, "Network configuration requires network-helper.\n")
+	// Check and install helper if needed
+	status := nh.HelperStatus(env)
+	if !status.Installed {
+		util.ProgressStep(out, "Network helper required for LAN access.\n")
 		if !promptConfirm("Install now?") {
-			return fmt.Errorf("LAN access requires network-helper. Either:\n  - Run 'alca network-helper install' manually\n  - Remove network.lan-access from your config")
-		}
-	} else if needsUpdate {
-		progressStep(out, "Network helper needs update.\n")
-	} else {
-		return nil // Already installed and up to date
-	}
-
-	// Install or update network helper (stages files)
-	if err := network.InstallHelper(env, func(format string, args ...any) {
-		progressStep(out, format, args...)
-	}); err != nil {
-		return fmt.Errorf("failed to install network-helper: %w", err)
-	}
-
-	subnet, err := network.GetOrbStackSubnet()
-	if err != nil {
-		return fmt.Errorf("failed to get OrbStack subnet: %w", err)
-	}
-	interfaces, err := network.GetPhysicalInterfaces()
-	if err != nil {
-		return fmt.Errorf("failed to get physical interfaces: %w", err)
-	}
-	rules := network.GenerateNATRules(subnet, interfaces)
-	if err := network.WriteSharedRule(env, rules); err != nil {
-		return fmt.Errorf("failed to create NAT rules: %w", err)
-	}
-
-	// Commit staged file operations with sudo
-	if tfs.NeedsCommit() {
-		if err := commitWithSudo(tfs); err != nil {
-			return fmt.Errorf("failed to commit NAT rules: %w", err)
+			return fmt.Errorf("LAN access requires network helper")
 		}
 	}
-	progressStep(out, "NAT rules created for all interfaces\n")
 
-	return nil
-}
-
-// configureNATRules sets up the NAT rules for LAN access.
-// Call AFTER container start. Assumes network-helper is already installed.
-// See AGD-023 for implementation details.
-func configureNATRules(projectDir string, out io.Writer) error {
-	// Check runtime - skip for Docker Desktop
-	isOrbStack, err := runtime.IsOrbStack()
-	if err != nil {
-		return fmt.Errorf("failed to detect runtime: %w", err)
-	}
-	if !isOrbStack {
-		return nil // Docker Desktop works natively, no NAT rules needed
-	}
-
-	// Create TransactFs for batched file operations
-	tfs := transact.New()
-	env := util.NewEnv(tfs)
-
-	// Get OrbStack subnet
-	subnet, err := network.GetOrbStackSubnet()
-	if err != nil {
-		return fmt.Errorf("failed to get OrbStack subnet: %w", err)
-	}
-
-	progressStep(out, "OrbStack subnet: %s\n", subnet)
-
-	// Check if rule update is needed (new interfaces detected)
-	needsUpdate, newInterfaces, err := network.NeedsRuleUpdate(env)
-	if err != nil {
-		return fmt.Errorf("failed to check rule update: %w", err)
-	}
-
-	if needsUpdate {
-		if len(newInterfaces) > 0 {
-			progressStep(out, "New network interfaces detected: %s\n", strings.Join(newInterfaces, ", "))
-		}
-		// Create/update shared NAT rule for all physical interfaces
-		interfaces, err := network.GetPhysicalInterfaces()
+	if !status.Installed || status.NeedsUpdate {
+		action, err := nh.InstallHelper(env, progress)
 		if err != nil {
-			return fmt.Errorf("failed to get physical interfaces: %w", err)
+			return fmt.Errorf("failed to install network helper: %w", err)
 		}
-		rules := network.GenerateNATRules(subnet, interfaces)
-		if err := network.WriteSharedRule(env, rules); err != nil {
-			return fmt.Errorf("failed to create shared NAT rule: %w", err)
+
+		if err := commitIfNeeded(env, tfs, out, "Writing network helper to system directories"); err != nil {
+			return fmt.Errorf("failed to commit: %w", err)
 		}
-		progressStep(out, "NAT rules updated for all interfaces\n")
-	}
 
-	// Create project-specific file
-	projectContent := "# Project-specific rules for " + projectDir + "\n"
-	if err := network.WriteProjectFile(env, projectDir, projectContent); err != nil {
-		return fmt.Errorf("failed to create project file: %w", err)
-	}
-
-	// Commit all staged file operations with sudo
-	if tfs.NeedsCommit() {
-		if err := commitWithSudo(tfs); err != nil {
-			return fmt.Errorf("failed to commit NAT rules: %w", err)
+		if action.Run != nil {
+			if err := action.Run(progress); err != nil {
+				return fmt.Errorf("post-install failed: %w", err)
+			}
 		}
 	}
 
-	progressStep(out, "LAN access configured\n")
+	// Setup project rules
+	action, err := nh.Setup(env, projectDir, progress)
+	if err != nil {
+		return fmt.Errorf("failed to setup network: %w", err)
+	}
+
+	if err := commitIfNeeded(env, tfs, out, "Writing firewall rules to system directories"); err != nil {
+		return fmt.Errorf("failed to commit: %w", err)
+	}
+
+	if action.Run != nil {
+		if err := action.Run(progress); err != nil {
+			return fmt.Errorf("post-setup failed: %w", err)
+		}
+	}
+
+	util.ProgressStep(out, "LAN access configured\n")
 	return nil
 }

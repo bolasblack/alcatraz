@@ -33,7 +33,7 @@ func ExecuteOp(fs afero.Fs, op FileOp) error {
 		return fs.Chmod(op.Path, op.Mode)
 
 	case OpDelete:
-		return fs.Remove(op.Path)
+		return fs.RemoveAll(op.Path)
 
 	default:
 		return fmt.Errorf("unknown operation type: %d", op.Op)
@@ -63,7 +63,7 @@ func GenerateBatchScript(ops []FileOp) string {
 			script.WriteString(fmt.Sprintf("chmod %o %q\n", op.Mode.Perm(), op.Path))
 
 		case OpDelete:
-			script.WriteString(fmt.Sprintf("rm -f %q\n", op.Path))
+			script.WriteString(fmt.Sprintf("rm -rf %q\n", op.Path))
 		}
 	}
 

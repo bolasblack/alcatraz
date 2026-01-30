@@ -64,7 +64,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	progressStep(os.Stdout, "Using runtime: %s\n", rt.Name())
+	util.ProgressStep(os.Stdout, "Using runtime: %s\n", rt.Name())
 
 	// Load state (required)
 	st, err := loadRequiredState(env, cwd)
@@ -83,7 +83,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("container not found: run 'alca up' first to create the container")
 	}
 
-	progressStep(os.Stdout, "Reloading configuration...\n")
+	util.ProgressStep(os.Stdout, "Reloading configuration...\n")
 
 	// Reload the container
 	if err := rt.Reload(ctx, cfg, cwd, st); err != nil {
@@ -99,11 +99,11 @@ func runReload(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 
-	// Commit file operations
-	if err := commitWithSudo(tfs); err != nil {
+	// Commit file operations (project dir, normally no sudo needed)
+	if err := commitWithSudo(env, tfs, os.Stdout, ""); err != nil {
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 
-	progressDone(os.Stdout, "Configuration reloaded successfully.\n")
+	util.ProgressDone(os.Stdout, "Configuration reloaded successfully.\n")
 	return nil
 }

@@ -492,6 +492,10 @@ func (t *TransactFs) Commit(fn CommitFunc) (*CommitResult, error) {
 		return nil, err
 	}
 
+	if len(ops) == 0 {
+		return &CommitResult{}, nil
+	}
+
 	// Call the callback with context
 	ctx := CommitContext{
 		BaseFs: t.actual,

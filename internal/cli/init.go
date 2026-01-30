@@ -69,12 +69,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to write configuration: %w", err)
 	}
 
-	// Commit the changes
-	if err := commitWithSudo(tfs); err != nil {
+	// Commit the changes (project dir, normally no sudo needed)
+	if err := commitWithSudo(env, tfs, os.Stdout, ""); err != nil {
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 
-	progressDone(os.Stdout, "Created %s\n", configPath)
+	util.ProgressDone(os.Stdout, "Created %s\n", configPath)
 	fmt.Println("Edit this file to customize your container settings.")
 	return nil
 }

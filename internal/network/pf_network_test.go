@@ -1,6 +1,7 @@
 package network
 
 import (
+	"fmt"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -40,9 +41,9 @@ func TestProjectFileName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ProjectFileName(tt.path)
+			result := newPfHelper().projectFileName(tt.path)
 			if result != tt.expected {
-				t.Errorf("ProjectFileName(%q) = %q, want %q", tt.path, result, tt.expected)
+				t.Errorf("projectFileName(%q) = %q, want %q", tt.path, result, tt.expected)
 			}
 		})
 	}
@@ -88,9 +89,9 @@ func TestHasLANAccess(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := HasLANAccess(tt.lanAccess)
+			result := hasLANAccess(tt.lanAccess)
 			if result != tt.expected {
-				t.Errorf("HasLANAccess(%v) = %v, want %v", tt.lanAccess, result, tt.expected)
+				t.Errorf("hasLANAccess(%v) = %v, want %v", tt.lanAccess, result, tt.expected)
 			}
 		})
 	}
@@ -127,9 +128,9 @@ func TestGenerateNATRules(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := GenerateNATRules(tt.subnet, tt.interfaces)
+			result := newPfHelper().generateNATRules(tt.subnet, tt.interfaces)
 			if result != tt.expected {
-				t.Errorf("GenerateNATRules(%q, %v) = %q, want %q", tt.subnet, tt.interfaces, result, tt.expected)
+				t.Errorf("generateNATRules(%q, %v) = %q, want %q", tt.subnet, tt.interfaces, result, tt.expected)
 			}
 		})
 	}
@@ -283,9 +284,270 @@ func TestParseRuleInterfaces(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ParseRuleInterfaces(tt.content)
+			result := newPfHelper().parseRuleInterfaces(tt.content)
 			if !slices.Equal(result, tt.expected) {
-				t.Errorf("ParseRuleInterfaces(%q) = %v, want %v", tt.content, result, tt.expected)
+				t.Errorf("parseRuleInterfaces(%q) = %v, want %v", tt.content, result, tt.expected)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// Command-Dependent Function Tests (using MockCommandRunner)
+// =============================================================================
+
+func TestGetOrbStackSubnet(t *testing.T) {
+	h := newPfHelper()
+
+	tests := []struct {
+		name        string
+		output      string
+		cmdErr      error
+		expected    string
+		expectError bool
+	}{
+		{
+			name: "parses subnet correctly",
+			output: `docker.enabled: true
+k8s.enabled: false
+network.subnet4: 192.168.138.0/23
+`,
+			expected:    "192.168.138.0/23",
+			expectError: false,
+		},
+		{
+			name:        "command fails",
+			cmdErr:      fmt.Errorf("command not found"),
+			expectError: true,
+		},
+		{
+			name: "subnet not in output",
+			output: `docker.enabled: true
+k8s.enabled: false
+`,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := util.NewMockCommandRunner()
+			mock.Expect("orbctl config show", []byte(tt.output), tt.cmdErr)
+
+			env := util.NewTestEnv()
+			env.Cmd = mock
+
+			result, err := h.getOrbStackSubnet(env)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("got %q, want %q", result, tt.expected)
+			}
+			mock.AssertCalled(t, "orbctl config show")
+		})
+	}
+}
+
+func TestGetDefaultInterface(t *testing.T) {
+	h := newPfHelper()
+
+	tests := []struct {
+		name        string
+		output      string
+		cmdErr      error
+		expected    string
+		expectError bool
+	}{
+		{
+			name: "parses interface correctly",
+			output: `   route to: default
+destination: default
+       mask: default
+    gateway: 192.168.1.1
+  interface: en0
+`,
+			expected:    "en0",
+			expectError: false,
+		},
+		{
+			name:        "command fails",
+			cmdErr:      fmt.Errorf("route not found"),
+			expectError: true,
+		},
+		{
+			name:        "interface not in output",
+			output:      "gateway: 192.168.1.1\n",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := util.NewMockCommandRunner()
+			mock.Expect("route -n get default", []byte(tt.output), tt.cmdErr)
+
+			env := util.NewTestEnv()
+			env.Cmd = mock
+
+			result, err := h.getDefaultInterface(env)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("got %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetPhysicalInterfaces(t *testing.T) {
+	h := newPfHelper()
+
+	tests := []struct {
+		name        string
+		output      string
+		cmdErr      error
+		expected    []string
+		expectError bool
+	}{
+		{
+			name: "parses multiple interfaces",
+			output: `Hardware Port: Wi-Fi
+Device: en0
+Ethernet Address: aa:bb:cc:dd:ee:ff
+
+Hardware Port: Thunderbolt Ethernet
+Device: en1
+Ethernet Address: 11:22:33:44:55:66
+`,
+			expected:    []string{"en0", "en1"},
+			expectError: false,
+		},
+		{
+			name:        "command fails",
+			cmdErr:      fmt.Errorf("command not found"),
+			expectError: true,
+		},
+		{
+			name:        "no interfaces found",
+			output:      "Hardware Port: Wi-Fi\n",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := util.NewMockCommandRunner()
+			mock.Expect("networksetup -listallhardwareports", []byte(tt.output), tt.cmdErr)
+
+			env := util.NewTestEnv()
+			env.Cmd = mock
+
+			result, err := h.getPhysicalInterfaces(env)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if !slices.Equal(result, tt.expected) {
+				t.Errorf("got %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestNeedsRuleUpdate_WithMockCommands(t *testing.T) {
+	h := newPfHelper()
+
+	tests := []struct {
+		name                string
+		existingRules       string
+		interfacesOutput    string
+		expectedNeedsUpdate bool
+		expectedNewIfaces   []string
+	}{
+		{
+			name:          "new interface added",
+			existingRules: "nat on en0 from 192.168.138.0/23 to any -> (en0)\n",
+			interfacesOutput: `Hardware Port: Wi-Fi
+Device: en0
+Ethernet Address: aa:bb:cc:dd:ee:ff
+
+Hardware Port: USB Ethernet
+Device: en5
+Ethernet Address: 11:22:33:44:55:66
+`,
+			expectedNeedsUpdate: true,
+			expectedNewIfaces:   []string{"en5"},
+		},
+		{
+			name:          "no new interfaces",
+			existingRules: "nat on en0 from 192.168.138.0/23 to any -> (en0)\n",
+			interfacesOutput: `Hardware Port: Wi-Fi
+Device: en0
+Ethernet Address: aa:bb:cc:dd:ee:ff
+`,
+			expectedNeedsUpdate: false,
+			expectedNewIfaces:   nil,
+		},
+		{
+			name:          "no existing file - needs update",
+			existingRules: "", // empty means don't create file
+			interfacesOutput: `Hardware Port: Wi-Fi
+Device: en0
+Ethernet Address: aa:bb:cc:dd:ee:ff
+`,
+			expectedNeedsUpdate: true,
+			expectedNewIfaces:   []string{"en0"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := util.NewTestEnv()
+
+			// Setup filesystem
+			if tt.existingRules != "" {
+				_ = env.Fs.MkdirAll(pfAnchorDir, 0755)
+				_ = afero.WriteFile(env.Fs, filepath.Join(pfAnchorDir, sharedRuleFile),
+					[]byte(tt.existingRules), 0644)
+			}
+
+			// Setup mock commands
+			mock := util.NewMockCommandRunner()
+			mock.ExpectSuccess("networksetup -listallhardwareports", []byte(tt.interfacesOutput))
+			env.Cmd = mock
+
+			needsUpdate, newIfaces, err := h.needsRuleUpdate(env)
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if needsUpdate != tt.expectedNeedsUpdate {
+				t.Errorf("needsUpdate = %v, want %v", needsUpdate, tt.expectedNeedsUpdate)
+			}
+			if !slices.Equal(newIfaces, tt.expectedNewIfaces) {
+				t.Errorf("newIfaces = %v, want %v", newIfaces, tt.expectedNewIfaces)
 			}
 		})
 	}
@@ -347,15 +609,17 @@ func TestFileExists(t *testing.T) {
 			env, memFs := newTestEnv(t)
 			tt.setup(memFs)
 
-			result := FileExists(env, tt.path)
+			result := fileExists(env, tt.path)
 			if result != tt.expected {
-				t.Errorf("FileExists(env, %q) = %v, want %v", tt.path, result, tt.expected)
+				t.Errorf("fileExists(env, %q) = %v, want %v", tt.path, result, tt.expected)
 			}
 		})
 	}
 }
 
 func TestReadExistingRuleInterfaces(t *testing.T) {
+	h := newPfHelper()
+
 	tests := []struct {
 		name               string
 		setup              func(afero.Fs)
@@ -366,9 +630,9 @@ func TestReadExistingRuleInterfaces(t *testing.T) {
 		{
 			name: "file exists with rules",
 			setup: func(fs afero.Fs) {
-				_ = fs.MkdirAll(PfAnchorDir, 0755)
+				_ = fs.MkdirAll(pfAnchorDir, 0755)
 				content := "nat on en0 from 192.168.138.0/23 to any -> (en0)\nnat on en1 from 192.168.138.0/23 to any -> (en1)\n"
-				_ = afero.WriteFile(fs, filepath.Join(PfAnchorDir, SharedRuleFile), []byte(content), 0644)
+				_ = afero.WriteFile(fs, filepath.Join(pfAnchorDir, sharedRuleFile), []byte(content), 0644)
 			},
 			expectedInterfaces: []string{"en0", "en1"},
 			expectedExists:     true,
@@ -384,8 +648,8 @@ func TestReadExistingRuleInterfaces(t *testing.T) {
 		{
 			name: "empty file",
 			setup: func(fs afero.Fs) {
-				_ = fs.MkdirAll(PfAnchorDir, 0755)
-				_ = afero.WriteFile(fs, filepath.Join(PfAnchorDir, SharedRuleFile), []byte(""), 0644)
+				_ = fs.MkdirAll(pfAnchorDir, 0755)
+				_ = afero.WriteFile(fs, filepath.Join(pfAnchorDir, sharedRuleFile), []byte(""), 0644)
 			},
 			expectedInterfaces: nil,
 			expectedExists:     true,
@@ -398,7 +662,7 @@ func TestReadExistingRuleInterfaces(t *testing.T) {
 			env, memFs := newTestEnv(t)
 			tt.setup(memFs)
 
-			interfaces, exists, err := ReadExistingRuleInterfaces(env)
+			interfaces, exists, err := h.readExistingRuleInterfaces(env)
 			if tt.expectError && err == nil {
 				t.Error("expected error, got nil")
 			}

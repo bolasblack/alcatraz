@@ -34,9 +34,9 @@ func TestGenerateBatchScript(t *testing.T) {
 		t.Error("script should have chmod 755")
 	}
 
-	// Check for rm
-	if !strings.Contains(script, "rm -f") {
-		t.Error("script should have rm -f for delete")
+	// Check for rm (recursive to handle both files and directories)
+	if !strings.Contains(script, "rm -rf") {
+		t.Error("script should have rm -rf for delete")
 	}
 }
 

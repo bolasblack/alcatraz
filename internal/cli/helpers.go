@@ -12,6 +12,7 @@ import (
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
+	"github.com/bolasblack/alcatraz/internal/transact"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
@@ -157,14 +158,55 @@ func promptConfirm(prompt string) bool {
 	return response == "y" || response == "yes"
 }
 
-// progress writes a progress message if not in quiet mode.
-// Delegates to util.Progress for shared implementation.
-var progress = util.Progress
+// commitWithSudo commits TransactFs changes, intelligently grouping operations
+// by sudo requirement and executing each group with the appropriate method.
+// If any operation requires sudo, the msg is printed first to explain why.
+func commitWithSudo(env *util.Env, tfs *transact.TransactFs, out io.Writer, msg string) error {
+	_, err := tfs.Commit(func(ctx transact.CommitContext) (*transact.CommitOpsResult, error) {
+		if len(ctx.Ops) == 0 {
+			return nil, nil
+		}
 
-// progressStep writes a progress message with → prefix (step in progress).
-// Delegates to util.ProgressStep for shared implementation.
-var progressStep = util.ProgressStep
+		// Check if any op needs sudo and output explanation
+		if out != nil {
+			for _, op := range ctx.Ops {
+				if op.NeedSudo {
+					if msg != "" {
+						util.ProgressStep(out, "%s (sudo required)...\n", msg)
+						break
+					}
 
-// progressDone writes a progress message with ✓ prefix (step completed).
-// Delegates to util.ProgressDone for shared implementation.
-var progressDone = util.ProgressDone
+					// Not expected to happen, so we need to print the path
+					util.ProgressStep(out, "Writing to %s (sudo required)...\n", op.Path)
+				}
+			}
+		}
+
+		// Group operations by NeedSudo while preserving order
+		groups := transact.GroupOpsBySudo(ctx.Ops)
+
+		// Execute each group with the appropriate method
+		if err := transact.ExecuteGroupedOps(ctx.BaseFs, groups, env.Cmd.SudoRunScript); err != nil {
+			return nil, err
+		}
+
+		return nil, nil
+	})
+	return err
+}
+
+// commitIfNeeded checks if there are pending changes and commits them with sudo support.
+// The msg is only printed if sudo is actually required.
+func commitIfNeeded(env *util.Env, tfs *transact.TransactFs, out io.Writer, msg string) error {
+	if !tfs.NeedsCommit() {
+		return nil
+	}
+	return commitWithSudo(env, tfs, out, msg)
+}
+
+// stdoutProgressFunc returns a progress callback that writes to stdout.
+func stdoutProgressFunc() func(format string, args ...any) {
+	return func(format string, args ...any) {
+		util.ProgressStep(os.Stdout, format, args...)
+	}
+}

@@ -225,17 +225,30 @@ func (r *dockerCLICompatibleRuntime) buildExecArgs(cfg *config.Config, container
 }
 
 // Status returns the current status of the container.
+//
+// Dual lookup strategy:
+//  1. Label-based lookup (preferred): Searches for containers with alca.project.id label
+//     matching st.ProjectID. This is the authoritative method since labels survive
+//     container renames and provide reliable project association.
+//  2. Name-based fallback: If label lookup fails, falls back to inspecting by
+//     st.ContainerName. This handles:
+//     - Legacy containers created before labels were introduced
+//     - Edge cases where label filter fails but container exists
+//
+// This dual approach ensures backward compatibility while preferring the more robust
+// label-based identification for newer containers.
 func (r *dockerCLICompatibleRuntime) Status(ctx context.Context, projectDir string, st *state.State) (ContainerStatus, error) {
 	if st == nil {
 		return ContainerStatus{State: StateNotFound}, nil
 	}
 
-	// Try to find by label first
+	// Primary: find by label (authoritative for labeled containers)
 	status, err := r.findContainerByLabel(ctx, st.ProjectID)
 	if err == nil && status.State != StateNotFound {
 		return status, nil
 	}
 
+	// Fallback: inspect by name (backward compatibility)
 	return r.inspectContainer(ctx, st.ContainerName)
 }
 
@@ -307,12 +320,14 @@ func (r *dockerCLICompatibleRuntime) Reload(ctx context.Context, cfg *config.Con
 }
 
 // ListContainers returns all containers managed by alca.
+// Uses batch inspect to avoid N+1 query pattern (single docker inspect call for all containers).
 func (r *dockerCLICompatibleRuntime) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
-	cmd := exec.CommandContext(ctx, r.command, "ps", "-a",
+	// Get names of all alca-managed containers
+	psCmd := exec.CommandContext(ctx, r.command, "ps", "-a",
 		"--filter", "label="+state.LabelProjectID,
 		"--format", "{{.Names}}")
 
-	output, err := cmd.Output()
+	output, err := psCmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
@@ -322,47 +337,66 @@ func (r *dockerCLICompatibleRuntime) ListContainers(ctx context.Context) ([]Cont
 		return []ContainerInfo{}, nil
 	}
 
-	var containers []ContainerInfo
+	// Filter empty names
+	validNames := make([]string, 0, len(names))
 	for _, name := range names {
-		if name == "" {
+		if name != "" {
+			validNames = append(validNames, name)
+		}
+	}
+
+	if len(validNames) == 0 {
+		return []ContainerInfo{}, nil
+	}
+
+	// Batch inspect all containers in a single call
+	return r.batchInspectContainers(ctx, validNames)
+}
+
+// batchInspectContainers inspects multiple containers in a single docker/podman call.
+// This avoids the N+1 query pattern where we'd call inspect separately for each container.
+func (r *dockerCLICompatibleRuntime) batchInspectContainers(ctx context.Context, names []string) ([]ContainerInfo, error) {
+	// Build format string for inspect output
+	// Using a unique separator (|||) to avoid conflicts with data values
+	format := fmt.Sprintf("{{.Name}}|||{{.State.Status}}|||{{.Created}}|||{{.Config.Image}}|||{{index .Config.Labels \"%s\"}}|||{{index .Config.Labels \"%s\"}}",
+		state.LabelProjectID, state.LabelProjectPath)
+
+	// Build args: inspect --format <format> name1 name2 name3 ...
+	args := []string{"inspect", "--format", format}
+	args = append(args, names...)
+
+	cmd := exec.CommandContext(ctx, r.command, args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect containers: %w", err)
+	}
+
+	// Parse output - one line per container
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	containers := make([]ContainerInfo, 0, len(lines))
+
+	for _, line := range lines {
+		if line == "" {
 			continue
 		}
-		info, err := r.getContainerInfo(ctx, name)
-		if err != nil {
-			// Log warning instead of silently ignoring
-			util.ProgressStep(os.Stderr, "Warning: failed to inspect container %s: %v\n", name, err)
+		parts := strings.Split(line, "|||")
+		if len(parts) < 6 {
+			// Log warning and skip malformed entries
+			util.ProgressStep(os.Stderr, "Warning: unexpected inspect output format: %s\n", line)
 			continue
 		}
-		containers = append(containers, info)
+
+		containers = append(containers, ContainerInfo{
+			Name:        strings.TrimPrefix(parts[0], "/"),
+			State:       parseContainerState(parts[1]),
+			CreatedAt:   parts[2],
+			Image:       parts[3],
+			ProjectID:   parts[4],
+			ProjectPath: parts[5],
+		})
 	}
 
 	return containers, nil
-}
-
-// getContainerInfo gets detailed container information including labels.
-func (r *dockerCLICompatibleRuntime) getContainerInfo(ctx context.Context, name string) (ContainerInfo, error) {
-	format := fmt.Sprintf("{{.State.Status}}|{{.Created}}|{{.Config.Image}}|{{index .Config.Labels \"%s\"}}|{{index .Config.Labels \"%s\"}}",
-		state.LabelProjectID, state.LabelProjectPath)
-
-	cmd := exec.CommandContext(ctx, r.command, "inspect", "--format", format, name)
-	output, err := cmd.Output()
-	if err != nil {
-		return ContainerInfo{}, fmt.Errorf("failed to inspect container: %w", err)
-	}
-
-	parts := strings.Split(strings.TrimSpace(string(output)), "|")
-	if len(parts) < 5 {
-		return ContainerInfo{}, fmt.Errorf("unexpected inspect output")
-	}
-
-	return ContainerInfo{
-		Name:        name,
-		State:       parseContainerState(parts[0]),
-		CreatedAt:   parts[1],
-		Image:       parts[2],
-		ProjectID:   parts[3],
-		ProjectPath: parts[4],
-	}, nil
 }
 
 // RemoveContainer removes a container by name.

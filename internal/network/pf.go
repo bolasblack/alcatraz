@@ -15,20 +15,20 @@ import (
 
 // pf.conf constants.
 const (
-	// PfAnchorName is the name of the pf anchor.
-	PfAnchorName = "alcatraz"
-	// PfConfPath is the path to the pf configuration file.
-	PfConfPath = "/etc/pf.conf"
+	// pfAnchorName is the name of the pf anchor.
+	pfAnchorName = "alcatraz"
+	// pfConfPath is the path to the pf configuration file.
+	pfConfPath = "/etc/pf.conf"
 )
 
-// EnsurePfAnchor adds nat-anchor "alcatraz" to /etc/pf.conf if not present.
-// Also handles migration from old 'alcatraz/*' wildcard format.
+// ensurePfAnchor adds nat-anchor to /etc/pf.conf if not present.
+// Also handles migration from old wildcard format.
 // IMPORTANT: nat-anchor lines must come BEFORE anchor lines in pf.conf.
-func EnsurePfAnchor(env *util.Env) error {
-	anchorLine := `nat-anchor "alcatraz"`
-	oldAnchorLine := `nat-anchor "alcatraz/*"`
+func (p *pfHelper) ensurePfAnchor(env *util.Env) error {
+	anchorLine := fmt.Sprintf(`nat-anchor "%s"`, pfAnchorName)
+	oldAnchorLine := fmt.Sprintf(`nat-anchor "%s/*"`, pfAnchorName)
 
-	content, err := afero.ReadFile(env.Fs, PfConfPath)
+	content, err := afero.ReadFile(env.Fs, pfConfPath)
 	if err != nil {
 		return fmt.Errorf("failed to read pf.conf: %w", err)
 	}
@@ -48,11 +48,11 @@ func EnsurePfAnchor(env *util.Env) error {
 	return writePfConf(env, newLines)
 }
 
-// RemovePfAnchor removes nat-anchor "alcatraz" from /etc/pf.conf.
-func RemovePfAnchor(env *util.Env) error {
-	anchorLine := `nat-anchor "alcatraz"`
+// removePfAnchor removes nat-anchor from /etc/pf.conf.
+func (p *pfHelper) removePfAnchor(env *util.Env) error {
+	anchorLine := fmt.Sprintf(`nat-anchor "%s"`, pfAnchorName)
 
-	content, err := afero.ReadFile(env.Fs, PfConfPath)
+	content, err := afero.ReadFile(env.Fs, pfConfPath)
 	if err != nil {
 		return fmt.Errorf("failed to read pf.conf: %w", err)
 	}
@@ -73,13 +73,13 @@ func RemovePfAnchor(env *util.Env) error {
 	return writePfConf(env, newLines)
 }
 
-// WriteSharedRule writes the shared NAT rule file to the staging filesystem.
+// writeSharedRule writes the shared NAT rule file to the staging filesystem.
 // The actual file write with sudo will happen during commit.
-func WriteSharedRule(env *util.Env, rules string) error {
-	sharedPath := filepath.Join(PfAnchorDir, SharedRuleFile)
+func (p *pfHelper) writeSharedRule(env *util.Env, rules string) error {
+	sharedPath := filepath.Join(pfAnchorDir, sharedRuleFile)
 
 	// Ensure parent directory exists in staging
-	if err := env.Fs.MkdirAll(PfAnchorDir, 0755); err != nil {
+	if err := env.Fs.MkdirAll(pfAnchorDir, 0755); err != nil {
 		return fmt.Errorf("failed to create anchor directory: %w", err)
 	}
 
@@ -90,14 +90,14 @@ func WriteSharedRule(env *util.Env, rules string) error {
 	return nil
 }
 
-// WriteProjectFile writes the project-specific rule file to the staging filesystem.
+// writeProjectFile writes the project-specific rule file to the staging filesystem.
 // The actual file write with sudo will happen during commit.
-func WriteProjectFile(env *util.Env, projectDir, content string) error {
-	filename := ProjectFileName(projectDir)
-	projectFilePath := filepath.Join(PfAnchorDir, filename)
+func (p *pfHelper) writeProjectFile(env *util.Env, projectDir, content string) error {
+	filename := p.projectFileName(projectDir)
+	projectFilePath := filepath.Join(pfAnchorDir, filename)
 
 	// Ensure parent directory exists in staging
-	if err := env.Fs.MkdirAll(PfAnchorDir, 0755); err != nil {
+	if err := env.Fs.MkdirAll(pfAnchorDir, 0755); err != nil {
 		return fmt.Errorf("failed to create anchor directory: %w", err)
 	}
 
@@ -201,7 +201,7 @@ func writePfConf(env *util.Env, lines []string) error {
 	}
 
 	// Stage the write - actual sudo write happens during commit
-	if err := afero.WriteFile(env.Fs, PfConfPath, []byte(newContent), 0644); err != nil {
+	if err := afero.WriteFile(env.Fs, pfConfPath, []byte(newContent), 0644); err != nil {
 		return fmt.Errorf("failed to stage pf.conf: %w", err)
 	}
 

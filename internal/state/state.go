@@ -121,30 +121,38 @@ func LoadOrCreate(env *util.Env, projectDir string, runtimeName string) (*State,
 	}
 
 	if state != nil {
-		// Update runtime if changed
-		if state.Runtime != runtimeName {
-			state.Runtime = runtimeName
-			if err := Save(env, projectDir, state); err != nil {
-				return nil, false, err
-			}
+		if err := syncRuntime(env, projectDir, state, runtimeName); err != nil {
+			return nil, false, err
 		}
 		return state, false, nil
 	}
 
-	// Create new state
-	projectID := uuid.New().String()
-	state = &State{
-		ProjectID:     projectID,
-		ContainerName: "alca-" + projectID[:containerNameUUIDPrefixLen],
-		CreatedAt:     time.Now(),
-		Runtime:       runtimeName,
-	}
-
+	state = newState(runtimeName)
 	if err := Save(env, projectDir, state); err != nil {
 		return nil, true, err
 	}
 
 	return state, true, nil
+}
+
+// newState creates a fresh State with a new project UUID and container name.
+func newState(runtimeName string) *State {
+	projectID := uuid.New().String()
+	return &State{
+		ProjectID:     projectID,
+		ContainerName: "alca-" + projectID[:containerNameUUIDPrefixLen],
+		CreatedAt:     time.Now(),
+		Runtime:       runtimeName,
+	}
+}
+
+// syncRuntime persists the runtime name if it has changed.
+func syncRuntime(env *util.Env, projectDir string, state *State, runtimeName string) error {
+	if state.Runtime == runtimeName {
+		return nil
+	}
+	state.Runtime = runtimeName
+	return Save(env, projectDir, state)
 }
 
 // Delete removes the state file (but not the .alca directory).
@@ -242,46 +250,43 @@ func enforceConfigFieldCompleteness(cfg *config.Config) {
 //   - EnvValue.OverrideOnEnter: only affects enter behavior
 //   - Network.LANAccess: pf rules are external, no container rebuild needed
 func compareConfigs(old, new *config.Config) *DriftChanges {
-	var changes DriftChanges
-	hasAny := false
+	// Each field is compared explicitly. This is intentional: the AGD-015
+	// exhaustiveness check in enforceConfigFieldCompleteness ensures new
+	// config fields cause a compile error, forcing review here.
+	//
+	// The mix of *[2]T (scalar diff) and bool (complex-type flag) is by
+	// design - see DriftChanges doc comment.
+	var c DriftChanges
 
 	if old.Image != new.Image {
-		changes.Image = &[2]string{old.Image, new.Image}
-		hasAny = true
+		c.Image = &[2]string{old.Image, new.Image}
 	}
 	if old.Workdir != new.Workdir {
-		changes.Workdir = &[2]string{old.Workdir, new.Workdir}
-		hasAny = true
+		c.Workdir = &[2]string{old.Workdir, new.Workdir}
 	}
 	if old.Runtime != new.Runtime {
-		changes.Runtime = &[2]string{string(old.Runtime), string(new.Runtime)}
-		hasAny = true
+		c.Runtime = &[2]string{string(old.Runtime), string(new.Runtime)}
 	}
 	if old.Commands.Up != new.Commands.Up {
-		changes.CommandUp = &[2]string{old.Commands.Up, new.Commands.Up}
-		hasAny = true
+		c.CommandUp = &[2]string{old.Commands.Up, new.Commands.Up}
 	}
 	if old.Resources.Memory != new.Resources.Memory {
-		changes.Memory = &[2]string{old.Resources.Memory, new.Resources.Memory}
-		hasAny = true
+		c.Memory = &[2]string{old.Resources.Memory, new.Resources.Memory}
 	}
 	if old.Resources.CPUs != new.Resources.CPUs {
-		changes.CPUs = &[2]int{old.Resources.CPUs, new.Resources.CPUs}
-		hasAny = true
+		c.CPUs = &[2]int{old.Resources.CPUs, new.Resources.CPUs}
 	}
 	if !slices.Equal(old.Mounts, new.Mounts) {
-		changes.Mounts = true
-		hasAny = true
+		c.Mounts = true
 	}
 	if hasEnvLiteralDrift(old.Envs, new.Envs) {
-		changes.Envs = true
-		hasAny = true
+		c.Envs = true
 	}
 
-	if !hasAny {
+	if c == (DriftChanges{}) {
 		return nil
 	}
-	return &changes
+	return &c
 }
 
 // UpdateConfig updates the config in the state.
