@@ -294,32 +294,36 @@ func (s *State) UpdateConfig(cfg *config.Config) {
 	s.Config = cfg
 }
 
-// hasEnvLiteralDrift checks if literal (non-interpolated) env values have changed.
-// Interpolated values (containing ${...}) are ignored - see AGD-019.
-// EnvValue.OverrideOnEnter is also ignored (only affects enter behavior).
+// hasEnvLiteralDrift checks if env configuration has changed in ways that require rebuild.
+// Two types of drift are detected:
+// 1. Structural drift: key set changes (adding/removing keys) - regardless of value type
+// 2. Value drift: literal (non-interpolated) value changes - see AGD-019
+//
+// Interpolated values (containing ${...}) are not compared because they depend on
+// host environment at runtime. However, adding/removing interpolated keys IS detected
+// as structural drift since it changes the container's environment shape.
+// EnvValue.OverrideOnEnter is ignored (only affects enter behavior).
 func hasEnvLiteralDrift(a, b map[string]config.EnvValue) bool {
-	// Collect literal values only
-	aLiterals := make(map[string]string)
-	for k, v := range a {
-		if !v.IsInterpolated() {
-			aLiterals[k] = v.Value
-		}
-	}
-
-	bLiterals := make(map[string]string)
-	for k, v := range b {
-		if !v.IsInterpolated() {
-			bLiterals[k] = v.Value
-		}
-	}
-
-	// Compare literal maps
-	if len(aLiterals) != len(bLiterals) {
+	// First check: structural drift (key set changes)
+	// This catches adding/removing ANY key, including interpolated ones
+	if len(a) != len(b) {
 		return true
 	}
-	for k, va := range aLiterals {
-		if vb, ok := bLiterals[k]; !ok || va != vb {
-			return true
+	for k := range a {
+		if _, ok := b[k]; !ok {
+			return true // Key removed or renamed
+		}
+	}
+
+	// Second check: value drift for literal (non-interpolated) values only
+	// Interpolated values can't be compared at parse time (AGD-019)
+	for k, va := range a {
+		vb := b[k] // Key exists (checked above)
+		// Only compare if BOTH are literal (non-interpolated)
+		if !va.IsInterpolated() && !vb.IsInterpolated() {
+			if va.Value != vb.Value {
+				return true
+			}
 		}
 	}
 	return false

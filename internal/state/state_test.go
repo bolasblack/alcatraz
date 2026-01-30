@@ -613,6 +613,36 @@ func TestDetectConfigDrift_EnvsChange(t *testing.T) {
 			newEnvs:   nil,
 			wantDrift: false,
 		},
+		{
+			name:      "nil to non-nil - envs added",
+			oldEnvs:   nil,
+			newEnvs:   map[string]config.EnvValue{"FOO": {Value: "bar"}},
+			wantDrift: true,
+		},
+		{
+			name:      "empty to non-nil - envs added",
+			oldEnvs:   map[string]config.EnvValue{},
+			newEnvs:   map[string]config.EnvValue{"FOO": {Value: "bar"}},
+			wantDrift: true,
+		},
+		{
+			name:      "add interpolated key - structural change should trigger drift",
+			oldEnvs:   nil,
+			newEnvs:   map[string]config.EnvValue{"FOO": {Value: "${BAR}"}},
+			wantDrift: true, // Key set changed - structural drift
+		},
+		{
+			name:      "remove interpolated key - structural change should trigger drift",
+			oldEnvs:   map[string]config.EnvValue{"FOO": {Value: "${BAR}"}},
+			newEnvs:   nil,
+			wantDrift: true, // Key set changed - structural drift
+		},
+		{
+			name:      "add interpolated key to existing literal - structural change",
+			oldEnvs:   map[string]config.EnvValue{"EXISTING": {Value: "literal"}},
+			newEnvs:   map[string]config.EnvValue{"EXISTING": {Value: "literal"}, "NEW": {Value: "${VAR}"}},
+			wantDrift: true, // Key set changed - NEW key added
+		},
 	}
 
 	for _, tt := range tests {
@@ -628,6 +658,90 @@ func TestDetectConfigDrift_EnvsChange(t *testing.T) {
 				t.Errorf("DetectConfigDrift().Envs = %v, want %v", gotDrift, tt.wantDrift)
 			}
 		})
+	}
+}
+
+// TestDetectConfigDrift_MultipleChanges_EnvsAndCommandUp verifies that when both
+// envs and commands.up change, BOTH are reported. Regression test for bug where
+// adding envs to a config that previously had none was not detected as drift.
+func TestDetectConfigDrift_MultipleChanges_EnvsAndCommandUp(t *testing.T) {
+	// Scenario from bug report:
+	// - Old config: no envs (nil), commands.up = "old"
+	// - New config: has envs, commands.up = "new"
+	// - Expected: DriftChanges should have BOTH CommandUp AND Envs set
+	state := &State{
+		Config: &config.Config{
+			Commands: config.Commands{Up: "old command"},
+			Envs:     nil, // No envs in original config
+		},
+	}
+	current := &config.Config{
+		Commands: config.Commands{Up: "new command"},
+		Envs:     map[string]config.EnvValue{"NEW_VAR": {Value: "value"}},
+	}
+
+	changes := state.DetectConfigDrift(current)
+	if changes == nil {
+		t.Fatal("expected drift changes, got nil")
+	}
+	if changes.CommandUp == nil {
+		t.Error("expected CommandUp change to be detected")
+	}
+	if !changes.Envs {
+		t.Error("expected Envs change to be detected (nil -> non-nil)")
+	}
+}
+
+// TestDetectConfigDrift_AfterSaveLoad_EnvsNilToNonNil tests the exact bug scenario:
+// 1. State saved with config that has nil Envs
+// 2. State loaded from disk
+// 3. New config has Envs
+// 4. DetectConfigDrift should report Envs changed
+func TestDetectConfigDrift_AfterSaveLoad_EnvsNilToNonNil(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := "/project"
+
+	// Step 1: Create and save state with config that has NO envs and commands.up = "old"
+	originalConfig := &config.Config{
+		Image:    "ubuntu:latest",
+		Commands: config.Commands{Up: "old command"},
+		Envs:     nil, // No envs
+	}
+	state := &State{
+		ProjectID:     "test-id",
+		ContainerName: "alca-test",
+		CreatedAt:     time.Now(),
+		Runtime:       "Docker",
+		Config:        originalConfig,
+	}
+
+	if err := Save(env, projectDir, state); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	// Step 2: Load state back from disk
+	loaded, err := Load(env, projectDir)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Step 3: New config with envs AND changed commands.up
+	newConfig := &config.Config{
+		Image:    "ubuntu:latest",
+		Commands: config.Commands{Up: "new command"},
+		Envs:     map[string]config.EnvValue{"NEW_VAR": {Value: "value"}},
+	}
+
+	// Step 4: Detect drift - should report BOTH CommandUp AND Envs changed
+	changes := loaded.DetectConfigDrift(newConfig)
+	if changes == nil {
+		t.Fatal("expected drift changes, got nil")
+	}
+	if changes.CommandUp == nil {
+		t.Error("expected CommandUp change to be detected")
+	}
+	if !changes.Envs {
+		t.Error("expected Envs change to be detected (nil -> non-nil after save/load cycle)")
 	}
 }
 

@@ -9,10 +9,10 @@ import (
 )
 
 func TestParseContainerSelection(t *testing.T) {
-	orphans := []runtime.ContainerInfo{
-		{Name: "alca-project1-abc123"},
-		{Name: "alca-project2-def456"},
-		{Name: "alca-project3-ghi789"},
+	orphans := []orphanContainer{
+		{info: runtime.ContainerInfo{Name: "alca-project1-abc123"}, reason: "test reason"},
+		{info: runtime.ContainerInfo{Name: "alca-project2-def456"}, reason: "test reason"},
+		{info: runtime.ContainerInfo{Name: "alca-project3-ghi789"}, reason: "test reason"},
 	}
 
 	tests := []struct {

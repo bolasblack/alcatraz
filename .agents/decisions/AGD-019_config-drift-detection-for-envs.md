@@ -33,33 +33,49 @@ This mental model is too complex. Better to keep it simple and document clearly.
 
 ## Decision
 
-Use simplified drift detection logic:
+Use two-phase drift detection logic:
 
-1. **Literal values** (no `${...}`) - Compare normally, trigger drift if changed
-2. **Interpolated values** (contains `${...}`) - Always consider as no drift
-3. **`override_on_enter`** - Excluded from comparison (similar to `Commands.Enter`, only affects enter behavior)
+### Phase 1: Structural drift (key set changes)
+- **Key added or removed** - Always triggers drift, regardless of value type
+- Adding `FOO=${BAR}` (interpolated) triggers drift because the key set changed
+- Removing any key triggers drift
+
+### Phase 2: Value drift (literal values only)
+- **Literal values** (no `${...}`) - Compare normally, trigger drift if changed
+- **Interpolated values** (contains `${...}`) - Value changes do not trigger drift
+- **`override_on_enter`** - Excluded from comparison (similar to `Commands.Enter`, only affects enter behavior)
 
 **Rationale:**
-- Simpler mental model: "literals trigger rebuild, interpolations don't"
-- Avoids non-deterministic behavior from host env changes
+- Key set changes are structural: they change what environment the container sees
+- Value comparison for interpolated values is still skipped (non-deterministic, depends on host env)
+- Simpler mental model: "adding/removing any env key triggers rebuild; changing interpolated values doesn't"
 - `override_on_enter` is like `Commands.Enter` - only affects runtime behavior, not container creation
-- **Documentation should clearly state:** env changes require manual `alca down && alca up`
+- **Documentation should clearly state:** interpolated env *value* changes require manual `alca down && alca up`
 
 ## Implementation
 
 ```go
-// envLiteralsDrift checks if literal (non-interpolated) env values have changed.
-// Interpolated values (containing ${...}) are ignored.
-// EnvValue.OverrideOnEnter is also ignored (only affects enter behavior).
-func envLiteralsDrift(a, b map[string]config.EnvValue) bool {
-    // Collect literal values only (skip ${...} interpolations)
-    aLiterals := make(map[string]string)
-    for k, v := range a {
-        if !strings.Contains(v.Value, "${") {
-            aLiterals[k] = v.Value
+func hasEnvLiteralDrift(a, b map[string]config.EnvValue) bool {
+    // Phase 1: structural drift (key set changes)
+    if len(a) != len(b) {
+        return true
+    }
+    for k := range a {
+        if _, ok := b[k]; !ok {
+            return true // Key removed or renamed
         }
     }
-    // ... compare aLiterals with bLiterals
+
+    // Phase 2: value drift for literal (non-interpolated) values only
+    for k, va := range a {
+        vb := b[k]
+        if !va.IsInterpolated() && !vb.IsInterpolated() {
+            if va.Value != vb.Value {
+                return true
+            }
+        }
+    }
+    return false
 }
 ```
 
@@ -67,13 +83,14 @@ func envLiteralsDrift(a, b map[string]config.EnvValue) bool {
 
 **Positive:**
 - Simple, predictable behavior
-- Easy to explain: "change literal env → rebuild prompt; change interpolated env → manual rebuild"
-- Consistent with `Commands.Enter` treatment
+- Structural changes (adding/removing env keys) always detected — no silent misses
+- Easy to explain: "add/remove any env key → rebuild; change interpolated value → manual rebuild"
+- Consistent with `Commands.Enter` treatment for `override_on_enter`
 
 **Negative:**
-- Changes to interpolated env values require manual `alca down && alca up`
+- Changes to interpolated env *values* still require manual `alca down && alca up`
 - **Documentation must clearly state this** (bold warning recommended)
 
 ## Documentation Note
 
-> **Note:** Changes to environment variables with `${VAR}` interpolation do not trigger automatic container rebuild. Run `alca down && alca up` to apply these changes.
+> **Note:** Adding or removing environment variables always triggers automatic container rebuild. However, changes to interpolated *values* (e.g., changing `${HOME}` to `${USER}`) do not trigger rebuild. Run `alca down && alca up` to apply interpolated value changes.

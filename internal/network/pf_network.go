@@ -29,6 +29,14 @@ const (
 	lanAccessWildcard = "*"
 )
 
+// Anchor line patterns for pf.conf.
+var (
+	// pfAnchorLine is the current nat-anchor line format.
+	pfAnchorLine = fmt.Sprintf(`nat-anchor "%s"`, pfAnchorName)
+	// pfOldAnchorLine is the legacy wildcard nat-anchor line format (for migration).
+	pfOldAnchorLine = fmt.Sprintf(`nat-anchor "%s/*"`, pfAnchorName)
+)
+
 // parseLineValues extracts values from "key: value" lines in command output.
 // Returns a slice of trimmed values (may be empty).
 func parseLineValues(output, prefix string) []string {
@@ -70,21 +78,6 @@ func (p *pfHelper) getOrbStackSubnet(env *util.Env) (string, error) {
 	}
 
 	return "", fmt.Errorf("network.subnet4 not found in orbctl output")
-}
-
-// getDefaultInterface returns the default network interface on macOS.
-// Uses `route -n get default` to detect the active interface.
-func (p *pfHelper) getDefaultInterface(env *util.Env) (string, error) {
-	output, err := env.Cmd.Run("route", "-n", "get", "default")
-	if err != nil {
-		return "", fmt.Errorf("failed to get default route: %w", err)
-	}
-
-	if iface, found := parseLineValue(string(output), "interface:"); found {
-		return iface, nil
-	}
-
-	return "", fmt.Errorf("interface not found in route output")
 }
 
 // getPhysicalInterfaces returns all physical network interfaces on macOS.

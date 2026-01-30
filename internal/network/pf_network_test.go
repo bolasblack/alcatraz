@@ -356,65 +356,6 @@ k8s.enabled: false
 	}
 }
 
-func TestGetDefaultInterface(t *testing.T) {
-	h := newPfHelper()
-
-	tests := []struct {
-		name        string
-		output      string
-		cmdErr      error
-		expected    string
-		expectError bool
-	}{
-		{
-			name: "parses interface correctly",
-			output: `   route to: default
-destination: default
-       mask: default
-    gateway: 192.168.1.1
-  interface: en0
-`,
-			expected:    "en0",
-			expectError: false,
-		},
-		{
-			name:        "command fails",
-			cmdErr:      fmt.Errorf("route not found"),
-			expectError: true,
-		},
-		{
-			name:        "interface not in output",
-			output:      "gateway: 192.168.1.1\n",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mock := util.NewMockCommandRunner()
-			mock.Expect("route -n get default", []byte(tt.output), tt.cmdErr)
-
-			env := util.NewTestEnv()
-			env.Cmd = mock
-
-			result, err := h.getDefaultInterface(env)
-
-			if tt.expectError {
-				if err == nil {
-					t.Error("expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-			if result != tt.expected {
-				t.Errorf("got %q, want %q", result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestGetPhysicalInterfaces(t *testing.T) {
 	h := newPfHelper()
 

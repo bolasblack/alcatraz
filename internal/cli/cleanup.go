@@ -17,6 +17,13 @@ import (
 
 var cleanupAll bool
 
+// orphanContainer holds container info with the reason it's orphaned.
+// This avoids calling checkOrphanStatus twice for display purposes.
+type orphanContainer struct {
+	info   runtime.ContainerInfo
+	reason string
+}
+
 var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
 	Short: "Remove orphaned Alcatraz containers",
@@ -53,12 +60,12 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	// Find orphan containers
-	var orphans []runtime.ContainerInfo
+	// Find orphan containers with their reasons
+	var orphans []orphanContainer
 	for _, c := range containers {
-		isOrphan, _ := checkOrphanStatus(env, c)
+		isOrphan, reason := checkOrphanStatus(env, c)
 		if isOrphan {
-			orphans = append(orphans, c)
+			orphans = append(orphans, orphanContainer{info: c, reason: reason})
 		}
 	}
 
@@ -71,9 +78,9 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 
 	if cleanupAll {
 		// --all flag: skip interaction
-		toDelete = orphans
+		toDelete = orphansToContainerInfos(orphans)
 	} else {
-		toDelete = selectOrphansInteractively(env, orphans)
+		toDelete = selectOrphansInteractively(orphans)
 	}
 
 	if len(toDelete) == 0 {
@@ -123,17 +130,16 @@ func checkOrphanStatus(env *util.Env, c runtime.ContainerInfo) (bool, string) {
 }
 
 // selectOrphansInteractively displays orphans and prompts for selection.
-func selectOrphansInteractively(env *util.Env, orphans []runtime.ContainerInfo) []runtime.ContainerInfo {
+func selectOrphansInteractively(orphans []orphanContainer) []runtime.ContainerInfo {
 	fmt.Printf("Found %d orphan container(s):\n\n", len(orphans))
-	for i, c := range orphans {
-		_, reason := checkOrphanStatus(env, c)
-		projectPath := c.ProjectPath
+	for i, o := range orphans {
+		projectPath := o.info.ProjectPath
 		if projectPath == "" {
 			projectPath = "(no path)"
 		}
-		fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		fmt.Printf("  [%d] %s\n", i+1, o.info.Name)
 		fmt.Printf("      Path: %s\n", projectPath)
-		fmt.Printf("      Reason: %s\n", reason)
+		fmt.Printf("      Reason: %s\n", o.reason)
 		fmt.Println()
 	}
 
@@ -152,7 +158,7 @@ func selectOrphansInteractively(env *util.Env, orphans []runtime.ContainerInfo) 
 	input = strings.TrimSpace(input)
 	if input == "" {
 		// Empty input = delete all
-		return orphans
+		return orphansToContainerInfos(orphans)
 	}
 
 	// Parse numbers
@@ -160,7 +166,7 @@ func selectOrphansInteractively(env *util.Env, orphans []runtime.ContainerInfo) 
 }
 
 // parseContainerSelection parses user input and returns selected containers.
-func parseContainerSelection(input string, orphans []runtime.ContainerInfo) []runtime.ContainerInfo {
+func parseContainerSelection(input string, orphans []orphanContainer) []runtime.ContainerInfo {
 	var selected []runtime.ContainerInfo
 	parts := strings.Split(input, ",")
 	seen := make(map[int]bool)
@@ -178,11 +184,20 @@ func parseContainerSelection(input string, orphans []runtime.ContainerInfo) []ru
 		}
 		if !seen[num] {
 			seen[num] = true
-			selected = append(selected, orphans[num-1])
+			selected = append(selected, orphans[num-1].info)
 		}
 	}
 
 	return selected
+}
+
+// orphansToContainerInfos extracts ContainerInfo from orphanContainer slice.
+func orphansToContainerInfos(orphans []orphanContainer) []runtime.ContainerInfo {
+	infos := make([]runtime.ContainerInfo, len(orphans))
+	for i, o := range orphans {
+		infos[i] = o.info
+	}
+	return infos
 }
 
 // deleteContainers removes the given containers and returns the count of successfully deleted.

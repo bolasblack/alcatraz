@@ -78,6 +78,7 @@
           shellHook = ''
             echo "Alcatraz development environment"
 
+            export PATH="/root/.local/share/mise/shims:$PATH"
             export PATH="/extra-bin:$PATH"
 
             echo '

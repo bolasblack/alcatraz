@@ -48,7 +48,7 @@ func (p *pfHelper) Setup(env *util.Env, projectDir string, progress ProgressFunc
 		return nil, err
 	}
 
-	return &PostCommitAction{Run: nil}, nil // No post-commit action for Setup
+	return &PostCommitAction{}, nil
 }
 
 func (p *pfHelper) Teardown(env *util.Env, projectDir string) error {
@@ -120,8 +120,9 @@ func (p *pfHelper) InstallHelper(env *util.Env, progress ProgressFunc) (*PostCom
 func (p *pfHelper) UninstallHelper(env *util.Env, progress ProgressFunc) (*PostCommitAction, error) {
 	progress = safeProgress(progress)
 
-	_ = p.uninstallHelper(env, progress)
-	// Log warnings but don't fail
+	for _, warn := range p.uninstallHelper(env, progress) {
+		progress("Warning: %v\n", warn)
+	}
 
 	return &PostCommitAction{
 		Run: func(progress ProgressFunc) error {

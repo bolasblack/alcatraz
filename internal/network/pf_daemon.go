@@ -44,8 +44,6 @@ func buildLaunchDaemonPlist() string {
 // launchDaemonPlist is the plist content for the LaunchDaemon.
 var launchDaemonPlist = buildLaunchDaemonPlist()
 
-// Note: ProgressFunc is defined in interface.go
-
 // installHelper stages network helper files.
 // IMPORTANT: This only stages files. Caller must:
 // 1. Call this function to stage files
@@ -130,9 +128,6 @@ func (p *pfHelper) isHelperInstalled(env *util.Env) bool {
 
 // isHelperNeedsUpdate checks if plist or pf.conf anchor needs update.
 func (p *pfHelper) isHelperNeedsUpdate(env *util.Env) bool {
-	anchorLine := fmt.Sprintf(`nat-anchor "%s"`, pfAnchorName)
-	oldAnchorLine := fmt.Sprintf(`nat-anchor "%s/*"`, pfAnchorName)
-
 	// Check plist content
 	existingPlist, err := afero.ReadFile(env.Fs, launchDaemonPath)
 	if err == nil && string(existingPlist) != launchDaemonPlist {
@@ -143,8 +138,8 @@ func (p *pfHelper) isHelperNeedsUpdate(env *util.Env) bool {
 	pfConf, err := afero.ReadFile(env.Fs, pfConfPath)
 	if err == nil {
 		content := string(pfConf)
-		hasNew := strings.Contains(content, anchorLine)
-		hasOld := strings.Contains(content, oldAnchorLine)
+		hasNew := strings.Contains(content, pfAnchorLine)
+		hasOld := strings.Contains(content, pfOldAnchorLine)
 		if hasOld || !hasNew {
 			return true
 		}

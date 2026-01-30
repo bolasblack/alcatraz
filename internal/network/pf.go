@@ -25,9 +25,6 @@ const (
 // Also handles migration from old wildcard format.
 // IMPORTANT: nat-anchor lines must come BEFORE anchor lines in pf.conf.
 func (p *pfHelper) ensurePfAnchor(env *util.Env) error {
-	anchorLine := fmt.Sprintf(`nat-anchor "%s"`, pfAnchorName)
-	oldAnchorLine := fmt.Sprintf(`nat-anchor "%s/*"`, pfAnchorName)
-
 	content, err := afero.ReadFile(env.Fs, pfConfPath)
 	if err != nil {
 		return fmt.Errorf("failed to read pf.conf: %w", err)
@@ -36,28 +33,26 @@ func (p *pfHelper) ensurePfAnchor(env *util.Env) error {
 	contentStr := string(content)
 
 	// Check if new anchor already exists (and no old one to migrate)
-	hasNewAnchor := strings.Contains(contentStr, anchorLine)
-	hasOldAnchor := strings.Contains(contentStr, oldAnchorLine)
+	hasNewAnchor := strings.Contains(contentStr, pfAnchorLine)
+	hasOldAnchor := strings.Contains(contentStr, pfOldAnchorLine)
 	if hasNewAnchor && !hasOldAnchor {
 		return nil
 	}
 
-	newLines := parsePfConfAndRemoveOldAnchor(contentStr, oldAnchorLine)
-	newLines = insertAnchorLine(newLines, anchorLine)
+	newLines := parsePfConfAndRemoveOldAnchor(contentStr, pfOldAnchorLine)
+	newLines = insertAnchorLine(newLines, pfAnchorLine)
 
 	return writePfConf(env, newLines)
 }
 
 // removePfAnchor removes nat-anchor from /etc/pf.conf.
 func (p *pfHelper) removePfAnchor(env *util.Env) error {
-	anchorLine := fmt.Sprintf(`nat-anchor "%s"`, pfAnchorName)
-
 	content, err := afero.ReadFile(env.Fs, pfConfPath)
 	if err != nil {
 		return fmt.Errorf("failed to read pf.conf: %w", err)
 	}
 
-	if !strings.Contains(string(content), anchorLine) {
+	if !strings.Contains(string(content), pfAnchorLine) {
 		return nil // Already removed
 	}
 
@@ -65,7 +60,7 @@ func (p *pfHelper) removePfAnchor(env *util.Env) error {
 	lines := strings.Split(string(content), "\n")
 	var newLines []string
 	for _, line := range lines {
-		if strings.TrimSpace(line) != anchorLine {
+		if strings.TrimSpace(line) != pfAnchorLine {
 			newLines = append(newLines, line)
 		}
 	}
@@ -73,39 +68,28 @@ func (p *pfHelper) removePfAnchor(env *util.Env) error {
 	return writePfConf(env, newLines)
 }
 
-// writeSharedRule writes the shared NAT rule file to the staging filesystem.
-// The actual file write with sudo will happen during commit.
-func (p *pfHelper) writeSharedRule(env *util.Env, rules string) error {
-	sharedPath := filepath.Join(pfAnchorDir, sharedRuleFile)
-
-	// Ensure parent directory exists in staging
+// writeAnchorFile writes a file to the pf anchor directory in the staging filesystem.
+// Ensures the anchor directory exists before writing.
+func (p *pfHelper) writeAnchorFile(env *util.Env, filename, content string) error {
 	if err := env.Fs.MkdirAll(pfAnchorDir, 0755); err != nil {
 		return fmt.Errorf("failed to create anchor directory: %w", err)
 	}
 
-	// Stage the write
-	if err := afero.WriteFile(env.Fs, sharedPath, []byte(rules), 0644); err != nil {
-		return fmt.Errorf("failed to stage shared rule: %w", err)
+	filePath := filepath.Join(pfAnchorDir, filename)
+	if err := afero.WriteFile(env.Fs, filePath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to stage %s: %w", filename, err)
 	}
 	return nil
 }
 
+// writeSharedRule writes the shared NAT rule file to the staging filesystem.
+func (p *pfHelper) writeSharedRule(env *util.Env, rules string) error {
+	return p.writeAnchorFile(env, sharedRuleFile, rules)
+}
+
 // writeProjectFile writes the project-specific rule file to the staging filesystem.
-// The actual file write with sudo will happen during commit.
 func (p *pfHelper) writeProjectFile(env *util.Env, projectDir, content string) error {
-	filename := p.projectFileName(projectDir)
-	projectFilePath := filepath.Join(pfAnchorDir, filename)
-
-	// Ensure parent directory exists in staging
-	if err := env.Fs.MkdirAll(pfAnchorDir, 0755); err != nil {
-		return fmt.Errorf("failed to create anchor directory: %w", err)
-	}
-
-	// Stage the write
-	if err := afero.WriteFile(env.Fs, projectFilePath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to stage project file: %w", err)
-	}
-	return nil
+	return p.writeAnchorFile(env, p.projectFileName(projectDir), content)
 }
 
 // parsePfConfAndRemoveOldAnchor parses pf.conf lines and removes old wildcard anchor.
