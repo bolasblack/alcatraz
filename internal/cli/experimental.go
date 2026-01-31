@@ -88,7 +88,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 
 	// Reload the container
 	if err := rt.Reload(runtimeEnv, cfg, cwd, st); err != nil {
-		if err == runtime.ErrNotRunning {
+		if errors.Is(err, runtime.ErrNotRunning) {
 			return errors.New(ErrMsgNotRunning)
 		}
 		return fmt.Errorf("failed to reload container: %w", err)

@@ -150,8 +150,8 @@ func (r *dockerCLICompatibleRuntime) buildRunArgs(env *RuntimeEnv, cfg *config.C
 	}
 
 	// Add environment variables (all merged envs at container creation)
-	for key, env := range cfg.MergedEnvs() {
-		expanded := env.Expand(os.Getenv)
+	for key, ev := range cfg.MergedEnvs() {
+		expanded := ev.Expand(os.Getenv)
 		if expanded != "" {
 			args = append(args, "-e", key+"="+expanded)
 		}

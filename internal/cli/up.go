@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -148,13 +146,8 @@ func handleConfigDrift(cfg *config.Config, st *state.State, rt runtime.Runtime, 
 
 	// Show drift and ask for confirmation
 	displayConfigDrift(out, drift, runtimeChanged, st.Runtime, rt.Name())
-	fmt.Print("Rebuild container with new configuration? [y/N] ")
 
-	reader := bufio.NewReader(os.Stdin)
-	answer, _ := reader.ReadString('\n')
-	answer = strings.TrimSpace(strings.ToLower(answer))
-
-	if answer != "y" && answer != "yes" {
+	if !promptConfirm("Rebuild container with new configuration?") {
 		fmt.Println("Keeping existing container.")
 		return false, nil
 	}

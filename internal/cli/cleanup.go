@@ -14,8 +14,6 @@ import (
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
-var cleanupAll bool
-
 // orphanContainer holds container info with the reason it's orphaned.
 // This avoids calling checkOrphanStatus twice for display purposes.
 type orphanContainer struct {
@@ -34,11 +32,13 @@ or whose state file (.alca/state.json) has been deleted.`,
 }
 
 func init() {
-	cleanupCmd.Flags().BoolVar(&cleanupAll, "all", false, "Delete all orphan containers without prompting")
+	cleanupCmd.Flags().Bool("all", false, "Delete all orphan containers without prompting")
 }
 
 // runCleanup finds and removes orphan containers.
 func runCleanup(cmd *cobra.Command, args []string) error {
+	cleanupAll, _ := cmd.Flags().GetBool("all")
+
 	cwd, err := getCwd()
 	if err != nil {
 		return err

@@ -106,6 +106,7 @@ export PATH="/extra-bin:$PATH"
 			UpComment: "prepare the environment",
 		}
 	default:
+		// Intentional fallback: unknown templates default to Nix (tested by TestGenerateConfigUnknownTemplate)
 		return getTemplateConfig(TemplateNix)
 	}
 }

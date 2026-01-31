@@ -11,6 +11,9 @@ func TestRootCommandHasSubcommands(t *testing.T) {
 		"up",
 		"down",
 		"run",
+		"list",
+		"cleanup",
+		"network-helper",
 		"experimental",
 	}
 

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"text/tabwriter"
 
@@ -75,12 +74,4 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	_ = w.Flush()
 	return nil
-}
-
-// init registers a logger for config warnings (optional).
-func init() {
-	// Suppress log output by default; can be enabled via environment variable
-	if os.Getenv("ALCA_DEBUG") == "" {
-		log.SetOutput(os.Stderr)
-	}
 }

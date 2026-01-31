@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -35,6 +36,10 @@ func GetRootCmd() *cobra.Command {
 }
 
 func init() {
+	if os.Getenv("ALCA_DEBUG") == "" {
+		log.SetOutput(os.Stderr)
+	}
+
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(upCmd)
