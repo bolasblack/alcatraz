@@ -283,7 +283,10 @@ func TestBuildRunArgs(t *testing.T) {
 				displayName: "Docker",
 				command:     "docker",
 			}
+			// Mock OrbStack so mounts without excludes use bind mounts (not Mutagen).
+			// On macOS, DetectPlatform defaults to DockerDesktop which always uses Mutagen.
 			mockCmd := util.NewMockCommandRunner().AllowUnexpected()
+			mockCmd.ExpectSuccess("docker info --format {{.OperatingSystem}}", []byte("OrbStack"))
 			args := rt.buildRunArgs(&RuntimeEnv{Cmd: mockCmd}, tt.cfg, tt.projectDir, tt.state, tt.contName)
 
 			argsStr := strings.Join(args, " ")

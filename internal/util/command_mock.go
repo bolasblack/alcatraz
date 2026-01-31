@@ -9,8 +9,12 @@ import (
 // MockCommandRunner implements CommandRunner for testing.
 // Records all command invocations and returns pre-configured results.
 type MockCommandRunner struct {
-	// commands maps "name arg1 arg2 ..." to MockResult.
+	// commands maps "name arg1 arg2 ..." to MockResult (single response).
 	commands map[string]MockResult
+
+	// commandSequences maps "name arg1 arg2 ..." to an ordered queue of results.
+	// Each call consumes the next result. When exhausted, falls back to commands map.
+	commandSequences map[string][]MockResult
 
 	// defaultError is returned for unexpected commands.
 	defaultError error
@@ -35,8 +39,9 @@ type CommandCall struct {
 // NewMockCommandRunner creates a mock that fails on unexpected commands.
 func NewMockCommandRunner() *MockCommandRunner {
 	return &MockCommandRunner{
-		commands:     make(map[string]MockResult),
-		defaultError: fmt.Errorf("unexpected command"),
+		commands:         make(map[string]MockResult),
+		commandSequences: make(map[string][]MockResult),
+		defaultError:     fmt.Errorf("unexpected command"),
 	}
 }
 
@@ -55,6 +60,15 @@ func (m *MockCommandRunner) ExpectSuccess(cmd string, output []byte) *MockComman
 // ExpectFailure is shorthand for Expect(cmd, nil, err).
 func (m *MockCommandRunner) ExpectFailure(cmd string, err error) *MockCommandRunner {
 	return m.Expect(cmd, nil, err)
+}
+
+// ExpectSequence appends a result to the ordered queue for a command.
+// Each call to Run consumes the next result in the queue.
+// When the queue is exhausted, falls back to Expect (single response) or default behavior.
+// cmd format: "name arg1 arg2 ..." (space-separated).
+func (m *MockCommandRunner) ExpectSequence(cmd string, output []byte, err error) *MockCommandRunner {
+	m.commandSequences[cmd] = append(m.commandSequences[cmd], MockResult{Output: output, Err: err})
+	return m
 }
 
 // AllowUnexpected makes unexpected commands return empty output and nil error.
@@ -76,6 +90,14 @@ func (m *MockCommandRunner) Run(name string, args ...string) ([]byte, error) {
 		Key:  key,
 	})
 
+	// Check sequence queue first (ordered, consumed on each call)
+	if seq, ok := m.commandSequences[key]; ok && len(seq) > 0 {
+		result := seq[0]
+		m.commandSequences[key] = seq[1:]
+		return result.Output, result.Err
+	}
+
+	// Fall back to single-response map
 	if result, ok := m.commands[key]; ok {
 		return result.Output, result.Err
 	}

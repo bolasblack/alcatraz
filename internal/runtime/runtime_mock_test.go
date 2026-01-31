@@ -483,3 +483,59 @@ func TestDockerStatus_NilState(t *testing.T) {
 		t.Errorf("Status() with nil state should return StateNotFound, got %v", status.State)
 	}
 }
+
+// =============================================================================
+// flushMutagenSyncs() Tests
+// =============================================================================
+
+func TestFlushMutagenSyncs_NoSyncs(t *testing.T) {
+	mock := util.NewMockCommandRunner()
+	env := newMockEnv(mock)
+
+	docker := NewDocker()
+	err := docker.flushMutagenSyncs(env, nil, nil)
+	if err != nil {
+		t.Fatalf("flushMutagenSyncs() with no syncs should not error, got: %v", err)
+	}
+}
+
+func TestFlushMutagenSyncs_FlushesAllSessions(t *testing.T) {
+	mock := util.NewMockCommandRunner()
+	mock.ExpectSuccess("mutagen sync flush session-0", []byte(""))
+	mock.ExpectSuccess("mutagen sync flush session-1", []byte(""))
+	env := newMockEnv(mock)
+
+	syncs := []MutagenSync{
+		{Name: "session-0"},
+		{Name: "session-1"},
+	}
+
+	docker := NewDocker()
+	err := docker.flushMutagenSyncs(env, syncs, nil)
+	if err != nil {
+		t.Fatalf("flushMutagenSyncs() unexpected error: %v", err)
+	}
+
+	mock.AssertCalled(t, "mutagen sync flush session-0")
+	mock.AssertCalled(t, "mutagen sync flush session-1")
+}
+
+func TestFlushMutagenSyncs_StopsOnError(t *testing.T) {
+	mock := util.NewMockCommandRunner()
+	mock.ExpectFailure("mutagen sync flush session-0", errDaemonNotRunning)
+	env := newMockEnv(mock)
+
+	syncs := []MutagenSync{
+		{Name: "session-0"},
+		{Name: "session-1"},
+	}
+
+	docker := NewDocker()
+	err := docker.flushMutagenSyncs(env, syncs, nil)
+	if err == nil {
+		t.Fatal("flushMutagenSyncs() should return error when flush fails")
+	}
+
+	mock.AssertCalled(t, "mutagen sync flush session-0")
+	mock.AssertNotCalled(t, "mutagen sync flush session-1")
+}

@@ -1,8 +1,11 @@
 package runtime
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 // TestShouldUseMutagen tests the decision logic for when to use Mutagen sync.
@@ -125,6 +128,99 @@ func TestMutagenSyncBuildCreateArgs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestMutagenSyncFlush_Success tests that Flush calls mutagen sync flush with the correct session name.
+func TestMutagenSyncFlush_Success(t *testing.T) {
+	mock := util.NewMockCommandRunner()
+	mock.ExpectSuccess("mutagen sync flush alca-project-workspace", []byte(""))
+	env := newMockEnv(mock)
+
+	sync := MutagenSync{Name: "alca-project-workspace"}
+	err := sync.flushWithRetry(env, 1, 0)
+	if err != nil {
+		t.Fatalf("Flush() unexpected error: %v", err)
+	}
+
+	mock.AssertCalled(t, "mutagen sync flush alca-project-workspace")
+}
+
+// TestMutagenSyncFlush_NonRetryableError tests that Flush returns immediately on non-retryable errors.
+func TestMutagenSyncFlush_NonRetryableError(t *testing.T) {
+	mock := util.NewMockCommandRunner()
+	mock.ExpectFailure("mutagen sync flush test-session", errCommandNotFound)
+	env := newMockEnv(mock)
+
+	sync := MutagenSync{Name: "test-session"}
+	err := sync.flushWithRetry(env, 3, 0)
+	if err == nil {
+		t.Fatal("Flush() should return error when mutagen fails")
+	}
+	if !strings.Contains(err.Error(), "mutagen sync flush failed") {
+		t.Errorf("Flush() error = %q, want it to contain 'mutagen sync flush failed'", err.Error())
+	}
+	// Should NOT retry on non-retryable error
+	if mock.CallCount("mutagen sync flush test-session") != 1 {
+		t.Errorf("expected 1 call, got %d", mock.CallCount("mutagen sync flush test-session"))
+	}
+}
+
+// TestMutagenSyncFlush_RetriesOnNotReady tests that Flush retries when session is not yet connected.
+func TestMutagenSyncFlush_RetriesOnNotReady(t *testing.T) {
+	notReadyErr := errors.New("exit status 1")
+	notReadyOutput := []byte("Error: unable to flush session: session is not currently able to synchronize")
+
+	mock := util.NewMockCommandRunner()
+	// First two attempts fail with retryable error, third succeeds
+	mock.ExpectSequence("mutagen sync flush test-session", notReadyOutput, notReadyErr)
+	mock.ExpectSequence("mutagen sync flush test-session", notReadyOutput, notReadyErr)
+	mock.ExpectSequence("mutagen sync flush test-session", []byte(""), nil)
+	env := newMockEnv(mock)
+
+	sync := MutagenSync{Name: "test-session"}
+	err := sync.flushWithRetry(env, 5, 0)
+	if err != nil {
+		t.Fatalf("Flush() should succeed after retries, got: %v", err)
+	}
+	if mock.CallCount("mutagen sync flush test-session") != 3 {
+		t.Errorf("expected 3 calls, got %d", mock.CallCount("mutagen sync flush test-session"))
+	}
+}
+
+// TestMutagenSyncFlush_ExhaustsRetries tests that Flush fails after max retries.
+func TestMutagenSyncFlush_ExhaustsRetries(t *testing.T) {
+	notReadyErr := errors.New("exit status 1")
+	notReadyOutput := []byte("Error: unable to flush session: session is not currently able to synchronize")
+
+	mock := util.NewMockCommandRunner()
+	mock.Expect("mutagen sync flush test-session", notReadyOutput, notReadyErr)
+	mock.Expect("mutagen sync flush test-session", notReadyOutput, notReadyErr)
+	mock.Expect("mutagen sync flush test-session", notReadyOutput, notReadyErr)
+	env := newMockEnv(mock)
+
+	sync := MutagenSync{Name: "test-session"}
+	err := sync.flushWithRetry(env, 3, 0)
+	if err == nil {
+		t.Fatal("Flush() should fail after exhausting retries")
+	}
+}
+
+// TestIsFlushRetryable tests the retryable error detection.
+func TestIsFlushRetryable(t *testing.T) {
+	tests := []struct {
+		output string
+		want   bool
+	}{
+		{"Error: unable to flush session: session is not currently able to synchronize", true},
+		{"Error: no matching sessions", false},
+		{"command not found", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := isFlushRetryable(tt.output); got != tt.want {
+			t.Errorf("isFlushRetryable(%q) = %v, want %v", tt.output, got, tt.want)
+		}
 	}
 }
 

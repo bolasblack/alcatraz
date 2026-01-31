@@ -6,6 +6,7 @@ package runtime
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // MutagenSync manages a Mutagen sync session.
@@ -27,6 +28,39 @@ func (m *MutagenSync) Create(env *RuntimeEnv) error {
 		return fmt.Errorf("mutagen sync create failed: %w: %s", err, string(output))
 	}
 	return nil
+}
+
+// Flush waits for a Mutagen sync session to complete its current sync cycle.
+// Retries if the session is not yet connected (e.g. just created).
+// CLI command: mutagen sync flush <name>
+func (m *MutagenSync) Flush(env *RuntimeEnv) error {
+	return m.flushWithRetry(env, flushMaxRetries, flushRetryInterval)
+}
+
+const (
+	flushMaxRetries    = 30
+	flushRetryInterval = time.Second
+)
+
+func (m *MutagenSync) flushWithRetry(env *RuntimeEnv, maxRetries int, interval time.Duration) error {
+	args := []string{"sync", "flush", m.Name}
+	for attempt := range maxRetries {
+		output, err := env.Cmd.Run("mutagen", args...)
+		if err == nil {
+			return nil
+		}
+		if attempt == maxRetries-1 || !isFlushRetryable(string(output)) {
+			return fmt.Errorf("mutagen sync flush failed: %w: %s", err, string(output))
+		}
+		time.Sleep(interval)
+	}
+	return nil // unreachable
+}
+
+// isFlushRetryable returns true if the flush error indicates the session
+// is still connecting and a retry may succeed.
+func isFlushRetryable(output string) bool {
+	return strings.Contains(output, "not currently able to synchronize")
 }
 
 // Terminate terminates a Mutagen sync session.

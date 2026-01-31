@@ -79,7 +79,7 @@ func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, pro
 
 		// Re-setup Mutagen syncs for stopped container restart
 		// Container ID may have changed, need to refresh syncs
-		if err := r.setupMutagenSyncs(env, cfg, st, name, projectDir, progressOut); err != nil {
+		if _, err := r.setupMutagenSyncs(env, cfg, st, name, projectDir, progressOut); err != nil {
 			return fmt.Errorf("failed to setup Mutagen syncs: %w", err)
 		}
 
@@ -99,12 +99,19 @@ func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, pro
 
 	// Setup Mutagen syncs for mounts that require it
 	// See AGD-025 for platform-specific mount optimization
-	if err := r.setupMutagenSyncs(env, cfg, st, name, projectDir, progressOut); err != nil {
+	syncs, err := r.setupMutagenSyncs(env, cfg, st, name, projectDir, progressOut)
+	if err != nil {
 		return fmt.Errorf("failed to setup Mutagen syncs: %w", err)
 	}
 
 	// Run the up command if specified
 	if cfg.Commands.Up != "" {
+		// Wait for Mutagen syncs to complete before running setup command,
+		// otherwise the command may see incomplete or missing files.
+		if err := r.flushMutagenSyncs(env, syncs, progressOut); err != nil {
+			return fmt.Errorf("failed to flush Mutagen syncs: %w", err)
+		}
+
 		if err := r.executeUpCommand(env, name, cfg.Commands.Up, progressOut); err != nil {
 			return err
 		}
@@ -170,6 +177,22 @@ func (r *dockerCLICompatibleRuntime) buildRunArgs(env *RuntimeEnv, cfg *config.C
 	return args
 }
 
+// flushMutagenSyncs waits for all Mutagen sync sessions to complete their initial sync.
+// This must be called before any command that depends on synced files.
+func (r *dockerCLICompatibleRuntime) flushMutagenSyncs(env *RuntimeEnv, syncs []MutagenSync, progressOut io.Writer) error {
+	if len(syncs) == 0 {
+		return nil
+	}
+
+	util.ProgressStep(progressOut, "Waiting for Mutagen sync to complete...\n")
+	for i := range syncs {
+		if err := syncs[i].Flush(env); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // executeUpCommand runs the post-creation setup command.
 func (r *dockerCLICompatibleRuntime) executeUpCommand(env *RuntimeEnv, containerName, command string, progressOut io.Writer) error {
 	util.ProgressStep(progressOut, "Running setup command...\n")
@@ -183,7 +206,7 @@ func (r *dockerCLICompatibleRuntime) executeUpCommand(env *RuntimeEnv, container
 
 // setupMutagenSyncs creates Mutagen sync sessions for mounts that require it.
 // See AGD-025 for platform-specific mount optimization decisions.
-func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *config.Config, st *state.State, containerName, projectDir string, progressOut io.Writer) error {
+func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *config.Config, st *state.State, containerName, projectDir string, progressOut io.Writer) ([]MutagenSync, error) {
 	platform := DetectPlatform(env)
 
 	// First, terminate any existing syncs for this project to avoid duplicates
@@ -195,10 +218,11 @@ func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *con
 	// Get container ID for Mutagen target URL
 	containerID, err := r.getContainerID(env, containerName)
 	if err != nil {
-		return fmt.Errorf("failed to get container ID: %w", err)
+		return nil, fmt.Errorf("failed to get container ID: %w", err)
 	}
 
 	// Setup syncs for mounts that require Mutagen
+	var syncs []MutagenSync
 	for i, mount := range cfg.Mounts {
 		if !ShouldUseMutagen(platform, mount.HasExcludes()) {
 			continue
@@ -219,12 +243,19 @@ func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *con
 			Ignores: mount.Exclude,
 		}
 
+		// Terminate any existing session with this exact name before creating.
+		// TerminateProjectSyncs above uses prefix matching which may miss edge cases;
+		// this ensures the name slot is clean so flush resolves to the new session.
+		_ = sync.Terminate(env)
+
 		if err := sync.Create(env); err != nil {
-			return fmt.Errorf("failed to create Mutagen sync for %s: %w", source, err)
+			return nil, fmt.Errorf("failed to create Mutagen sync for %s: %w", source, err)
 		}
+
+		syncs = append(syncs, sync)
 	}
 
-	return nil
+	return syncs, nil
 }
 
 // getContainerID returns the container ID for a given container name.
