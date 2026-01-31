@@ -1,4 +1,4 @@
-.PHONY: build test clean docs docs-markdown docs-man docs-html docs-serve vendor update-vendor-hash schema lint
+.PHONY: build test clean docs docs-markdown docs-man docs-html docs-serve vendor vendor-clean vendor-hash-update schema lint
 
 LINT_DIR := out_lint
 OUT_DIR := out
@@ -34,9 +34,14 @@ vendor:
 	go mod tidy
 	go mod vendor
 	go mod verify
+	go mod download
+
+vendor-clean:
+	rm -rf vendor
+	go clean -modcache
 
 # Update vendorHash in flake.nix after go.mod changes
-update-vendor-hash: vendor
+vendor-hash-update: vendor
 	@echo "Calculating new vendorHash..."
 	@OLD_HASH=$$(grep 'vendorHash' flake.nix | sed 's/.*"\(.*\)".*/\1/'); \
 	sed -i.bak 's|vendorHash = ".*"|vendorHash = ""|' flake.nix; \

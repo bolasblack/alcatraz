@@ -1,0 +1,5 @@
+#:schema ./alca-config.schema.json
+
+mounts = [
+  "./.ignores/scripts:/extra-scripts",
+]

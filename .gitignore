@@ -10,6 +10,8 @@ out_*
 .alca.cache
 .alca.local.toml
 
+.mise.local.toml
+
 docs/commands/*
 !docs/commands/_index.md
 

@@ -80,38 +80,17 @@
             echo "Alcatraz development environment"
 
             export PATH="/root/.local/share/mise/shims:$PATH"
-            export PATH="/extra-bin:$PATH"
+            [ -x /extra-scripts/source.sh ] && source /extra-scripts/source.sh
 
-            echo '
-            set -g default-shell "${pkgs.bashInteractive}/bin/bash"
-            set -ga terminal-features "*:hyperlinks"
-            set -g allow-passthrough on
+            if [ ! -f /.inited ]; then
+              mise trust
+              mise install
 
-            # Set the base index for windows pane to 1 instead of 0
-            set -g base-index 1
-            setw -g pane-base-index 1
+              export BIN_PATH__BASH="${pkgs.bashInteractive}/bin/bash"
+              [ -x /extra-scripts/init.sh ] && /extra-scripts/init.sh
 
-            # Set the history length
-            set -g history-limit 65535
-
-            # Make C-[ in evil-mode more quickly
-            #   https://bitbucket.org/lyro/evil/issues/69/delay-between-esc-or-c-and-modeswitch
-            set -s escape-time 0
-
-            # Set the key binding to vi/emacs mode
-            set-window-option -g mode-keys vi
-            bind -T copy-mode-vi v send -X begin-selection
-            bind -T copy-mode-vi C-V send -X begin-selection \; send -X rectangle-toggle
-            bind -T copy-mode-vi y send -X copy-selection-and-cancel
-            bind -T copy-mode-vi r send -X rectangle-toggle
-
-            # make sure NIX related script will be sourced again
-            setenv -g __ETC_PROFILE_NIX_SOURCED ""
-            setenv -g __HM_SESS_VARS_SOURCED ""
-            setenv -g __HM_ZSH_SESS_VARS_SOURCED ""
-            ' > ~/.tmux.conf
-
-            mise trust
+              touch /.inited
+            fi
           '';
         };
       }

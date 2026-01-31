@@ -3,7 +3,3 @@ go = "latest"
 golangci-lint = "latest"
 "go:golang.org/x/tools/cmd/goimports" = "latest"
 "go:github.com/gohugoio/hugo" = { version = "v0.154.5", tags = "extended" }
-
-[env]
-GIT_EMAIL = "{{ exec(command='git config --get user.email', cache_key='git_email', cache_duration='1d') | trim }}"
-GIT_NAME = "{{ exec(command='git config --get user.name', cache_key='git_name', cache_duration='1d') | trim }}"
