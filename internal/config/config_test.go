@@ -65,11 +65,15 @@ enter = "bash"
 	if cfg.Commands.Enter != "bash" {
 		t.Errorf("expected commands.enter 'bash', got %q", cfg.Commands.Enter)
 	}
-	if len(cfg.Mounts) != 2 {
-		t.Errorf("expected 2 mounts, got %d", len(cfg.Mounts))
+	// Mounts[0] is the workdir mount (normalized), user mounts follow
+	if len(cfg.Mounts) != 3 {
+		t.Errorf("expected 3 mounts (workdir + 2 user), got %d", len(cfg.Mounts))
 	}
-	if cfg.Mounts[0].Source != "/host" || cfg.Mounts[0].Target != "/container" {
-		t.Errorf("expected mount[0] to be /host:/container, got %v", cfg.Mounts[0])
+	if cfg.Mounts[0].Source != "." || cfg.Mounts[0].Target != "/app" {
+		t.Errorf("expected mount[0] to be workdir .:/app, got %v", cfg.Mounts[0])
+	}
+	if cfg.Mounts[1].Source != "/host" || cfg.Mounts[1].Target != "/container" {
+		t.Errorf("expected mount[1] to be /host:/container, got %v", cfg.Mounts[1])
 	}
 }
 
@@ -680,24 +684,29 @@ mounts = ["/host:/container", "/data:/data:ro"]
 			t.Fatalf("LoadConfig failed: %v", err)
 		}
 
-		if len(cfg.Mounts) != 2 {
-			t.Fatalf("expected 2 mounts, got %d", len(cfg.Mounts))
+		// Mounts[0] is workdir, user mounts follow
+		if len(cfg.Mounts) != 3 {
+			t.Fatalf("expected 3 mounts (workdir + 2 user), got %d", len(cfg.Mounts))
 		}
-		if cfg.Mounts[0].Source != "/host" || cfg.Mounts[0].Target != "/container" {
-			t.Errorf("mount[0] = %v, want source=/host target=/container", cfg.Mounts[0])
+		if cfg.Mounts[0].Source != "." || cfg.Mounts[0].Target != "/workspace" {
+			t.Errorf("mount[0] = %v, want workdir .:/workspace", cfg.Mounts[0])
 		}
-		if cfg.Mounts[1].Source != "/data" || cfg.Mounts[1].Target != "/data" || !cfg.Mounts[1].Readonly {
-			t.Errorf("mount[1] = %v, want source=/data target=/data readonly=true", cfg.Mounts[1])
+		if cfg.Mounts[1].Source != "/host" || cfg.Mounts[1].Target != "/container" {
+			t.Errorf("mount[1] = %v, want source=/host target=/container", cfg.Mounts[1])
+		}
+		if cfg.Mounts[2].Source != "/data" || cfg.Mounts[2].Target != "/data" || !cfg.Mounts[2].Readonly {
+			t.Errorf("mount[2] = %v, want source=/data target=/data readonly=true", cfg.Mounts[2])
 		}
 	})
 
 	t.Run("extended object mounts", func(t *testing.T) {
 		content := `
 image = "ubuntu:latest"
+workdir = "/app"
 
 [[mounts]]
 source = "/Users/me/project"
-target = "/workspace"
+target = "/data"
 readonly = false
 exclude = ["**/.env.prod", "**/secrets/"]
 `
@@ -712,15 +721,19 @@ exclude = ["**/.env.prod", "**/secrets/"]
 			t.Fatalf("LoadConfig failed: %v", err)
 		}
 
-		if len(cfg.Mounts) != 1 {
-			t.Fatalf("expected 1 mount, got %d", len(cfg.Mounts))
+		// Mounts[0] is workdir, user mounts follow
+		if len(cfg.Mounts) != 2 {
+			t.Fatalf("expected 2 mounts (workdir + 1 user), got %d", len(cfg.Mounts))
 		}
-		m := cfg.Mounts[0]
+		if cfg.Mounts[0].Source != "." || cfg.Mounts[0].Target != "/app" {
+			t.Errorf("mount[0] = %v, want workdir .:/app", cfg.Mounts[0])
+		}
+		m := cfg.Mounts[1]
 		if m.Source != "/Users/me/project" {
 			t.Errorf("mount.Source = %q, want /Users/me/project", m.Source)
 		}
-		if m.Target != "/workspace" {
-			t.Errorf("mount.Target = %q, want /workspace", m.Target)
+		if m.Target != "/data" {
+			t.Errorf("mount.Target = %q, want /data", m.Target)
 		}
 		if m.Readonly {
 			t.Error("mount.Readonly should be false")
@@ -759,11 +772,12 @@ exclude = ["*.tmp"]
 			t.Fatalf("LoadConfig failed: %v", err)
 		}
 
-		if len(cfg.Mounts) != 2 {
-			t.Fatalf("expected 2 mounts, got %d", len(cfg.Mounts))
+		// Mounts[0] is workdir, user mounts follow
+		if len(cfg.Mounts) != 3 {
+			t.Fatalf("expected 3 mounts (workdir + 2 user), got %d", len(cfg.Mounts))
 		}
-		if !cfg.Mounts[1].HasExcludes() {
-			t.Error("expected second mount to have excludes")
+		if !cfg.Mounts[2].HasExcludes() {
+			t.Error("expected third mount (second user mount) to have excludes")
 		}
 	})
 }
@@ -799,6 +813,122 @@ func TestRawMountSliceJSONSchema(t *testing.T) {
 	if len(objSchema.Required) != 2 {
 		t.Errorf("expected 2 required fields, got %d", len(objSchema.Required))
 	}
+}
+
+func TestLoadConfigWorkdirExclude(t *testing.T) {
+	t.Run("workdir_exclude normalizes into Mounts[0]", func(t *testing.T) {
+		content := `
+image = "ubuntu:latest"
+workdir = "/app"
+workdir_exclude = ["node_modules", ".git", "dist"]
+`
+		env, memFs := newTestEnv(t)
+		path := "/test/.alca.toml"
+		if err := afero.WriteFile(memFs, path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		cfg, err := LoadConfig(env, path)
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+
+		if len(cfg.Mounts) != 1 {
+			t.Fatalf("expected 1 mount (workdir only), got %d", len(cfg.Mounts))
+		}
+
+		m := cfg.Mounts[0]
+		if m.Source != "." {
+			t.Errorf("workdir mount Source = %q, want \".\"", m.Source)
+		}
+		if m.Target != "/app" {
+			t.Errorf("workdir mount Target = %q, want \"/app\"", m.Target)
+		}
+		if len(m.Exclude) != 3 {
+			t.Fatalf("workdir mount Exclude len = %d, want 3", len(m.Exclude))
+		}
+		if m.Exclude[0] != "node_modules" || m.Exclude[1] != ".git" || m.Exclude[2] != "dist" {
+			t.Errorf("workdir mount Exclude = %v, want [node_modules, .git, dist]", m.Exclude)
+		}
+	})
+
+	t.Run("workdir without exclude normalizes with nil Exclude", func(t *testing.T) {
+		content := `
+image = "ubuntu:latest"
+workdir = "/app"
+`
+		env, memFs := newTestEnv(t)
+		path := "/test/.alca.toml"
+		if err := afero.WriteFile(memFs, path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		cfg, err := LoadConfig(env, path)
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+
+		if len(cfg.Mounts) != 1 {
+			t.Fatalf("expected 1 mount (workdir only), got %d", len(cfg.Mounts))
+		}
+
+		m := cfg.Mounts[0]
+		if m.Source != "." || m.Target != "/app" {
+			t.Errorf("workdir mount = %v, want .:/app", m)
+		}
+		if m.Exclude != nil {
+			t.Errorf("workdir mount Exclude = %v, want nil", m.Exclude)
+		}
+	})
+
+	t.Run("mount target conflicts with workdir returns error", func(t *testing.T) {
+		content := `
+image = "ubuntu:latest"
+workdir = "/workspace"
+
+[[mounts]]
+source = "/other"
+target = "/workspace"
+`
+		env, memFs := newTestEnv(t)
+		path := "/test/.alca.toml"
+		if err := afero.WriteFile(memFs, path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		_, err := LoadConfig(env, path)
+		if err == nil {
+			t.Fatal("expected error for mount target conflicting with workdir")
+		}
+		if !strings.Contains(err.Error(), "conflicts with workdir") {
+			t.Errorf("expected error about workdir conflict, got: %v", err)
+		}
+	})
+
+	t.Run("default workdir normalizes correctly", func(t *testing.T) {
+		content := `
+image = "ubuntu:latest"
+`
+		env, memFs := newTestEnv(t)
+		path := "/test/.alca.toml"
+		if err := afero.WriteFile(memFs, path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		cfg, err := LoadConfig(env, path)
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+
+		if len(cfg.Mounts) != 1 {
+			t.Fatalf("expected 1 mount (workdir only), got %d", len(cfg.Mounts))
+		}
+
+		m := cfg.Mounts[0]
+		if m.Source != "." || m.Target != "/workspace" {
+			t.Errorf("workdir mount = %v, want .:/workspace (default)", m)
+		}
+	})
 }
 
 func TestInsertUpComment(t *testing.T) {

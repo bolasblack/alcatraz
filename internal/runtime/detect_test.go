@@ -174,6 +174,7 @@ func TestBuildRunArgs(t *testing.T) {
 			cfg: &config.Config{
 				Image:   "test-image:latest",
 				Workdir: "/app",
+				Mounts:  []config.MountConfig{{Source: ".", Target: "/app"}},
 			},
 			projectDir: "/home/user/project",
 			state: &state.State{
@@ -196,6 +197,7 @@ func TestBuildRunArgs(t *testing.T) {
 				Image:   "test-image",
 				Workdir: "/workspace",
 				Mounts: []config.MountConfig{
+					{Source: ".", Target: "/workspace"},
 					{Source: "/host/data", Target: "/container/data"},
 					{Source: "/host/cache", Target: "/container/cache", Readonly: true},
 				},
@@ -217,6 +219,7 @@ func TestBuildRunArgs(t *testing.T) {
 			cfg: &config.Config{
 				Image:   "test-image",
 				Workdir: "/workspace",
+				Mounts:  []config.MountConfig{{Source: ".", Target: "/workspace"}},
 				Resources: config.Resources{
 					Memory: "4g",
 					CPUs:   2,
@@ -238,6 +241,7 @@ func TestBuildRunArgs(t *testing.T) {
 			cfg: &config.Config{
 				Image:   "test-image",
 				Workdir: "/workspace",
+				Mounts:  []config.MountConfig{{Source: ".", Target: "/workspace"}},
 				Envs: map[string]config.EnvValue{
 					"MY_VAR": {Value: "my_value", OverrideOnEnter: false},
 				},
@@ -257,6 +261,7 @@ func TestBuildRunArgs(t *testing.T) {
 			cfg: &config.Config{
 				Image:   "test-image",
 				Workdir: "/workspace",
+				Mounts:  []config.MountConfig{{Source: ".", Target: "/workspace"}},
 				Resources: config.Resources{
 					Memory: "",
 					CPUs:   0,

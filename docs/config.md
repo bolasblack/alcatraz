@@ -116,6 +116,7 @@ See [AGD-022](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisio
 | ------------------ | ------ | -------- | ---------------------------------------- | ---------------------------------------------- |
 | `image`            | string | Yes      | `"nixos/nix"`                            | Container image to use                         |
 | `workdir`          | string | No       | `"/workspace"`                           | Working directory inside container             |
+| `workdir_exclude`  | array  | No       | `[]`                                     | Patterns to exclude from workdir mount         |
 | `runtime`          | string | No       | `"auto"`                                 | Runtime selection mode                         |
 | `commands.up`      | string | No       | -                                        | Setup command (run once on container creation) |
 | `commands.enter`   | string | No       | `"[ -f flake.nix ] && exec nix develop"` | Entry command (run on each shell entry)        |
@@ -150,6 +151,39 @@ workdir = "/workspace"
 - **Required**: No
 - **Default**: `"/workspace"`
 - **Notes**: Must be an absolute path
+
+### workdir_exclude
+
+Patterns to exclude from the workdir mount. When specified, Alcatraz uses [Mutagen](https://mutagen.io/) for file synchronization instead of direct bind mounts.
+
+```toml
+workdir = "/workspace"
+workdir_exclude = ["node_modules", ".git", "dist"]
+```
+
+- **Type**: array of strings
+- **Required**: No
+- **Default**: `[]`
+- **Notes**: Patterns follow gitignore-like syntax (see [Exclude Patterns](#exclude-patterns))
+
+This is a convenience shorthand for configuring excludes on the workdir mount. The following configurations are equivalent:
+
+```toml
+# Using workdir_exclude (recommended)
+workdir = "/workspace"
+workdir_exclude = ["node_modules", ".git"]
+```
+
+```toml
+# Using extended mount format
+workdir = "/workspace"
+[[mounts]]
+source = "."
+target = "/workspace"
+exclude = ["node_modules", ".git"]
+```
+
+**Note**: You cannot use both `workdir_exclude` and a separate mount targeting the same path as `workdir`. Attempting to do so will result in an error.
 
 ### runtime
 

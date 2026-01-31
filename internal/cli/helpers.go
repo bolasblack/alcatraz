@@ -120,6 +120,9 @@ func displayConfigDrift(w io.Writer, drift *state.DriftChanges, runtimeChanged b
 		if drift.Workdir != nil {
 			_, _ = fmt.Fprintf(w, "  Workdir: %s → %s\n", drift.Workdir[0], drift.Workdir[1])
 		}
+		if drift.WorkdirExclude {
+			_, _ = fmt.Fprintf(w, "  Workdir exclude: changed\n")
+		}
 		if drift.CommandUp != nil {
 			_, _ = fmt.Fprintf(w, "  Commands.up: changed\n")
 		}

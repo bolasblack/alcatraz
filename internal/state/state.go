@@ -186,8 +186,9 @@ type DriftChanges struct {
 	CommandUp *[2]string
 	Memory    *[2]string
 	CPUs      *[2]int
-	Mounts    bool // true if changed (slice comparison, no diff detail)
-	Envs      bool // true if changed (map comparison, no diff detail)
+	WorkdirExclude bool // true if changed (slice comparison, no diff detail)
+	Mounts         bool // true if changed (slice comparison, no diff detail)
+	Envs           bool // true if changed (map comparison, no diff detail)
 }
 
 // DetectConfigDrift compares the state's config with the given config.
@@ -208,14 +209,15 @@ func (s *State) DetectConfigDrift(current *config.Config) *DriftChanges {
 // See AGD-015 for pattern details.
 func enforceConfigFieldCompleteness(cfg *config.Config) {
 	type fields struct {
-		Image     string
-		Workdir   string
-		Runtime   config.RuntimeType
-		Commands  config.Commands
-		Mounts    []config.MountConfig
-		Resources config.Resources
-		Envs      map[string]config.EnvValue
-		Network   config.Network
+		Image          string
+		Workdir        string
+		WorkdirExclude []string
+		Runtime        config.RuntimeType
+		Commands       config.Commands
+		Mounts         []config.MountConfig
+		Resources      config.Resources
+		Envs           map[string]config.EnvValue
+		Network        config.Network
 	}
 	_ = fields(*cfg)
 
@@ -274,6 +276,9 @@ func compareConfigs(old, new *config.Config) *DriftChanges {
 	if old.Workdir != new.Workdir {
 		c.Workdir = &[2]string{old.Workdir, new.Workdir}
 	}
+	if !stringSlicesEqual(old.WorkdirExclude, new.WorkdirExclude) {
+		c.WorkdirExclude = true
+	}
 	if old.Runtime != new.Runtime {
 		c.Runtime = &[2]string{string(old.Runtime), string(new.Runtime)}
 	}
@@ -302,6 +307,19 @@ func compareConfigs(old, new *config.Config) *DriftChanges {
 // UpdateConfig updates the config in the state.
 func (s *State) UpdateConfig(cfg *config.Config) {
 	s.Config = cfg
+}
+
+// stringSlicesEqual checks if two string slices are equal.
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // hasEnvLiteralDrift checks if env configuration has changed in ways that require rebuild.

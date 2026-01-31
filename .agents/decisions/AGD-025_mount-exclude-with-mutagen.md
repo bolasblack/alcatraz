@@ -187,6 +187,28 @@ Podman has some mount features that Docker doesn't have (like glob mount), but n
 
 ### Configuration Format
 
+#### workdir_exclude
+
+Shorthand for excluding patterns from the workdir mount:
+
+```toml
+image = "ubuntu:latest"
+workdir = "/workspace"
+workdir_exclude = ["node_modules", ".git", "dist"]
+```
+
+During config normalization (`LoadConfig`), the workdir is inserted as `Mounts[0]`:
+
+```go
+MountConfig{Source: ".", Target: cfg.Workdir, Exclude: cfg.WorkdirExclude}
+```
+
+This eliminates special-casing in the runtime layer — all mounts (including workdir) are processed uniformly. The `-w` flag is still set separately from `cfg.Workdir`.
+
+A mount targeting the same path as workdir is rejected as a conflict (use `workdir_exclude` instead).
+
+#### mounts with excludes
+
 Extend `mounts` to support both simple strings and detailed objects:
 
 ```toml
@@ -198,14 +220,11 @@ mounts = [
 # Extended format with excludes
 [[mounts]]
 source = "/Users/me/project"
-target = "/workspace"
+target = "/data"
 readonly = false
 exclude = [
   "**/.env.prod",
-  "**/.env.local",
   "**/secrets/",
-  "**/*.key",
-  "**/*.pem",
 ]
 ```
 
@@ -223,6 +242,10 @@ exclude = [
 - `**/` matches any directory depth
 - `*.ext` matches files with extension
 - `dir/` matches directory
+
+### Mutagen Availability Check
+
+When any mount requires Mutagen (determined by `ShouldUseMutagen`), `alca up` validates that the `mutagen` binary is available before proceeding. If not found, the command fails early with an install link.
 
 ### Recommended Default Excludes
 
@@ -277,11 +300,20 @@ func isOrbStack() bool {
 - **External dependency**: Requires `mutagen` binary installed
 - **Complexity**: More moving parts than simple bind mount
 
+### Exclude Change Strategy
+
+When exclude patterns change, drift detection triggers a **full container rebuild** (current behavior). This is intentional:
+
+- **Adding excludes** (more patterns): Mutagen-only refresh would suffice (files just stop syncing), but rebuild is simpler and safe
+- **Removing excludes** (fewer patterns): Previously excluded files may have diverged between host and container. Mutagen uses `two-way-safe` mode — same-name files with different content become **conflicts** that require manual resolution. Rebuilding avoids this entirely since the new container starts fresh
+
+**Future optimization**: For "adding excludes" only, a Mutagen-only session refresh (terminate + recreate) could skip container rebuild. "Removing excludes" should always rebuild to avoid conflicts.
+
 ### Future Work
 
 - Orphan file detection: Track files created at excluded paths inside container
-- Conflict resolution UI: Handle bidirectional sync conflicts gracefully
 - Mutagen health monitoring: Detect and recover from sync failures
+- Mutagen-only refresh: Skip container rebuild when only adding exclude patterns (see Exclude Change Strategy above)
 
 ## Appendix: Ideal FUSE Sidecar Solution (Blocked)
 

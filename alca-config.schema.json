@@ -46,6 +46,13 @@
           "type": "string",
           "description": "Working directory inside container"
         },
+        "workdir_exclude": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Patterns to exclude from workdir mount (requires Mutagen)"
+        },
         "runtime": {
           "type": "string",
           "enum": [

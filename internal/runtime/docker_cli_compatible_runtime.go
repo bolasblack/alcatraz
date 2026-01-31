@@ -79,7 +79,7 @@ func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, pro
 
 		// Re-setup Mutagen syncs for stopped container restart
 		// Container ID may have changed, need to refresh syncs
-		if err := r.setupMutagenSyncs(env, cfg, st, name, progressOut); err != nil {
+		if err := r.setupMutagenSyncs(env, cfg, st, name, projectDir, progressOut); err != nil {
 			return fmt.Errorf("failed to setup Mutagen syncs: %w", err)
 		}
 
@@ -99,7 +99,7 @@ func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, pro
 
 	// Setup Mutagen syncs for mounts that require it
 	// See AGD-025 for platform-specific mount optimization
-	if err := r.setupMutagenSyncs(env, cfg, st, name, progressOut); err != nil {
+	if err := r.setupMutagenSyncs(env, cfg, st, name, projectDir, progressOut); err != nil {
 		return fmt.Errorf("failed to setup Mutagen syncs: %w", err)
 	}
 
@@ -129,17 +129,24 @@ func (r *dockerCLICompatibleRuntime) buildRunArgs(env *RuntimeEnv, cfg *config.C
 	// Add mounts (only those not requiring Mutagen sync)
 	// Mounts with excludes are handled separately via Mutagen.
 	// See AGD-025 for mount strategy decisions.
+	// Note: cfg.Mounts[0] is the workdir mount (Source="."), resolved to projectDir here.
 	platform := DetectPlatform(env)
 	for _, mount := range cfg.Mounts {
 		if ShouldUseMutagen(platform, mount.HasExcludes()) {
 			// Skip - will be handled by Mutagen sync in setupMutagenSyncs()
 			continue
 		}
-		args = append(args, "-v", mount.String())
+		// Resolve "." source to projectDir (workdir mount normalized in config)
+		source := mount.Source
+		if source == "." {
+			source = projectDir
+		}
+		mountStr := fmt.Sprintf("%s:%s", source, mount.Target)
+		if mount.Readonly {
+			mountStr += ":ro"
+		}
+		args = append(args, "-v", mountStr)
 	}
-
-	// Mount project directory
-	args = append(args, "-v", fmt.Sprintf("%s:%s", projectDir, cfg.Workdir))
 
 	// Add resource limits if configured
 	if cfg.Resources.Memory != "" {
@@ -176,7 +183,7 @@ func (r *dockerCLICompatibleRuntime) executeUpCommand(env *RuntimeEnv, container
 
 // setupMutagenSyncs creates Mutagen sync sessions for mounts that require it.
 // See AGD-025 for platform-specific mount optimization decisions.
-func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *config.Config, st *state.State, containerName string, progressOut io.Writer) error {
+func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *config.Config, st *state.State, containerName, projectDir string, progressOut io.Writer) error {
 	platform := DetectPlatform(env)
 
 	// First, terminate any existing syncs for this project to avoid duplicates
@@ -197,17 +204,23 @@ func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *con
 			continue
 		}
 
-		util.ProgressStep(progressOut, "Setting up Mutagen sync for %s -> %s\n", mount.Source, mount.Target)
+		// Resolve "." source to projectDir (workdir mount normalized in config)
+		source := mount.Source
+		if source == "." {
+			source = projectDir
+		}
+
+		util.ProgressStep(progressOut, "Setting up Mutagen sync for %s -> %s\n", source, mount.Target)
 
 		sync := MutagenSync{
 			Name:    MutagenSessionName(st.ProjectID, i),
-			Source:  mount.Source,
+			Source:  source,
 			Target:  MutagenTarget(containerID, mount.Target),
 			Ignores: mount.Exclude,
 		}
 
 		if err := sync.Create(env); err != nil {
-			return fmt.Errorf("failed to create Mutagen sync for %s: %w", mount.Source, err)
+			return fmt.Errorf("failed to create Mutagen sync for %s: %w", source, err)
 		}
 	}
 

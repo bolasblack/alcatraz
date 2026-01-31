@@ -4,6 +4,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -148,6 +149,31 @@ type MountConfig struct {
 	Exclude  []string `toml:"exclude,omitempty" json:"exclude,omitempty" jsonschema:"description=Glob patterns to exclude (optional)"`
 }
 
+// UnmarshalJSON supports both string ("source:target[:ro]") and object formats.
+// This provides backward compatibility with state files saved before MountConfig
+// was changed from string to struct.
+func (m *MountConfig) UnmarshalJSON(data []byte) error {
+	// Try string format first (backward compat)
+	var s string
+	if json.Unmarshal(data, &s) == nil {
+		parsed, err := ParseMount(s)
+		if err != nil {
+			return err
+		}
+		*m = parsed
+		return nil
+	}
+
+	// Object format
+	type mountConfigAlias MountConfig
+	var alias mountConfigAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	*m = MountConfig(alias)
+	return nil
+}
+
 // ParseMount parses a mount string "source:target[:ro]" into MountConfig.
 func ParseMount(s string) (MountConfig, error) {
 	parts := strings.Split(s, ":")
@@ -256,14 +282,15 @@ func MountsEqual(a, b []MountConfig) bool {
 // Config represents the Alcatraz container configuration (after processing).
 // This is the final merged config used internally by the program.
 type Config struct {
-	Image     string
-	Workdir   string
-	Runtime   RuntimeType
-	Commands  Commands
-	Mounts    []MountConfig
-	Resources Resources
-	Envs      map[string]EnvValue
-	Network   Network
+	Image          string
+	Workdir        string
+	WorkdirExclude []string
+	Runtime        RuntimeType
+	Commands       Commands
+	Mounts         []MountConfig
+	Resources      Resources
+	Envs           map[string]EnvValue
+	Network        Network
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -346,20 +373,22 @@ func (RawMountSlice) JSONSchema() *jsonschema.Schema {
 // RawConfig represents the raw configuration as written in .alca.toml files.
 // Used for TOML parsing and JSON schema generation.
 type RawConfig struct {
-	Includes  []string       `toml:"includes,omitempty" json:"includes,omitempty" jsonschema:"description=Other config files to include and merge (supports glob patterns)"`
-	Image     string         `toml:"image" json:"image" jsonschema:"description=Container image to use"`
-	Workdir   string         `toml:"workdir,omitempty" json:"workdir,omitempty" jsonschema:"description=Working directory inside container"`
-	Runtime   RuntimeType    `toml:"runtime,omitempty" json:"runtime,omitempty" jsonschema:"enum=auto,enum=docker,description=Container runtime selection"`
-	Commands  Commands       `toml:"commands,omitempty" json:"commands,omitempty" jsonschema:"description=Lifecycle commands"`
-	Mounts    RawMountSlice  `toml:"mounts,omitempty" json:"mounts,omitempty"`
-	Resources Resources      `toml:"resources,omitempty" json:"resources,omitempty" jsonschema:"description=Container resource limits"`
-	Envs      RawEnvValueMap `toml:"envs,omitempty" json:"envs,omitempty"`
-	Network   Network        `toml:"network,omitempty" json:"network,omitempty" jsonschema:"description=Network configuration"`
+	Includes       []string       `toml:"includes,omitempty" json:"includes,omitempty" jsonschema:"description=Other config files to include and merge (supports glob patterns)"`
+	Image          string         `toml:"image" json:"image" jsonschema:"description=Container image to use"`
+	Workdir        string         `toml:"workdir,omitempty" json:"workdir,omitempty" jsonschema:"description=Working directory inside container"`
+	WorkdirExclude []string       `toml:"workdir_exclude,omitempty" json:"workdir_exclude,omitempty" jsonschema:"description=Patterns to exclude from workdir mount (requires Mutagen)"`
+	Runtime        RuntimeType    `toml:"runtime,omitempty" json:"runtime,omitempty" jsonschema:"enum=auto,enum=docker,description=Container runtime selection"`
+	Commands       Commands       `toml:"commands,omitempty" json:"commands,omitempty" jsonschema:"description=Lifecycle commands"`
+	Mounts         RawMountSlice  `toml:"mounts,omitempty" json:"mounts,omitempty"`
+	Resources      Resources      `toml:"resources,omitempty" json:"resources,omitempty" jsonschema:"description=Container resource limits"`
+	Envs           RawEnvValueMap `toml:"envs,omitempty" json:"envs,omitempty"`
+	Network        Network        `toml:"network,omitempty" json:"network,omitempty" jsonschema:"description=Network configuration"`
 }
 
 // LoadConfig reads and parses a configuration file from the given path.
 // Supports includes directive for composable configuration.
 // Applies defaults for missing fields: runtime defaults to "auto", workdir to "/workspace".
+// Normalizes workdir into Mounts[0] with any excludes.
 func LoadConfig(env *util.Env, path string) (Config, error) {
 	cfg, err := LoadWithIncludes(env, path)
 	if err != nil {
@@ -378,6 +407,21 @@ func LoadConfig(env *util.Env, path string) (Config, error) {
 	if cfg.Workdir == "" {
 		cfg.Workdir = DefaultWorkdir
 	}
+
+	// Check for mount target conflicts with workdir
+	for _, mount := range cfg.Mounts {
+		if mount.Target == cfg.Workdir {
+			return Config{}, fmt.Errorf("mount target %q conflicts with workdir; use workdir_exclude instead of a separate mount", cfg.Workdir)
+		}
+	}
+
+	// Normalize: insert workdir as Mounts[0]
+	workdirMount := MountConfig{
+		Source:  ".",
+		Target:  cfg.Workdir,
+		Exclude: cfg.WorkdirExclude,
+	}
+	cfg.Mounts = append([]MountConfig{workdirMount}, cfg.Mounts...)
 
 	return cfg, nil
 }

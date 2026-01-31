@@ -103,15 +103,16 @@ func processIncludes(env *util.Env, includes []string, baseDir string, visited m
 func rawToConfig(raw RawConfig) (Config, error) {
 	// Mirror type ensures all RawConfig fields are explicitly handled (AGD-015).
 	type rawConfigFields struct {
-		Includes  []string
-		Image     string
-		Workdir   string
-		Runtime   RuntimeType
-		Commands  Commands
-		Mounts    RawMountSlice
-		Resources Resources
-		Envs      RawEnvValueMap
-		Network   Network
+		Includes       []string
+		Image          string
+		Workdir        string
+		WorkdirExclude []string
+		Runtime        RuntimeType
+		Commands       Commands
+		Mounts         RawMountSlice
+		Resources      Resources
+		Envs           RawEnvValueMap
+		Network        Network
 	}
 	_ = rawConfigFields(raw)
 
@@ -132,14 +133,15 @@ func rawToConfig(raw RawConfig) (Config, error) {
 	}
 
 	return Config{
-		Image:     raw.Image,
-		Workdir:   raw.Workdir,
-		Runtime:   raw.Runtime,
-		Commands:  raw.Commands,
-		Mounts:    mounts,
-		Resources: raw.Resources,
-		Envs:      envs,
-		Network:   raw.Network,
+		Image:          raw.Image,
+		Workdir:        raw.Workdir,
+		WorkdirExclude: raw.WorkdirExclude,
+		Runtime:        raw.Runtime,
+		Commands:       raw.Commands,
+		Mounts:         mounts,
+		Resources:      raw.Resources,
+		Envs:           envs,
+		Network:        raw.Network,
 	}, nil
 }
 
@@ -267,14 +269,15 @@ func mergeConfigs(base, overlay Config) Config {
 	// Mirror type ensures all Config fields are explicitly handled (AGD-015).
 	// Adding a new field to Config will cause a compile error here.
 	type configFields struct {
-		Image     string
-		Workdir   string
-		Runtime   RuntimeType
-		Commands  Commands
-		Mounts    []MountConfig
-		Resources Resources
-		Envs      map[string]EnvValue
-		Network   Network
+		Image          string
+		Workdir        string
+		WorkdirExclude []string
+		Runtime        RuntimeType
+		Commands       Commands
+		Mounts         []MountConfig
+		Resources      Resources
+		Envs           map[string]EnvValue
+		Network        Network
 	}
 	_ = configFields(base)
 	_ = configFields(overlay)
@@ -287,6 +290,9 @@ func mergeConfigs(base, overlay Config) Config {
 	}
 	if overlay.Workdir != "" {
 		result.Workdir = overlay.Workdir
+	}
+	if len(overlay.WorkdirExclude) > 0 {
+		result.WorkdirExclude = overlay.WorkdirExclude
 	}
 	if overlay.Runtime != "" {
 		result.Runtime = overlay.Runtime

@@ -65,6 +65,11 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 	util.ProgressStep(out, "Detected runtime: %s\n", rt.Name())
 
+	// Validate Mutagen is available if any mount requires it
+	if err := runtime.ValidateMutagenAvailable(runtimeEnv, cfg); err != nil {
+		return err
+	}
+
 	// Validate mount excludes compatibility with runtime
 	// See AGD-025 for rootless Podman + Mutagen limitations
 	if err := runtime.ValidateMountExcludes(runtimeEnv, rt, cfg); err != nil {

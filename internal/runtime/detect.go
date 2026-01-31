@@ -184,6 +184,72 @@ func IsRootlessPodman(env *RuntimeEnv) (bool, error) {
 	return strings.TrimSpace(string(output)) == "true", nil
 }
 
+// ErrMutagenNotFound is returned when Mutagen is required but not installed.
+var ErrMutagenNotFound = fmt.Errorf("mutagen is required but not installed.\n\n" +
+	"Install Mutagen: https://mutagen.io/documentation/introduction/installation/\n\n" +
+	"Mutagen is needed when mount excludes are configured (workdir_exclude or mounts.exclude)")
+
+// minMutagenMacOS is the minimum Mutagen version required on macOS.
+// v0.18.0 has a known protocol handshake bug on macOS (mutagen-io/mutagen#531).
+var minMutagenMacOS = [3]int{0, 18, 1}
+
+// ValidateMutagenAvailable checks if Mutagen is needed and available.
+// Returns ErrMutagenNotFound if not installed, or an error if the version is
+// too old on macOS (v0.18.0 has a known handshake bug).
+func ValidateMutagenAvailable(env *RuntimeEnv, cfg *config.Config) error {
+	platform := DetectPlatform(env)
+
+	needsMutagen := false
+	for _, mount := range cfg.Mounts {
+		if ShouldUseMutagen(platform, mount.HasExcludes()) {
+			needsMutagen = true
+			break
+		}
+	}
+	if !needsMutagen {
+		return nil
+	}
+
+	output, err := env.Cmd.Run("mutagen", "version")
+	if err != nil {
+		return ErrMutagenNotFound
+	}
+
+	// On macOS, enforce minimum version due to protocol handshake bug in v0.18.0
+	if platform == PlatformMacDockerDesktop || platform == PlatformMacOrbStack {
+		version := strings.TrimSpace(string(output))
+		if err := checkMutagenMinVersion(version, minMutagenMacOS); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// checkMutagenMinVersion parses a semver string and checks against minimum.
+func checkMutagenMinVersion(version string, min [3]int) error {
+	var major, minor, patch int
+	if _, err := fmt.Sscanf(version, "%d.%d.%d", &major, &minor, &patch); err != nil {
+		// Can't parse version, don't block
+		return nil
+	}
+
+	current := [3]int{major, minor, patch}
+	for i := 0; i < 3; i++ {
+		if current[i] > min[i] {
+			return nil
+		}
+		if current[i] < min[i] {
+			return fmt.Errorf("mutagen %s is not supported on macOS (protocol handshake bug).\n\n"+
+				"Please upgrade: brew upgrade mutagen\n"+
+				"Minimum required: %d.%d.%d\n\n"+
+				"See: https://github.com/mutagen-io/mutagen/issues/531",
+				version, min[0], min[1], min[2])
+		}
+	}
+	return nil // equal
+}
+
 // ErrRootlessPodmanExcludes is returned when mount excludes are configured on rootless Podman.
 var ErrRootlessPodmanExcludes = fmt.Errorf("mount excludes not supported on rootless Podman")
 

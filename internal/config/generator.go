@@ -139,14 +139,15 @@ func configToRaw(c Config) RawConfig {
 	// Mirror type ensures all Config fields are explicitly handled (AGD-015).
 	// Adding a new field to Config will cause a compile error here.
 	type configFields struct {
-		Image     string
-		Workdir   string
-		Runtime   RuntimeType
-		Commands  Commands
-		Mounts    []MountConfig
-		Resources Resources
-		Envs      map[string]EnvValue
-		Network   Network
+		Image          string
+		Workdir        string
+		WorkdirExclude []string
+		Runtime        RuntimeType
+		Commands       Commands
+		Mounts         []MountConfig
+		Resources      Resources
+		Envs           map[string]EnvValue
+		Network        Network
 	}
 	_ = configFields(c)
 
