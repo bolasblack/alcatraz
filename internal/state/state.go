@@ -180,12 +180,12 @@ func (s *State) ContainerLabels(projectDir string) map[string]string {
 // Boolean fields are used for complex types (slices, maps) where showing the full
 // diff would be verbose - the CLI just reports "changed" for these.
 type DriftChanges struct {
-	Image     *[2]string // [old, new] if changed
-	Workdir   *[2]string
-	Runtime   *[2]string
-	CommandUp *[2]string
-	Memory    *[2]string
-	CPUs      *[2]int
+	Image          *[2]string // [old, new] if changed
+	Workdir        *[2]string
+	Runtime        *[2]string
+	CommandUp      *[2]string
+	Memory         *[2]string
+	CPUs           *[2]int
 	WorkdirExclude bool // true if changed (slice comparison, no diff detail)
 	Mounts         bool // true if changed (slice comparison, no diff detail)
 	Envs           bool // true if changed (map comparison, no diff detail)

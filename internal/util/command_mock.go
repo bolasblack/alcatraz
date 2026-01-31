@@ -109,12 +109,8 @@ func (m *MockCommandRunner) Run(name string, args ...string) ([]byte, error) {
 }
 
 // RunQuiet implements CommandRunner.
-func (m *MockCommandRunner) RunQuiet(name string, args ...string) (string, error) {
-	output, err := m.Run(name, args...)
-	if err != nil {
-		return string(output), err
-	}
-	return "", nil
+func (m *MockCommandRunner) RunQuiet(name string, args ...string) ([]byte, error) {
+	return m.Run(name, args...)
 }
 
 // SudoRun implements CommandRunner.
@@ -143,7 +139,7 @@ func (m *MockCommandRunner) SudoRun(name string, args ...string) error {
 
 // SudoRunQuiet implements CommandRunner.
 // Records with key "sudo name arg1 arg2 ...".
-func (m *MockCommandRunner) SudoRunQuiet(name string, args ...string) (string, error) {
+func (m *MockCommandRunner) SudoRunQuiet(name string, args ...string) ([]byte, error) {
 	key := "sudo " + name
 	if len(args) > 0 {
 		key = "sudo " + name + " " + strings.Join(args, " ")
@@ -156,21 +152,18 @@ func (m *MockCommandRunner) SudoRunQuiet(name string, args ...string) (string, e
 	})
 
 	if result, ok := m.commands[key]; ok {
-		if result.Err != nil {
-			return string(result.Output), result.Err
-		}
-		return "", nil
+		return result.Output, result.Err
 	}
 
 	if m.defaultError != nil {
-		return "", fmt.Errorf("%w: %s", m.defaultError, key)
+		return nil, fmt.Errorf("%w: %s", m.defaultError, key)
 	}
-	return "", nil
+	return nil, nil
 }
 
-// SudoRunScript implements CommandRunner.
+// SudoRunScriptQuiet implements CommandRunner.
 // Records with key "sudo sh -c <script>" (truncated to first line for readability).
-func (m *MockCommandRunner) SudoRunScript(script string) error {
+func (m *MockCommandRunner) SudoRunScriptQuiet(script string) error {
 	key := "sudo sh script"
 
 	m.Calls = append(m.Calls, CommandCall{

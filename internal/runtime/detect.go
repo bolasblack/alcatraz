@@ -167,7 +167,7 @@ func Available(env *RuntimeEnv) []Runtime {
 // IsOrbStack returns true if Docker is running on OrbStack.
 // It checks the Docker info output for "OrbStack" in the OperatingSystem field.
 func IsOrbStack(env *RuntimeEnv) (bool, error) {
-	output, err := env.Cmd.Run("docker", "info", "--format", "{{.OperatingSystem}}")
+	output, err := env.Cmd.RunQuiet("docker", "info", "--format", "{{.OperatingSystem}}")
 	if err != nil {
 		return false, fmt.Errorf("failed to get docker info: %w", err)
 	}
@@ -177,7 +177,7 @@ func IsOrbStack(env *RuntimeEnv) (bool, error) {
 // IsRootlessPodman returns true if Podman is running in rootless mode.
 // See AGD-025 for why rootless Podman blocks mount excludes.
 func IsRootlessPodman(env *RuntimeEnv) (bool, error) {
-	output, err := env.Cmd.Run("podman", "info", "--format", "{{.Host.Security.Rootless}}")
+	output, err := env.Cmd.RunQuiet("podman", "info", "--format", "{{.Host.Security.Rootless}}")
 	if err != nil {
 		return false, fmt.Errorf("failed to get podman info: %w", err)
 	}
@@ -210,7 +210,7 @@ func ValidateMutagenAvailable(env *RuntimeEnv, cfg *config.Config) error {
 		return nil
 	}
 
-	output, err := env.Cmd.Run("mutagen", "version")
+	output, err := env.Cmd.RunQuiet("mutagen", "version")
 	if err != nil {
 		return ErrMutagenNotFound
 	}

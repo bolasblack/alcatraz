@@ -68,7 +68,7 @@ func parseLineValue(output, prefix string) (string, bool) {
 // getOrbStackSubnet gets the OrbStack network subnet from orbctl config.
 // Returns the subnet (e.g., "192.168.138.0/23") or error.
 func (p *pfHelper) getOrbStackSubnet(env *util.Env) (string, error) {
-	output, err := env.Cmd.Run("orbctl", "config", "show")
+	output, err := env.Cmd.RunQuiet("orbctl", "config", "show")
 	if err != nil {
 		return "", fmt.Errorf("failed to run orbctl config show: %w", err)
 	}
@@ -83,7 +83,7 @@ func (p *pfHelper) getOrbStackSubnet(env *util.Env) (string, error) {
 // getPhysicalInterfaces returns all physical network interfaces on macOS.
 // Uses `networksetup -listallhardwareports` to enumerate.
 func (p *pfHelper) getPhysicalInterfaces(env *util.Env) ([]string, error) {
-	output, err := env.Cmd.Run("networksetup", "-listallhardwareports")
+	output, err := env.Cmd.RunQuiet("networksetup", "-listallhardwareports")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list hardware ports: %w", err)
 	}

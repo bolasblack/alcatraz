@@ -189,7 +189,7 @@ func commitWithSudo(env *util.Env, tfs *transact.TransactFs, out io.Writer, msg 
 		groups := transact.GroupOpsBySudo(ctx.Ops)
 
 		// Execute each group with the appropriate method
-		if err := transact.ExecuteGroupedOps(ctx.BaseFs, groups, env.Cmd.SudoRunScript); err != nil {
+		if err := transact.ExecuteGroupedOps(ctx.BaseFs, groups, env.Cmd.SudoRunScriptQuiet); err != nil {
 			return nil, err
 		}
 

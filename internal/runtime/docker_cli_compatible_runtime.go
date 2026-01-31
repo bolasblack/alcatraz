@@ -46,7 +46,7 @@ func (r *dockerCLICompatibleRuntime) Available(env *RuntimeEnv) bool {
 		versionFormat = "{{.Version}}"
 	}
 
-	_, err := env.Cmd.Run(r.command, "version", "--format", versionFormat)
+	_, err := env.Cmd.RunQuiet(r.command, "version", "--format", versionFormat)
 	return err == nil
 }
 
@@ -91,7 +91,7 @@ func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, pro
 	args := r.buildRunArgs(env, cfg, projectDir, st, name)
 
 	util.ProgressStep(progressOut, "Creating container: %s\n", name)
-	output, err := env.Cmd.Run(r.command, args...)
+	output, err := env.Cmd.RunQuiet(r.command, args...)
 	if err != nil {
 		return fmt.Errorf("%s run failed: %w: %s", r.command, err, string(output))
 	}
@@ -260,7 +260,7 @@ func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *con
 
 // getContainerID returns the container ID for a given container name.
 func (r *dockerCLICompatibleRuntime) getContainerID(env *RuntimeEnv, containerName string) (string, error) {
-	output, err := env.Cmd.Run(r.command, "inspect", "--format", "{{.Id}}", containerName)
+	output, err := env.Cmd.RunQuiet(r.command, "inspect", "--format", "{{.Id}}", containerName)
 	if err != nil {
 		return "", fmt.Errorf("failed to inspect container: %w", err)
 	}
@@ -295,7 +295,7 @@ func (r *dockerCLICompatibleRuntime) Down(env *RuntimeEnv, projectDir string, st
 	}
 
 	// Stop the container
-	output, err := env.Cmd.Run(r.command, "stop", containerName)
+	output, err := env.Cmd.RunQuiet(r.command, "stop", containerName)
 	if err != nil {
 		if !containsNoSuchContainer(string(output)) {
 			return fmt.Errorf("%s stop failed: %w: %s", r.command, err, string(output))
@@ -384,7 +384,7 @@ func (r *dockerCLICompatibleRuntime) Status(env *RuntimeEnv, projectDir string, 
 
 // inspectContainer gets container status by name.
 func (r *dockerCLICompatibleRuntime) inspectContainer(env *RuntimeEnv, containerName string) (ContainerStatus, error) {
-	output, err := env.Cmd.Run(r.command, "inspect",
+	output, err := env.Cmd.RunQuiet(r.command, "inspect",
 		"--format", "{{.State.Status}}|{{.Id}}|{{.Name}}|{{.Config.Image}}|{{.State.StartedAt}}",
 		containerName)
 	if err != nil {
@@ -408,7 +408,7 @@ func (r *dockerCLICompatibleRuntime) inspectContainer(env *RuntimeEnv, container
 // findContainerByLabel finds a container by its project label.
 func (r *dockerCLICompatibleRuntime) findContainerByLabel(env *RuntimeEnv, projectID string) (ContainerStatus, error) {
 	labelFilter := state.LabelFilter(projectID)
-	output, err := env.Cmd.Run(r.command, "ps", "-a",
+	output, err := env.Cmd.RunQuiet(r.command, "ps", "-a",
 		"--filter", labelFilter,
 		"--format", "{{.Names}}")
 	if err != nil {
@@ -449,7 +449,7 @@ func (r *dockerCLICompatibleRuntime) Reload(env *RuntimeEnv, cfg *config.Config,
 // Uses batch inspect to avoid N+1 query pattern (single docker inspect call for all containers).
 func (r *dockerCLICompatibleRuntime) ListContainers(env *RuntimeEnv) ([]ContainerInfo, error) {
 	// Get names of all alca-managed containers
-	output, err := env.Cmd.Run(r.command, "ps", "-a",
+	output, err := env.Cmd.RunQuiet(r.command, "ps", "-a",
 		"--filter", "label="+state.LabelProjectID,
 		"--format", "{{.Names}}")
 	if err != nil {
@@ -489,7 +489,7 @@ func (r *dockerCLICompatibleRuntime) batchInspectContainers(env *RuntimeEnv, nam
 	args := []string{"inspect", "--format", format}
 	args = append(args, names...)
 
-	output, err := env.Cmd.Run(r.command, args...)
+	output, err := env.Cmd.RunQuiet(r.command, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect containers: %w", err)
 	}
@@ -529,7 +529,7 @@ func (r *dockerCLICompatibleRuntime) RemoveContainer(env *RuntimeEnv, name strin
 
 // removeContainer removes a container by name (internal).
 func (r *dockerCLICompatibleRuntime) removeContainer(env *RuntimeEnv, name string) error {
-	output, err := env.Cmd.Run(r.command, "rm", "-f", name)
+	output, err := env.Cmd.RunQuiet(r.command, "rm", "-f", name)
 	if err != nil {
 		if containsNoSuchContainer(string(output)) {
 			return nil
@@ -541,7 +541,7 @@ func (r *dockerCLICompatibleRuntime) removeContainer(env *RuntimeEnv, name strin
 
 // startContainer starts a stopped container by name.
 func (r *dockerCLICompatibleRuntime) startContainer(env *RuntimeEnv, name string) error {
-	output, err := env.Cmd.Run(r.command, "start", name)
+	output, err := env.Cmd.RunQuiet(r.command, "start", name)
 	if err != nil {
 		return fmt.Errorf("%s start failed: %w: %s", r.command, err, string(output))
 	}

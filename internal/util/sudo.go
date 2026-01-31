@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 )
 
 // sudoRunContext runs a command with sudo and context support.
@@ -17,11 +16,10 @@ func sudoRunContext(ctx context.Context, name string, args ...string) error {
 	return cmd.Run()
 }
 
-// sudoRunQuietContext runs a command with sudo and context, suppressing output on success.
-func sudoRunQuietContext(ctx context.Context, name string, args ...string) (string, error) {
+// sudoRunQuietContext runs a command with sudo and context, returning full output.
+func sudoRunQuietContext(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := sudoCommandContext(ctx, name, args...)
-	out, err := cmd.CombinedOutput()
-	return strings.TrimSpace(string(out)), err
+	return cmd.CombinedOutput()
 }
 
 // sudoRunScriptContext writes script to a temp file and executes it with sudo.

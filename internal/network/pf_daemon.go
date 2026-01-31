@@ -199,7 +199,7 @@ func (p *pfHelper) loadInitialPfRules(env *util.Env, progress ProgressFunc) erro
 	output, err := env.Cmd.SudoRunQuiet("sh", "-c", cmd)
 	if err != nil {
 		// Not fatal - rules may not exist yet, will be loaded when created
-		if output != "" {
+		if len(output) > 0 {
 			progress("Note: %s\n", output)
 		} else {
 			progress("Note: No initial rules to load (this is normal on first install)\n")

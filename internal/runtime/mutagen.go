@@ -23,7 +23,7 @@ type MutagenSync struct {
 // CLI command: mutagen sync create --name=<name> [--ignore=<pattern>]... <source> <target>
 func (m *MutagenSync) Create(env *RuntimeEnv) error {
 	args := m.buildCreateArgs()
-	output, err := env.Cmd.Run("mutagen", args...)
+	output, err := env.Cmd.RunQuiet("mutagen", args...)
 	if err != nil {
 		return fmt.Errorf("mutagen sync create failed: %w: %s", err, string(output))
 	}
@@ -45,7 +45,7 @@ const (
 func (m *MutagenSync) flushWithRetry(env *RuntimeEnv, maxRetries int, interval time.Duration) error {
 	args := []string{"sync", "flush", m.Name}
 	for attempt := range maxRetries {
-		output, err := env.Cmd.Run("mutagen", args...)
+		output, err := env.Cmd.RunQuiet("mutagen", args...)
 		if err == nil {
 			return nil
 		}
@@ -67,7 +67,7 @@ func isFlushRetryable(output string) bool {
 // CLI command: mutagen sync terminate <name>
 func (m *MutagenSync) Terminate(env *RuntimeEnv) error {
 	args := m.buildTerminateArgs()
-	output, err := env.Cmd.Run("mutagen", args...)
+	output, err := env.Cmd.RunQuiet("mutagen", args...)
 	if err != nil {
 		if strings.Contains(string(output), "no matching sessions") {
 			return nil
@@ -101,7 +101,7 @@ func (m *MutagenSync) buildTerminateArgs() []string {
 // CLI command: mutagen sync list --template='{{.Name}}'
 func ListMutagenSyncs(env *RuntimeEnv, namePrefix string) ([]string, error) {
 	args := buildListSyncsArgs()
-	output, err := env.Cmd.Run("mutagen", args...)
+	output, err := env.Cmd.RunQuiet("mutagen", args...)
 	if err != nil {
 		return []string{}, nil
 	}
