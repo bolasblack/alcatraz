@@ -1,8 +1,10 @@
 ---
-title: "Security Threat Model"
-description: "AI-Untouchable guarantee analysis and social engineering threat vectors"
+title: Security Threat Model
+description: AI-Untouchable guarantee analysis and social engineering threat vectors
 tags: security
+updated_by: AGD-026
 ---
+
 
 ## Context
 

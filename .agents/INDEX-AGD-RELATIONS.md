@@ -11,3 +11,7 @@ decisions/AGD-020_remove-apple-containerization-runtime.md -(o)-> decisions/AGD-
 decisions/AGD-022_config-includes-support.md -(u)-> decisions/AGD-009_cli-design.md
 decisions/AGD-023_macos-lan-access-pf-anchor.md -(u)-> decisions/AGD-005_defer-network-isolation.md
 decisions/AGD-025_mount-exclude-with-mutagen.md -(u)-> decisions/AGD-009_cli-design.md
+decisions/AGD-026_container-capabilities-config.md -(u)-> decisions/AGD-009_cli-design.md
+decisions/AGD-026_container-capabilities-config.md -(u)-> decisions/AGD-007_security-threat-model.md
+decisions/AGD-027_linux-nftables-primary.md -(u)-> decisions/AGD-008_firewall-crash-safety.md
+decisions/AGD-028_lan-access-syntax.md -(u)-> decisions/AGD-027_linux-nftables-primary.md

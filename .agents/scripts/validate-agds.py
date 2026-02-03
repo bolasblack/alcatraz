@@ -2,36 +2,31 @@
 """
 Validate AGD (Agent-centric Governance Decision) files.
 
-Managed by: agent-centric skill (auto-updated, do not edit manually)
+DO NOT MODIFY THIS FILE - it will be automatically updated from the skill directory.
 To disable auto-update, add this filename to disableAutoUpdateScripts in config.json.
 
 Usage:
-    validate-agds.py                    # Auto-detect from CLAUDE_PROJECT_DIR
-    validate-agds.py <project_dir>      # Manual override
+    python3 validate-agds.py <project_dir>
 
 Called by PostToolUse hook after Write/Edit operations.
 Reads hook input from stdin to determine if validation is needed.
-
-Exit codes:
-- 0: Valid, all AGD files pass validation
-- 2: Invalid, validation errors found (blocking - Claude will process)
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
 from utils import (
+    AGENTS_DIR,
     AGD_PATTERN,
     REF_FIELDS,
     find_agd_file,
     get_agents_dir,
     get_decisions_dir,
-    get_project_dir,
-    load_config,
-    parse_frontmatter,
 )
+from simple_yaml import parse_frontmatter
 
 
 def validate_tags(tags_str: str, allowed_tags: list[str], filename: str) -> list[str]:
@@ -68,6 +63,50 @@ def validate_references(frontmatter: dict, decisions_dir: Path, filename: str) -
     return errors
 
 
+def check_script_updates(project_dir: Path, skill_dir: Path | None) -> None:
+    """Check and update scripts if needed."""
+    if not skill_dir or not skill_dir.exists():
+        return
+
+    config_path = get_agents_dir(project_dir) / 'config.json'
+    if not config_path.exists():
+        return
+
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return
+
+    disable_config = config.get('disableAutoUpdateScripts', [])
+    if disable_config is True:
+        return
+
+    scripts_dir = get_agents_dir(project_dir) / 'scripts'
+    skill_scripts_dir = skill_dir / 'scripts'
+
+    if not skill_scripts_dir.exists():
+        return
+
+    for script_file in skill_scripts_dir.glob('*'):
+        if script_file.name in disable_config:
+            continue
+
+        target_file = scripts_dir / script_file.name
+
+        try:
+            skill_content = script_file.read_text()
+            if target_file.exists():
+                if skill_content == target_file.read_text():
+                    continue
+
+            target_file.write_text(skill_content)
+            if os.access(script_file, os.X_OK):
+                target_file.chmod(target_file.stat().st_mode | 0o111)
+        except IOError:
+            pass
+
+
 def validate_all_decisions(project_dir: Path) -> list[str]:
     """Validate all AGD files in the decisions directory."""
     errors = []
@@ -77,8 +116,13 @@ def validate_all_decisions(project_dir: Path) -> list[str]:
     if not decisions_dir.exists():
         return errors
 
-    config = load_config(config_path)
-    allowed_tags = config.get('tags', []) if config else []
+    allowed_tags = []
+    if config_path.exists():
+        try:
+            with open(config_path) as f:
+                allowed_tags = json.load(f).get('tags', [])
+        except (json.JSONDecodeError, IOError):
+            pass
 
     for agd_file in decisions_dir.glob(AGD_PATTERN):
         try:
@@ -87,7 +131,7 @@ def validate_all_decisions(project_dir: Path) -> list[str]:
             errors.append(f"{agd_file.name}: cannot read file - {e}")
             continue
 
-        frontmatter = parse_frontmatter(content)
+        frontmatter, _ = parse_frontmatter(content)
 
         if 'tags' in frontmatter:
             errors.extend(validate_tags(frontmatter['tags'], allowed_tags, agd_file.name))
@@ -98,7 +142,13 @@ def validate_all_decisions(project_dir: Path) -> list[str]:
 
 
 def main():
-    project_dir = get_project_dir()
+    # Get project directory from: 1) argument, 2) CLAUDE_PROJECT_DIR env, 3) current directory
+    if len(sys.argv) >= 2:
+        project_dir = Path(sys.argv[1])
+    elif 'CLAUDE_PROJECT_DIR' in os.environ:
+        project_dir = Path(os.environ['CLAUDE_PROJECT_DIR'])
+    else:
+        project_dir = Path(os.getcwd())
 
     try:
         hook_input = json.load(sys.stdin)
@@ -108,26 +158,26 @@ def main():
     tool_input = hook_input.get('tool_input', {})
     file_path = tool_input.get('file_path', '')
 
-    # Only validate if the operation was on an AGD file
     if file_path:
         decisions_path = str(get_decisions_dir(project_dir))
         if decisions_path not in file_path:
             sys.exit(0)
 
+    skill_dir = os.environ.get('CLAUDE_SKILL_DIR')
+    if skill_dir:
+        check_script_updates(project_dir, Path(skill_dir))
+
     errors = validate_all_decisions(project_dir)
 
     if errors:
-        print("\n⚠️  AGD VALIDATION ERRORS", file=sys.stderr)
-        print("=" * 50, file=sys.stderr)
+        print("AGD Validation Errors:", file=sys.stderr)
         for error in errors:
             print(f"  - {error}", file=sys.stderr)
-        print("\n📋 To fix tag errors:", file=sys.stderr)
-        print("   1. Add missing tags to .agents/config.json", file=sys.stderr)
-        print("   2. Or update the AGD file to use existing tags", file=sys.stderr)
-        print("\n📋 To fix reference errors:", file=sys.stderr)
-        print("   Check that referenced AGD files exist", file=sys.stderr)
-        print("=" * 50, file=sys.stderr)
-        sys.exit(2)
+        sys.exit(1)
+
+    generate_index_script = get_agents_dir(project_dir) / 'scripts' / 'generate-index.py'
+    if generate_index_script.exists():
+        os.system(f'python3 "{generate_index_script}" "{project_dir}"')
 
     sys.exit(0)
 

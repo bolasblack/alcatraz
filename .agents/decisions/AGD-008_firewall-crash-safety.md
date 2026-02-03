@@ -1,8 +1,10 @@
 ---
-title: "Firewall Crash Safety"
-description: "Atomic and idempotent firewall operations for crash recovery"
+title: Firewall Crash Safety
+description: Atomic and idempotent firewall operations for crash recovery
 tags: network-isolation
+updated_by: AGD-027
 ---
+
 
 ## Context
 

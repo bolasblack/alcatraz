@@ -27,4 +27,7 @@ decisions/AGD-021_keep-cli-over-sdk-for-container-runtime.md: #runtime
 decisions/AGD-022_config-includes-support.md: #config
 decisions/AGD-023_macos-lan-access-pf-anchor.md: #macos, #network-isolation, #security, #config
 decisions/AGD-024_transactfs-ideal-model.md: #tooling, #security, #cli
-decisions/AGD-025_mount-exclude-with-mutagen.md: #file-isolation, #config, #macos, #linux
+decisions/AGD-025_mount-exclude-with-mutagen.md: #file-isolation, #config, #macos, #linux, #runtime
+decisions/AGD-026_container-capabilities-config.md: #config, #security, #runtime
+decisions/AGD-027_linux-nftables-primary.md: #linux, #network-isolation, #security
+decisions/AGD-028_lan-access-syntax.md: #config, #network-isolation, #security

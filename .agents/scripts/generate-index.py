@@ -2,38 +2,39 @@
 """
 Generate index files for the Agent Centric framework.
 
-Managed by: agent-centric skill (auto-updated, do not edit manually)
+DO NOT MODIFY THIS FILE - it will be automatically updated from the skill directory.
 To disable auto-update, add this filename to disableAutoUpdateScripts in config.json.
 
 Usage:
-    generate-index.py                    # Auto-detect from CLAUDE_PROJECT_DIR
-    generate-index.py <project_dir>      # Manual override
+    python3 generate-index.py <project_dir>
 
 Generates:
     - INDEX-TAGS.md: Files with their tags
     - INDEX-AGD-RELATIONS.md: AGD obsoletes/updates relationships
+    - Bidirectional sync: Updates target AGD files with reverse references
 """
 
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 from utils import (
     AGD_PATTERN,
     DECISIONS_DIR,
-    RELATION_FIELDS,
     find_agd_file,
     get_agd_sort_key,
     get_agents_dir,
     get_decisions_dir,
-    get_project_dir,
-    parse_frontmatter,
 )
+from simple_yaml import parse_frontmatter, serialize_frontmatter
 
 
-def collect_agd_data(decisions_dir: Path) -> tuple[list, list]:
+def collect_agd_data(decisions_dir: Path) -> tuple[list, list, dict]:
     """Collect tags and relations data from all AGD files."""
     tags_data = []       # [(relative_path, [tags])]
     relations_data = []  # [(source_path, target_path, relation_type)]
+    reverse_refs = {}    # {target_file: {'updated_by': set(), 'obsoleted_by': set()}}
 
     for agd_file in sorted(decisions_dir.glob(AGD_PATTERN), key=lambda f: get_agd_sort_key(f.name)):
         try:
@@ -41,7 +42,7 @@ def collect_agd_data(decisions_dir: Path) -> tuple[list, list]:
         except IOError:
             continue
 
-        frontmatter = parse_frontmatter(content)
+        frontmatter, _ = parse_frontmatter(content)
         relative_path = f"{DECISIONS_DIR}/{agd_file.name}"
 
         # Collect tags
@@ -51,7 +52,7 @@ def collect_agd_data(decisions_dir: Path) -> tuple[list, list]:
                 tags_data.append((relative_path, tags))
 
         # Collect relationships
-        for field, rel_type in RELATION_FIELDS:
+        for field, rel_type in [('obsoletes', 'o'), ('updates', 'u')]:
             if field in frontmatter and frontmatter[field]:
                 refs = [r.strip() for r in frontmatter[field].split(',') if r.strip()]
                 for ref in refs:
@@ -60,7 +61,17 @@ def collect_agd_data(decisions_dir: Path) -> tuple[list, list]:
                         target_path = f"{DECISIONS_DIR}/{target_file.name}"
                         relations_data.append((relative_path, target_path, rel_type))
 
-    return tags_data, relations_data
+                        # Build reverse mapping
+                        if target_file not in reverse_refs:
+                            reverse_refs[target_file] = {'updated_by': set(), 'obsoleted_by': set()}
+
+                        reverse_field = 'obsoleted_by' if field == 'obsoletes' else 'updated_by'
+                        from utils import get_agd_id
+                        source_id = get_agd_id(agd_file.name)
+                        if source_id:
+                            reverse_refs[target_file][reverse_field].add(source_id)
+
+    return tags_data, relations_data, reverse_refs
 
 
 def write_tags_index(agents_dir: Path, tags_data: list) -> None:
@@ -88,25 +99,99 @@ def write_relations_index(agents_dir: Path, relations_data: list) -> None:
     (agents_dir / 'INDEX-AGD-RELATIONS.md').write_text(content)
 
 
-def generate_indexes(project_dir: Path) -> tuple[int, int]:
-    """Generate all index files. Returns (tags_count, relations_count)."""
+def sync_reverse_references(reverse_refs: dict) -> int:
+    """
+    Update target AGD files with computed reverse references.
+    Returns number of files modified.
+    """
+    modified_count = 0
+
+    for target_file, refs in reverse_refs.items():
+        try:
+            content = target_file.read_text()
+        except IOError:
+            continue
+
+        # Parse current frontmatter
+        frontmatter, _ = parse_frontmatter(content)
+
+        # Extract body (everything after second ---)
+        if content.startswith('---'):
+            parts = content.split('---', 2)
+            body = parts[2] if len(parts) >= 3 else ''
+        else:
+            body = content
+
+        # Compute needed reverse refs
+        needs_update = False
+        for field in ['updated_by', 'obsoleted_by']:
+            computed_refs = refs[field]
+            if not computed_refs:
+                continue
+
+            # Get existing refs in frontmatter
+            existing = set()
+            if field in frontmatter and frontmatter[field]:
+                existing = {r.strip() for r in frontmatter[field].split(',') if r.strip()}
+
+            # Merge: add computed refs to existing (additive only)
+            merged = existing | computed_refs
+
+            # Update if changed
+            if merged != existing:
+                frontmatter[field] = ', '.join(sorted(merged, key=get_agd_sort_key))
+                needs_update = True
+
+        if not needs_update:
+            continue
+
+        # Write atomically using temp file + rename
+        new_content = serialize_frontmatter(frontmatter, body)
+
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            dir=target_file.parent,
+            delete=False,
+            prefix='.tmp_',
+            suffix='.md'
+        ) as tmp:
+            tmp.write(new_content)
+            tmp_path = Path(tmp.name)
+
+        # Atomic rename
+        tmp_path.replace(target_file)
+        modified_count += 1
+
+    return modified_count
+
+
+def generate_indexes(project_dir: Path) -> None:
+    """Generate all index files and sync bidirectional references."""
     agents_dir = get_agents_dir(project_dir)
     decisions_dir = get_decisions_dir(project_dir)
 
     if not decisions_dir.exists():
-        return 0, 0
+        return
 
-    tags_data, relations_data = collect_agd_data(decisions_dir)
+    tags_data, relations_data, reverse_refs = collect_agd_data(decisions_dir)
     write_tags_index(agents_dir, tags_data)
     write_relations_index(agents_dir, relations_data)
 
-    return len(tags_data), len(relations_data)
+    # Sync reverse references back to target files
+    modified_count = sync_reverse_references(reverse_refs)
+    if modified_count > 0:
+        print(f"Updated {modified_count} AGD file(s) with reverse references")
 
 
 def main():
-    project_dir = get_project_dir()
-    tags_count, relations_count = generate_indexes(project_dir)
-    print(f"✓ Index updated: {tags_count} files tagged, {relations_count} relations")
+    # Get project directory from: 1) argument, 2) CLAUDE_PROJECT_DIR env, 3) current directory
+    if len(sys.argv) >= 2:
+        project_dir = Path(sys.argv[1])
+    elif 'CLAUDE_PROJECT_DIR' in os.environ:
+        project_dir = Path(os.environ['CLAUDE_PROJECT_DIR'])
+    else:
+        project_dir = Path(os.getcwd())
+    generate_indexes(project_dir)
     sys.exit(0)
 
 
