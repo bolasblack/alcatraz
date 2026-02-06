@@ -1,4 +1,6 @@
-package network
+//go:build darwin
+
+package pf
 
 import (
 	"fmt"
@@ -6,6 +8,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"github.com/bolasblack/alcatraz/internal/network/shared"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
@@ -38,7 +41,7 @@ func TestIsLaunchDaemonLoaded(t *testing.T) {
 			mock := util.NewMockCommandRunner()
 			mock.Expect("launchctl print system/"+launchDaemonLabel, nil, tt.cmdErr)
 
-			env := util.NewTestEnv()
+			env := shared.NewTestNetworkEnv()
 			env.Cmd = mock
 
 			result := h.isLaunchDaemonLoaded(env)
@@ -95,7 +98,7 @@ func TestIsHelperInstalled(t *testing.T) {
 				mock.ExpectFailure("launchctl print system/"+launchDaemonLabel, fmt.Errorf("not found"))
 			}
 
-			env := util.NewTestEnv()
+			env := shared.NewTestNetworkEnv()
 			env.Cmd = mock
 
 			if tt.anchorDirExists {
@@ -135,7 +138,7 @@ func TestFlushPfRules(t *testing.T) {
 			mock := util.NewMockCommandRunner()
 			mock.Expect("sudo pfctl -a "+pfAnchorName+" -F all", nil, tt.cmdErr)
 
-			env := util.NewTestEnv()
+			env := shared.NewTestNetworkEnv()
 			env.Cmd = mock
 
 			err := h.flushPfRules(env, nil)
@@ -210,14 +213,30 @@ anchor "com.apple/*"
 			setup: func(fs afero.Fs) {
 				// Write correct plist
 				_ = afero.WriteFile(fs, launchDaemonPath, []byte(launchDaemonPlist), 0644)
-				// Write pf.conf with new anchor format
+				// Write pf.conf with BOTH nat-anchor and filter anchor
+				content := `scrub-anchor "com.apple/*"
+nat-anchor "alcatraz"
+anchor "com.apple/*"
+anchor "alcatraz"
+`
+				_ = afero.WriteFile(fs, pfConfPath, []byte(content), 0644)
+			},
+			expected: false,
+		},
+		{
+			name: "has nat-anchor but missing filter anchor",
+			setup: func(fs afero.Fs) {
+				// Write correct plist
+				_ = afero.WriteFile(fs, launchDaemonPath, []byte(launchDaemonPlist), 0644)
+				// Write pf.conf with only nat-anchor (missing filter anchor "alcatraz")
+				// This tests the substring bug: "nat-anchor X" contains "anchor X"
 				content := `scrub-anchor "com.apple/*"
 nat-anchor "alcatraz"
 anchor "com.apple/*"
 `
 				_ = afero.WriteFile(fs, pfConfPath, []byte(content), 0644)
 			},
-			expected: false,
+			expected: true, // Should need update because filter anchor is missing
 		},
 		{
 			name: "plist missing - not considered needing update",
@@ -246,7 +265,7 @@ anchor "com.apple/*"
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			memFs := afero.NewMemMapFs()
-			env := &util.Env{Fs: memFs}
+			env := &shared.NetworkEnv{Fs: memFs}
 			tt.setup(memFs)
 
 			result := h.isHelperNeedsUpdate(env)

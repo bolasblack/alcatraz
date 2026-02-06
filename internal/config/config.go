@@ -140,6 +140,47 @@ type Network struct {
 	LANAccess []string `toml:"lan-access,omitempty" json:"lan-access,omitempty" jsonschema:"description=LAN access configuration (currently only '*' is supported)"`
 }
 
+// Caps represents container capability configuration (resolved form).
+// See AGD-026 for capability configuration design decisions.
+type Caps struct {
+	Drop []string `json:"drop,omitempty"`
+	Add  []string `json:"add,omitempty"`
+}
+
+// DefaultCaps are the capabilities added in additive mode.
+// These are sufficient for most AI development workflows.
+// See AGD-026 for rationale.
+var DefaultCaps = []string{"CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL"}
+
+// DefaultCapsDrop returns the default drop list (ALL) for additive mode.
+func DefaultCapsDrop() []string {
+	return []string{"ALL"}
+}
+
+// CapsEqual compares two Caps structs for equality.
+func CapsEqual(a, b Caps) bool {
+	if !StringSlicesEqual(a.Drop, b.Drop) {
+		return false
+	}
+	if !StringSlicesEqual(a.Add, b.Add) {
+		return false
+	}
+	return true
+}
+
+// StringSlicesEqual checks if two string slices are equal.
+func StringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // MountConfig represents a mount configuration.
 // See AGD-025 for mount exclude implementation with Mutagen.
 type MountConfig struct {
@@ -291,20 +332,7 @@ type Config struct {
 	Resources      Resources
 	Envs           map[string]EnvValue
 	Network        Network
-}
-
-// DefaultConfig returns a Config with sensible defaults.
-// See AGD-009 for default values rationale.
-func DefaultConfig() Config {
-	return Config{
-		Image:   "nixos/nix",
-		Workdir: DefaultWorkdir,
-		Runtime: RuntimeAuto,
-		Commands: Commands{
-			// Auto-enter nix develop if flake.nix exists
-			Enter: "[ -f flake.nix ] && exec nix develop",
-		},
-	}
+	Caps           Caps
 }
 
 // NormalizeRuntime returns the runtime type, defaulting to auto if empty.
@@ -334,6 +362,55 @@ func (c *Config) ValidateEnvs() error {
 		}
 	}
 	return nil
+}
+
+// RawCaps is the raw type for caps field in TOML.
+// Supports two modes:
+//   - Array mode (additive): caps = ["DAC_OVERRIDE", "SETUID"]
+//   - Object mode (full control): [caps] drop = [...] add = [...]
+//
+// See AGD-026 for design rationale.
+type RawCaps = any
+
+// capsJSONSchema returns the JSON schema for the caps field.
+func capsJSONSchema() *jsonschema.Schema {
+	dropAddProps := jsonschema.NewProperties()
+	dropAddProps.Set("drop", &jsonschema.Schema{
+		Type:        "array",
+		Items:       &jsonschema.Schema{Type: "string"},
+		Description: "Capabilities to drop (e.g., [\"NET_RAW\", \"MKNOD\"])",
+	})
+	dropAddProps.Set("add", &jsonschema.Schema{
+		Type:        "array",
+		Items:       &jsonschema.Schema{Type: "string"},
+		Description: "Capabilities to add (e.g., [\"CHOWN\", \"FOWNER\"])",
+	})
+
+	return &jsonschema.Schema{
+		OneOf: []*jsonschema.Schema{
+			{
+				Type:        "array",
+				Items:       &jsonschema.Schema{Type: "string"},
+				Description: "Additive mode: capabilities to add beyond defaults (CHOWN, DAC_OVERRIDE, FOWNER, KILL). Drops ALL first.",
+			},
+			{
+				Type:                 "object",
+				Properties:           dropAddProps,
+				AdditionalProperties: jsonschema.FalseSchema,
+				Description:          "Full control mode: explicit drop and add lists (no implicit defaults)",
+			},
+		},
+		Description: "Container capability configuration. Array = additive mode, Object = full control mode.",
+	}
+}
+
+// JSONSchemaExtend implements jsonschema.Extender to fix up fields that
+// can't self-describe (RawCaps is `any` for TOML polymorphic decoding).
+func (RawConfig) JSONSchemaExtend(schema *jsonschema.Schema) {
+	if schema.Properties == nil {
+		return
+	}
+	schema.Properties.Set("caps", capsJSONSchema())
 }
 
 // RawMountSlice is a slice of raw mount values for RawConfig.
@@ -372,6 +449,11 @@ func (RawMountSlice) JSONSchema() *jsonschema.Schema {
 
 // RawConfig represents the raw configuration as written in .alca.toml files.
 // Used for TOML parsing and JSON schema generation.
+//
+// Convention: "Raw" prefix denotes TOML intermediate representation types that use
+// flexible types (any, []any) for polymorphic TOML decoding. These are converted
+// to their validated, strongly-typed counterparts (Config, []MountConfig, EnvValue, Caps)
+// during parsing in rawToConfig(). See also: RawMountSlice, RawEnvValueMap, RawCaps.
 type RawConfig struct {
 	Includes       []string       `toml:"includes,omitempty" json:"includes,omitempty" jsonschema:"description=Other config files to include and merge (supports glob patterns)"`
 	Image          string         `toml:"image" json:"image" jsonschema:"description=Container image to use"`
@@ -383,6 +465,7 @@ type RawConfig struct {
 	Resources      Resources      `toml:"resources,omitempty" json:"resources,omitempty" jsonschema:"description=Container resource limits"`
 	Envs           RawEnvValueMap `toml:"envs,omitempty" json:"envs,omitempty"`
 	Network        Network        `toml:"network,omitempty" json:"network,omitempty" jsonschema:"description=Network configuration"`
+	Caps           RawCaps        `toml:"caps,omitempty" json:"caps,omitempty"`
 }
 
 // LoadConfig reads and parses a configuration file from the given path.
@@ -412,6 +495,15 @@ func LoadConfig(env *util.Env, path string) (Config, error) {
 	for _, mount := range cfg.Mounts {
 		if mount.Target == cfg.Workdir {
 			return Config{}, fmt.Errorf("mount target %q conflicts with workdir; use workdir_exclude instead of a separate mount", cfg.Workdir)
+		}
+	}
+
+	// Apply default caps if not specified (AGD-026)
+	// Empty Caps means no caps field was in config - apply secure defaults
+	if len(cfg.Caps.Drop) == 0 && len(cfg.Caps.Add) == 0 {
+		cfg.Caps = Caps{
+			Drop: DefaultCapsDrop(),
+			Add:  append([]string{}, DefaultCaps...),
 		}
 	}
 

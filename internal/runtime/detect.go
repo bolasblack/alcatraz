@@ -5,9 +5,17 @@ import (
 	"io"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/util"
+)
+
+// platformCache caches DetectPlatform results per RuntimeEnv instance.
+// This avoids repeated shell calls to "docker info" during a single operation.
+var (
+	platformCacheMu sync.RWMutex
+	platformCache   = make(map[*RuntimeEnv]RuntimePlatform)
 )
 
 // RuntimePlatform represents the detected platform for mount strategy decisions.
@@ -26,18 +34,36 @@ const (
 // DetectPlatform returns the current runtime platform.
 // Used for deciding mount strategy (bind mount vs Mutagen sync).
 // See AGD-025 for platform detection rationale.
+// Results are cached per RuntimeEnv instance to avoid repeated shell calls.
 func DetectPlatform(env *RuntimeEnv) RuntimePlatform {
+	// Fast path for Linux - no shell calls needed
 	if runtime.GOOS == "linux" {
 		return PlatformLinux
 	}
 
-	// macOS: check for OrbStack vs Docker Desktop
+	// Check cache first
+	platformCacheMu.RLock()
+	if cached, ok := platformCache[env]; ok {
+		platformCacheMu.RUnlock()
+		return cached
+	}
+	platformCacheMu.RUnlock()
+
+	// Detect platform (requires shell call)
+	var platform RuntimePlatform
 	isOrb, err := IsOrbStack(env)
 	if err == nil && isOrb {
-		return PlatformMacOrbStack
+		platform = PlatformMacOrbStack
+	} else {
+		platform = PlatformMacDockerDesktop
 	}
 
-	return PlatformMacDockerDesktop
+	// Cache the result
+	platformCacheMu.Lock()
+	platformCache[env] = platform
+	platformCacheMu.Unlock()
+
+	return platform
 }
 
 // ShouldUseMutagen determines if Mutagen sync should be used for a mount.
@@ -151,17 +177,6 @@ func ByName(name string) Runtime {
 		}
 	}
 	return nil
-}
-
-// Available returns all currently available runtimes on this system.
-func Available(env *RuntimeEnv) []Runtime {
-	var available []Runtime
-	for _, rt := range All() {
-		if rt.Available(env) {
-			available = append(available, rt)
-		}
-	}
-	return available
 }
 
 // IsOrbStack returns true if Docker is running on OrbStack.

@@ -31,3 +31,21 @@ func (s *MyStruct) Equals(other *MyStruct) bool {
 ```
 
 This ensures adding a new field to the struct will cause a compile error, forcing review of the comparison logic.
+
+### Compile-Time Interface Assertions
+
+When a concrete type implements an interface, add a compile-time assertion at package level to guarantee it:
+
+```go
+var _ MyInterface = (*MyImplementation)(nil)
+```
+
+This catches interface drift at compile time rather than runtime. Apply this in all packages where interfaces are defined and implemented.
+
+### Env Dependency Injection (AGD-029)
+
+All `internal/` business modules receive `Fs` and `CommandRunner` from external callers — never create them internally. CLI is the entry point that creates and injects deps.
+
+- **Simple modules**: use `util.Env` directly
+- **Complex modules** (network, runtime, etc.): define own `XxxEnv` with `NewXxxEnv(fs, cmd)` constructor
+- **CLI pattern**: create `cmdRunner`, `fs` once, pass the same instance to all Env constructors

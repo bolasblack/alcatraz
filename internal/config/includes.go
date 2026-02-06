@@ -113,6 +113,7 @@ func rawToConfig(raw RawConfig) (Config, error) {
 		Resources      Resources
 		Envs           RawEnvValueMap
 		Network        Network
+		Caps           RawCaps
 	}
 	_ = rawConfigFields(raw)
 
@@ -132,6 +133,12 @@ func rawToConfig(raw RawConfig) (Config, error) {
 		return Config{}, err
 	}
 
+	// Convert raw caps to Caps
+	caps, err := parseCaps(raw.Caps)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		Image:          raw.Image,
 		Workdir:        raw.Workdir,
@@ -142,7 +149,80 @@ func rawToConfig(raw RawConfig) (Config, error) {
 		Resources:      raw.Resources,
 		Envs:           envs,
 		Network:        raw.Network,
+		Caps:           caps,
 	}, nil
+}
+
+// parseCaps converts raw caps value to Caps.
+// Supports two modes:
+//   - nil: returns empty Caps (defaults applied later in LoadConfig)
+//   - array of strings: additive mode (Drop=["ALL"], Add=defaults+user)
+//   - object with drop/add: full control mode (use as-is)
+//
+// See AGD-026 for design rationale.
+func parseCaps(val any) (Caps, error) {
+	if val == nil {
+		// No caps field - return empty, defaults applied in LoadConfig
+		return Caps{}, nil
+	}
+
+	switch v := val.(type) {
+	case []any:
+		// Array mode (additive): user specifies additional caps beyond defaults
+		userCaps := make([]string, 0, len(v))
+		for i, item := range v {
+			s, ok := item.(string)
+			if !ok {
+				return Caps{}, fmt.Errorf("caps[%d]: expected string, got %T", i, item)
+			}
+			userCaps = append(userCaps, s)
+		}
+		// Additive mode: drop ALL, add defaults + user caps
+		add := append([]string{}, DefaultCaps...)
+		for _, cap := range userCaps {
+			// Avoid duplicates with defaults
+			isDuplicate := false
+			for _, def := range DefaultCaps {
+				if cap == def {
+					isDuplicate = true
+					break
+				}
+			}
+			if !isDuplicate {
+				add = append(add, cap)
+			}
+		}
+		return Caps{
+			Drop: DefaultCapsDrop(),
+			Add:  add,
+		}, nil
+
+	case map[string]any:
+		// Object mode (full control): user specifies exact drop/add lists
+		var caps Caps
+		if drop, ok := v["drop"].([]any); ok {
+			for i, item := range drop {
+				s, ok := item.(string)
+				if !ok {
+					return Caps{}, fmt.Errorf("caps.drop[%d]: expected string, got %T", i, item)
+				}
+				caps.Drop = append(caps.Drop, s)
+			}
+		}
+		if add, ok := v["add"].([]any); ok {
+			for i, item := range add {
+				s, ok := item.(string)
+				if !ok {
+					return Caps{}, fmt.Errorf("caps.add[%d]: expected string, got %T", i, item)
+				}
+				caps.Add = append(caps.Add, s)
+			}
+		}
+		return caps, nil
+
+	default:
+		return Caps{}, fmt.Errorf("caps: expected array or object, got %T", val)
+	}
 }
 
 // parseMounts converts raw mount values to MountConfig slice.
@@ -278,6 +358,7 @@ func mergeConfigs(base, overlay Config) Config {
 		Resources      Resources
 		Envs           map[string]EnvValue
 		Network        Network
+		Caps           Caps
 	}
 	_ = configFields(base)
 	_ = configFields(overlay)
@@ -330,6 +411,11 @@ func mergeConfigs(base, overlay Config) Config {
 	// Network: deep merge
 	if len(overlay.Network.LANAccess) > 0 {
 		result.Network.LANAccess = append(result.Network.LANAccess, overlay.Network.LANAccess...)
+	}
+
+	// Caps: overlay wins if non-empty (full replacement, not merge)
+	if len(overlay.Caps.Drop) > 0 || len(overlay.Caps.Add) > 0 {
+		result.Caps = overlay.Caps
 	}
 
 	return result

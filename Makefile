@@ -1,14 +1,50 @@
 .PHONY: build test clean docs docs-markdown docs-man docs-html docs-serve vendor vendor-clean vendor-hash-update schema lint
+.PHONY: build\:linux\:amd64 build\:linux\:arm64
+.PHONY: build\:linux\:amd64-static build\:linux\:arm64-static
+.PHONY: build\:darwin\:amd64 build\:darwin\:arm64
 
 LINT_DIR := out_lint
 OUT_DIR := out
 BIN_DIR := $(OUT_DIR)/bin
 
-build: schema $(BIN_DIR)/alca
+GO_SRC := $(shell find . -name '*.go' -type f -not -path './.alca.cache/*' -not -path './vendor/*' -not -path './.git/*')
 
-$(BIN_DIR)/alca: $(shell find . -name '*.go' -type f)
+# ========= Cross-compilation builds =========
+# Build all targets
+build: schema build\:linux\:amd64 build\:linux\:arm64 build\:linux\:amd64-static build\:linux\:arm64-static build\:darwin\:amd64 build\:darwin\:arm64
+
+# Linux glibc builds
+build\:linux\:amd64: $(BIN_DIR)/alca-linux-amd64
+$(BIN_DIR)/alca-linux-amd64: $(GO_SRC)
 	@mkdir -p $(BIN_DIR)
-	go build -o $(BIN_DIR)/alca ./cmd/alca
+	GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/alca
+
+build\:linux\:arm64: $(BIN_DIR)/alca-linux-arm64
+$(BIN_DIR)/alca-linux-arm64: $(GO_SRC)
+	@mkdir -p $(BIN_DIR)
+	GOOS=linux GOARCH=arm64 go build -o $@ ./cmd/alca
+
+# Linux static builds (CGO_ENABLED=0 for pure Go static binary)
+build\:linux\:amd64-static: $(BIN_DIR)/alca-linux-amd64-static
+$(BIN_DIR)/alca-linux-amd64-static: $(GO_SRC)
+	@mkdir -p $(BIN_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/alca
+
+build\:linux\:arm64-static: $(BIN_DIR)/alca-linux-arm64-static
+$(BIN_DIR)/alca-linux-arm64-static: $(GO_SRC)
+	@mkdir -p $(BIN_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $@ ./cmd/alca
+
+# Darwin builds
+build\:darwin\:amd64: $(BIN_DIR)/alca-darwin-amd64
+$(BIN_DIR)/alca-darwin-amd64: $(GO_SRC)
+	@mkdir -p $(BIN_DIR)
+	GOOS=darwin GOARCH=amd64 go build -o $@ ./cmd/alca
+
+build\:darwin\:arm64: $(BIN_DIR)/alca-darwin-arm64
+$(BIN_DIR)/alca-darwin-arm64: $(GO_SRC)
+	@mkdir -p $(BIN_DIR)
+	GOOS=darwin GOARCH=arm64 go build -o $@ ./cmd/alca
 
 test:
 	go test -coverprofile=out_coverage ./...
@@ -27,7 +63,8 @@ $(CUSTOM_GCL): $(shell find tools/fslint -name '*.go' -type f) config/golangci-l
 	@rm -f .custom-gcl.yml
 
 lint: $(CUSTOM_GCL)
-	$(CUSTOM_GCL) run ./...
+	GOOS=linux $(CUSTOM_GCL) run ./...
+	GOOS=darwin $(CUSTOM_GCL) run ./...
 
 # ========= Vendor management =========
 vendor:

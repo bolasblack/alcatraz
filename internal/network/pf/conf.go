@@ -1,7 +1,6 @@
-// Package network provides network configuration helpers for Alcatraz.
-// This file contains pf (packet filter) configuration functions for macOS.
-// See AGD-023 for LAN access design decisions.
-package network
+//go:build darwin
+
+package pf
 
 import (
 	"fmt"
@@ -10,7 +9,7 @@ import (
 
 	"github.com/spf13/afero"
 
-	"github.com/bolasblack/alcatraz/internal/util"
+	"github.com/bolasblack/alcatraz/internal/network/shared"
 )
 
 // pf.conf constants.
@@ -21,78 +20,12 @@ const (
 	pfConfPath = "/etc/pf.conf"
 )
 
-// ensurePfAnchor adds nat-anchor to /etc/pf.conf if not present.
-// Also handles migration from old wildcard format.
-// IMPORTANT: nat-anchor lines must come BEFORE anchor lines in pf.conf.
-func (p *pfHelper) ensurePfAnchor(env *util.Env) error {
-	content, err := afero.ReadFile(env.Fs, pfConfPath)
-	if err != nil {
-		return fmt.Errorf("failed to read pf.conf: %w", err)
-	}
-
-	contentStr := string(content)
-
-	// Check if new anchor already exists (and no old one to migrate)
-	hasNewAnchor := strings.Contains(contentStr, pfAnchorLine)
-	hasOldAnchor := strings.Contains(contentStr, pfOldAnchorLine)
-	if hasNewAnchor && !hasOldAnchor {
-		return nil
-	}
-
-	newLines := parsePfConfAndRemoveOldAnchor(contentStr, pfOldAnchorLine)
-	newLines = insertAnchorLine(newLines, pfAnchorLine)
-
-	return writePfConf(env, newLines)
+// newPfHelper creates a new pfHelper instance.
+func newPfHelper() *pfHelper {
+	return &pfHelper{}
 }
 
-// removePfAnchor removes nat-anchor from /etc/pf.conf.
-func (p *pfHelper) removePfAnchor(env *util.Env) error {
-	content, err := afero.ReadFile(env.Fs, pfConfPath)
-	if err != nil {
-		return fmt.Errorf("failed to read pf.conf: %w", err)
-	}
-
-	if !strings.Contains(string(content), pfAnchorLine) {
-		return nil // Already removed
-	}
-
-	// Remove anchor line
-	lines := strings.Split(string(content), "\n")
-	var newLines []string
-	for _, line := range lines {
-		if strings.TrimSpace(line) != pfAnchorLine {
-			newLines = append(newLines, line)
-		}
-	}
-
-	return writePfConf(env, newLines)
-}
-
-// writeAnchorFile writes a file to the pf anchor directory in the staging filesystem.
-// Ensures the anchor directory exists before writing.
-func (p *pfHelper) writeAnchorFile(env *util.Env, filename, content string) error {
-	if err := env.Fs.MkdirAll(pfAnchorDir, 0755); err != nil {
-		return fmt.Errorf("failed to create anchor directory: %w", err)
-	}
-
-	filePath := filepath.Join(pfAnchorDir, filename)
-	if err := afero.WriteFile(env.Fs, filePath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to stage %s: %w", filename, err)
-	}
-	return nil
-}
-
-// writeSharedRule writes the shared NAT rule file to the staging filesystem.
-func (p *pfHelper) writeSharedRule(env *util.Env, rules string) error {
-	return p.writeAnchorFile(env, sharedRuleFile, rules)
-}
-
-// writeProjectFile writes the project-specific rule file to the staging filesystem.
-func (p *pfHelper) writeProjectFile(env *util.Env, projectDir, content string) error {
-	return p.writeAnchorFile(env, p.projectFileName(projectDir), content)
-}
-
-// parsePfConfAndRemoveOldAnchor parses pf.conf lines and removes old wildcard anchor.
+// parsePfConfAndRemoveOldAnchor parses pf.conf content and removes old anchor line.
 func parsePfConfAndRemoveOldAnchor(content, oldAnchorLine string) []string {
 	lines := strings.Split(content, "\n")
 	var newLines []string
@@ -107,6 +40,130 @@ func parsePfConfAndRemoveOldAnchor(content, oldAnchorLine string) []string {
 	}
 
 	return newLines
+}
+
+// ensurePfAnchor adds nat-anchor and filter anchor to /etc/pf.conf if not present.
+// IMPORTANT: nat-anchor lines must come BEFORE anchor lines in pf.conf.
+func (p *pfHelper) ensurePfAnchor(env *shared.NetworkEnv) error {
+	content, err := afero.ReadFile(env.Fs, pfConfPath)
+	if err != nil {
+		return fmt.Errorf("failed to read pf.conf: %w", err)
+	}
+
+	contentStr := string(content)
+
+	// Check if both anchors already exist using exact line matching.
+	// IMPORTANT: "nat-anchor X" contains "anchor X" as a substring, so we must
+	// use hasExactLine() rather than strings.Contains() to avoid false positives.
+	hasNatAnchor := hasExactLine(contentStr, pfAnchorLine)
+	hasFilterAnchor := hasExactLine(contentStr, pfFilterAnchorLine)
+	if hasNatAnchor && hasFilterAnchor {
+		return nil
+	}
+
+	lines := strings.Split(contentStr, "\n")
+
+	// Insert nat-anchor if not present
+	if !hasNatAnchor {
+		lines = insertAnchorLine(lines, pfAnchorLine)
+	}
+
+	// Insert filter anchor if not present (goes after nat-anchor lines, in filter section)
+	if !hasFilterAnchor {
+		lines = insertFilterAnchorLine(lines, pfFilterAnchorLine)
+	}
+
+	return writePfConf(env, lines)
+}
+
+// removePfAnchor removes both nat-anchor and filter anchor from /etc/pf.conf.
+func (p *pfHelper) removePfAnchor(env *shared.NetworkEnv) error {
+	content, err := afero.ReadFile(env.Fs, pfConfPath)
+	if err != nil {
+		return fmt.Errorf("failed to read pf.conf: %w", err)
+	}
+
+	contentStr := string(content)
+	hasNatAnchor := strings.Contains(contentStr, pfAnchorLine)
+	hasFilterAnchor := strings.Contains(contentStr, pfFilterAnchorLine)
+	if !hasNatAnchor && !hasFilterAnchor {
+		return nil // Already removed
+	}
+
+	// Remove both anchor lines
+	lines := strings.Split(contentStr, "\n")
+	var newLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == pfAnchorLine || trimmed == pfFilterAnchorLine {
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+
+	return writePfConf(env, newLines)
+}
+
+// writeAnchorFile writes a file to the pf anchor directory in the staging filesystem.
+// Ensures the anchor directory exists before writing.
+func (p *pfHelper) writeAnchorFile(env *shared.NetworkEnv, filename, content string) error {
+	if err := env.Fs.MkdirAll(pfAnchorDir, 0755); err != nil {
+		return fmt.Errorf("failed to create anchor directory: %w", err)
+	}
+
+	filePath := filepath.Join(pfAnchorDir, filename)
+	if err := afero.WriteFile(env.Fs, filePath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to stage %s: %w", filename, err)
+	}
+	return nil
+}
+
+// writeSharedRule writes the shared NAT rule file to the staging filesystem.
+func (p *pfHelper) writeSharedRule(env *shared.NetworkEnv, rules string) error {
+	return p.writeAnchorFile(env, sharedRuleFile, rules)
+}
+
+// writeProjectFile writes the project-specific rule file to the staging filesystem.
+func (p *pfHelper) writeProjectFile(env *shared.NetworkEnv, projectDir, content string) error {
+	return p.writeAnchorFile(env, p.projectFileName(projectDir), content)
+}
+
+// insertFilterAnchorLine inserts the filter anchor line at the appropriate position.
+// It should be placed after the last existing "anchor" line in the filter section,
+// or after the last nat-anchor line if no anchor lines exist.
+func insertFilterAnchorLine(lines []string, filterAnchorLine string) []string {
+	lastAnchorIdx := findLastAnchorIndex(lines)
+	if lastAnchorIdx >= 0 {
+		return insertAfterIndex(lines, lastAnchorIdx, filterAnchorLine)
+	}
+
+	// No anchor lines found - insert after last nat-anchor
+	lastNatIdx := findLastNatAnchorIndex(lines)
+	if lastNatIdx >= 0 {
+		return insertAfterIndex(lines, lastNatIdx, filterAnchorLine)
+	}
+
+	// No anchor lines at all - append before trailing empty line
+	if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		result := make([]string, 0, len(lines)+1)
+		result = append(result, lines[:len(lines)-1]...)
+		result = append(result, filterAnchorLine, "")
+		return result
+	}
+
+	return append(lines, filterAnchorLine)
+}
+
+// findLastAnchorIndex finds the index of the last "anchor" (non-nat-anchor) line.
+func findLastAnchorIndex(lines []string) int {
+	lastIdx := -1
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "anchor ") {
+			lastIdx = i
+		}
+	}
+	return lastIdx
 }
 
 // insertAnchorLine inserts the anchor line at the appropriate position.
@@ -178,7 +235,7 @@ func insertBeforeFirstAnchor(lines []string, anchorLine string) []string {
 
 // writePfConf writes the new pf.conf content to the staging filesystem.
 // The actual file write with sudo will happen during commit.
-func writePfConf(env *util.Env, lines []string) error {
+func writePfConf(env *shared.NetworkEnv, lines []string) error {
 	newContent := strings.Join(lines, "\n")
 	if !strings.HasSuffix(newContent, "\n") {
 		newContent += "\n"

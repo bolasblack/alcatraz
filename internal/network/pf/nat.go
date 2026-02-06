@@ -1,10 +1,6 @@
-// Package network provides network configuration helpers for Alcatraz.
-// See AGD-023 for LAN access design decisions.
-//
-// Naming conventions:
-//   - Is*: checks existence or state (e.g., isHelperInstalled)
-//   - Has*: checks possession or configuration (e.g., hasLANAccess)
-package network
+//go:build darwin
+
+package pf
 
 import (
 	"fmt"
@@ -15,7 +11,7 @@ import (
 
 	"github.com/spf13/afero"
 
-	"github.com/bolasblack/alcatraz/internal/util"
+	"github.com/bolasblack/alcatraz/internal/network/shared"
 )
 
 // pf anchor constants for macOS NAT configuration.
@@ -25,16 +21,14 @@ const (
 	pfAnchorDir = "/etc/pf.anchors/alcatraz"
 	// sharedRuleFile is the filename for the shared NAT rule.
 	sharedRuleFile = "_shared"
-	// lanAccessWildcard is the wildcard value for full LAN access.
-	lanAccessWildcard = "*"
 )
 
 // Anchor line patterns for pf.conf.
 var (
 	// pfAnchorLine is the current nat-anchor line format.
 	pfAnchorLine = fmt.Sprintf(`nat-anchor "%s"`, pfAnchorName)
-	// pfOldAnchorLine is the legacy wildcard nat-anchor line format (for migration).
-	pfOldAnchorLine = fmt.Sprintf(`nat-anchor "%s/*"`, pfAnchorName)
+	// pfFilterAnchorLine is the filter anchor line format.
+	pfFilterAnchorLine = fmt.Sprintf(`anchor "%s"`, pfAnchorName)
 )
 
 // parseLineValues extracts values from "key: value" lines in command output.
@@ -67,7 +61,7 @@ func parseLineValue(output, prefix string) (string, bool) {
 
 // getOrbStackSubnet gets the OrbStack network subnet from orbctl config.
 // Returns the subnet (e.g., "192.168.138.0/23") or error.
-func (p *pfHelper) getOrbStackSubnet(env *util.Env) (string, error) {
+func (p *pfHelper) getOrbStackSubnet(env *shared.NetworkEnv) (string, error) {
 	output, err := env.Cmd.RunQuiet("orbctl", "config", "show")
 	if err != nil {
 		return "", fmt.Errorf("failed to run orbctl config show: %w", err)
@@ -82,7 +76,7 @@ func (p *pfHelper) getOrbStackSubnet(env *util.Env) (string, error) {
 
 // getPhysicalInterfaces returns all physical network interfaces on macOS.
 // Uses `networksetup -listallhardwareports` to enumerate.
-func (p *pfHelper) getPhysicalInterfaces(env *util.Env) ([]string, error) {
+func (p *pfHelper) getPhysicalInterfaces(env *shared.NetworkEnv) ([]string, error) {
 	output, err := env.Cmd.RunQuiet("networksetup", "-listallhardwareports")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list hardware ports: %w", err)
@@ -113,7 +107,7 @@ func (p *pfHelper) generateNATRules(subnet string, interfaces []string) string {
 
 // readExistingRuleInterfaces reads the existing rule file.
 // Returns (interfaces, exists, error) where exists indicates if the file was found.
-func (p *pfHelper) readExistingRuleInterfaces(env *util.Env) (interfaces []string, exists bool, err error) {
+func (p *pfHelper) readExistingRuleInterfaces(env *shared.NetworkEnv) (interfaces []string, exists bool, err error) {
 	sharedPath := filepath.Join(pfAnchorDir, sharedRuleFile)
 
 	data, err := afero.ReadFile(env.Fs, sharedPath)
@@ -145,7 +139,7 @@ func (p *pfHelper) parseRuleInterfaces(content string) []string {
 
 // needsRuleUpdate checks if the rule file needs to be updated.
 // Returns (needsUpdate, newInterfaces, error).
-func (p *pfHelper) needsRuleUpdate(env *util.Env) (bool, []string, error) {
+func (p *pfHelper) needsRuleUpdate(env *shared.NetworkEnv) (bool, []string, error) {
 	currentInterfaces, err := p.getPhysicalInterfaces(env)
 	if err != nil {
 		return false, nil, err
@@ -183,7 +177,7 @@ func findNewInterfaces(current, existing []string) []string {
 // deleteProjectFile removes the project-specific rule file.
 // Returns (removeShared, error) where removeShared indicates the shared file
 // should also be removed (no other projects remain).
-func (p *pfHelper) deleteProjectFile(env *util.Env, projectPath string) (removeShared bool, err error) {
+func (p *pfHelper) deleteProjectFile(env *shared.NetworkEnv, projectPath string) (removeShared bool, err error) {
 	filename := p.projectFileName(projectPath)
 	projectFilePath := filepath.Join(pfAnchorDir, filename)
 
@@ -215,7 +209,7 @@ func (p *pfHelper) deleteProjectFile(env *util.Env, projectPath string) (removeS
 }
 
 // deleteSharedRule removes the shared NAT rule file.
-func (p *pfHelper) deleteSharedRule(env *util.Env) error {
+func (p *pfHelper) deleteSharedRule(env *shared.NetworkEnv) error {
 	sharedPath := filepath.Join(pfAnchorDir, sharedRuleFile)
 
 	if err := env.Fs.Remove(sharedPath); err != nil && !os.IsNotExist(err) {
@@ -228,7 +222,7 @@ func (p *pfHelper) deleteSharedRule(env *util.Env) error {
 
 // flushAnchor flushes a pf anchor. Logs a warning on failure (non-fatal).
 // For operations requiring progress reporting, use flushPfRules instead.
-func flushAnchor(env *util.Env, anchorName string) {
+func flushAnchor(env *shared.NetworkEnv, anchorName string) {
 	output, err := env.Cmd.SudoRunQuiet("pfctl", "-a", anchorName, "-F", "all")
 	if err != nil {
 		log.Printf("Warning: pfctl -a %s -F all failed: %v: %s", anchorName, err, output)
@@ -236,7 +230,7 @@ func flushAnchor(env *util.Env, anchorName string) {
 }
 
 // fileExists checks if a file or directory exists.
-func fileExists(env *util.Env, path string) bool {
+func fileExists(env *shared.NetworkEnv, path string) bool {
 	_, err := env.Fs.Stat(path)
 	return err == nil
 }

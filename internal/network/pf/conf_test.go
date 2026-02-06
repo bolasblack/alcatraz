@@ -1,4 +1,6 @@
-package network
+//go:build darwin
+
+package pf
 
 import (
 	"path/filepath"
@@ -498,6 +500,174 @@ func TestWriteProjectFile(t *testing.T) {
 			}
 			if string(content) != tt.content {
 				t.Errorf("project file content = %q, want %q", string(content), tt.content)
+			}
+		})
+	}
+}
+
+func TestFindLastAnchorIndex(t *testing.T) {
+	tests := []struct {
+		name     string
+		lines    []string
+		expected int
+	}{
+		{
+			name:     "single anchor",
+			lines:    []string{`scrub-anchor "test"`, `anchor "com.apple/*"`, `nat-anchor "test"`},
+			expected: 1,
+		},
+		{
+			name:     "multiple anchors returns last",
+			lines:    []string{`anchor "first"`, `nat-anchor "middle"`, `anchor "last"`},
+			expected: 2,
+		},
+		{
+			name:     "no anchor lines",
+			lines:    []string{`scrub-anchor "com.apple/*"`, `nat-anchor "test"`},
+			expected: -1,
+		},
+		{
+			name:     "empty lines",
+			lines:    []string{},
+			expected: -1,
+		},
+		{
+			name:     "whitespace before anchor",
+			lines:    []string{`  anchor "test"`},
+			expected: 0,
+		},
+		{
+			name:     "anchor without space is not matched",
+			lines:    []string{`anchor"nospace"`},
+			expected: -1,
+		},
+		{
+			name:     "nat-anchor is not matched",
+			lines:    []string{`nat-anchor "test"`, `scrub-anchor "test"`},
+			expected: -1,
+		},
+		{
+			name:     "rdr-anchor is not matched",
+			lines:    []string{`rdr-anchor "test"`},
+			expected: -1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := findLastAnchorIndex(tt.lines)
+			if result != tt.expected {
+				t.Errorf("findLastAnchorIndex(%v) = %d, want %d", tt.lines, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFindNewInterfaces(t *testing.T) {
+	tests := []struct {
+		name     string
+		current  []string
+		existing []string
+		expected []string
+	}{
+		{
+			name:     "no new interfaces",
+			current:  []string{"en0", "en1"},
+			existing: []string{"en0", "en1"},
+			expected: nil,
+		},
+		{
+			name:     "one new interface",
+			current:  []string{"en0", "en1", "en5"},
+			existing: []string{"en0", "en1"},
+			expected: []string{"en5"},
+		},
+		{
+			name:     "multiple new interfaces",
+			current:  []string{"en0", "en1", "en5", "en8"},
+			existing: []string{"en0"},
+			expected: []string{"en1", "en5", "en8"},
+		},
+		{
+			name:     "all new interfaces",
+			current:  []string{"en0", "en1"},
+			existing: []string{},
+			expected: []string{"en0", "en1"},
+		},
+		{
+			name:     "empty current returns nil",
+			current:  []string{},
+			existing: []string{"en0", "en1"},
+			expected: nil,
+		},
+		{
+			name:     "nil existing",
+			current:  []string{"en0"},
+			existing: nil,
+			expected: []string{"en0"},
+		},
+		{
+			name:     "order preserved",
+			current:  []string{"en8", "en0", "en5"},
+			existing: []string{"en0"},
+			expected: []string{"en8", "en5"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := findNewInterfaces(tt.current, tt.existing)
+			if !slices.Equal(result, tt.expected) {
+				t.Errorf("findNewInterfaces(%v, %v) = %v, want %v", tt.current, tt.existing, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestInsertFilterAnchorLine(t *testing.T) {
+	tests := []struct {
+		name             string
+		lines            []string
+		filterAnchorLine string
+		expected         []string
+	}{
+		{
+			name:             "inserts after last anchor",
+			lines:            []string{`nat-anchor "test"`, `anchor "com.apple/*"`, ``},
+			filterAnchorLine: `anchor "alcatraz"`,
+			expected:         []string{`nat-anchor "test"`, `anchor "com.apple/*"`, `anchor "alcatraz"`, ``},
+		},
+		{
+			name:             "no anchor - inserts after last nat-anchor",
+			lines:            []string{`nat-anchor "first"`, `nat-anchor "second"`, ``},
+			filterAnchorLine: `anchor "alcatraz"`,
+			expected:         []string{`nat-anchor "first"`, `nat-anchor "second"`, `anchor "alcatraz"`, ``},
+		},
+		{
+			name:             "no anchors at all - appends before trailing empty",
+			lines:            []string{`scrub-anchor "test"`, ``},
+			filterAnchorLine: `anchor "alcatraz"`,
+			expected:         []string{`scrub-anchor "test"`, `anchor "alcatraz"`, ``},
+		},
+		{
+			name:             "no trailing empty - appends at end",
+			lines:            []string{`scrub-anchor "test"`},
+			filterAnchorLine: `anchor "alcatraz"`,
+			expected:         []string{`scrub-anchor "test"`, `anchor "alcatraz"`},
+		},
+		{
+			name:             "empty input",
+			lines:            []string{},
+			filterAnchorLine: `anchor "alcatraz"`,
+			expected:         []string{`anchor "alcatraz"`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := insertFilterAnchorLine(tt.lines, tt.filterAnchorLine)
+			if !slices.Equal(result, tt.expected) {
+				t.Errorf("insertFilterAnchorLine(%v, %q) = %v, want %v", tt.lines, tt.filterAnchorLine, result, tt.expected)
 			}
 		})
 	}

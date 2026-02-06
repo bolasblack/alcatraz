@@ -373,7 +373,7 @@ func TestMutagenSyncCreateIntegration(t *testing.T) {
 		Ignores: []string{".git/"},
 	}
 
-	runtimeEnv := NewRuntimeEnv()
+	runtimeEnv := NewRuntimeEnv(util.NewCommandRunner())
 	err := sync.Create(runtimeEnv)
 	if err != nil {
 		t.Fatalf("Create() failed: %v", err)

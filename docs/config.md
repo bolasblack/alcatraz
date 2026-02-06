@@ -125,6 +125,7 @@ See [AGD-022](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisio
 | `resources.cpus`   | int    | No       | -                                        | CPU limit (e.g., 2, 4)                         |
 | `envs`             | table  | No       | See below                                | Environment variables for the container        |
 | `network.lan-access` | array | No      | `[]`                                     | LAN access configuration (macOS only)          |
+| `caps`             | array/table | No  | See below                                | Container Linux capabilities configuration     |
 
 ### image
 
@@ -386,6 +387,71 @@ The following are passed by default with `override_on_enter = true`:
 | `LC_TIME` | Date/time formatting |
 
 User-defined values override these defaults.
+
+### caps
+
+Linux capabilities configuration for container security. See [AGD-026](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-026_container-capabilities-config.md) for design rationale.
+
+**Security rationale**: Docker's default capabilities include dangerous ones like `NET_RAW` (network sniffing) and `MKNOD` (device creation) that AI development environments don't need. Alcatraz drops all capabilities by default and only adds the minimal set needed for development workflows.
+
+#### Default Behavior (No `caps` field)
+
+```toml
+# No caps field - secure defaults applied
+image = "nixos/nix"
+```
+
+**Result**: `--cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add KILL`
+
+Default capabilities:
+- `CHOWN`: Package managers (npm, pip, cargo) need to modify file ownership
+- `DAC_OVERRIDE`: Bypass file read/write/execute permission checks for file operations in containers
+- `FOWNER`: Modify file permissions and attributes during builds
+- `KILL`: Terminate child processes (test runners, dev servers)
+
+#### Mode 1: Additive (Array)
+
+Add capabilities beyond the defaults:
+
+```toml
+caps = ["SETUID", "SETGID"]
+```
+
+**Result**: `--cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add KILL --cap-add SETUID --cap-add SETGID`
+
+Use this when you need additional capabilities but want to keep the secure default base.
+
+#### Mode 2: Full Control (Object)
+
+Take complete control over capabilities:
+
+```toml
+[caps]
+drop = ["NET_RAW", "MKNOD", "AUDIT_WRITE"]
+add = ["CHOWN", "FOWNER", "KILL", "SETUID", "SETGID"]
+```
+
+**Result**: `--cap-drop NET_RAW --cap-drop MKNOD --cap-drop AUDIT_WRITE --cap-add CHOWN --cap-add FOWNER --cap-add KILL --cap-add SETUID --cap-add SETGID`
+
+Use this when you want explicit control. No implicit defaults are applied in this mode.
+
+#### Example: Keep Docker Defaults, Drop Dangerous Ones
+
+```toml
+[caps]
+drop = ["NET_RAW", "MKNOD", "SYS_CHROOT"]
+# No add field - keeps Docker defaults minus dropped ones
+```
+
+**Result**: `--cap-drop NET_RAW --cap-drop MKNOD --cap-drop SYS_CHROOT`
+
+#### Troubleshooting
+
+| Error | Solution |
+|-------|----------|
+| `Permission denied` when writing files | Add `DAC_OVERRIDE` capability |
+| `Operation not permitted` with setuid | Add `SETUID` and/or `SETGID` capabilities |
+| Package manager fails to change ownership | Ensure `CHOWN` and `FOWNER` are in add list |
 
 ## Runtime-Specific Notes
 

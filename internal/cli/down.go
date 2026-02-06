@@ -5,10 +5,12 @@ import (
 	"io"
 	"os"
 
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/network"
 	"github.com/bolasblack/alcatraz/internal/runtime"
+	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/bolasblack/alcatraz/internal/transact"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
@@ -30,12 +32,12 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Create TransactFs for file operations
+	// Create shared dependencies once
 	tfs := transact.New()
-	env := util.NewEnv(tfs)
+	cmdRunner := util.NewCommandRunner()
 
-	// Create runtime environment once for all runtime operations
-	runtimeEnv := runtime.NewRuntimeEnv()
+	env := &util.Env{Fs: tfs, Cmd: cmdRunner}
+	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
 
 	// Load config (optional) and select runtime
 	cfg, rt, err := loadConfigAndRuntimeOptional(env, runtimeEnv, cwd)
@@ -56,6 +58,10 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Cleanup firewall rules before stopping container (need container ID)
+	// See AGD-027 for design decisions
+	cleanupFirewall(runtimeEnv, cmdRunner, rt, st, cwd, out)
+
 	// Stop container
 	util.ProgressStep(out, "Stopping container...\n")
 	if err := rt.Down(runtimeEnv, cwd, st); err != nil {
@@ -63,9 +69,11 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	// Network cleanup
-	nh := network.New(cfg.Network, rt.Name())
+	nh := network.NewNetworkHelper(cfg.Network, rt.Name())
 	if nh != nil {
-		if err := nh.Teardown(env, cwd); err != nil {
+		isOrbStack := runtime.DetectPlatform(runtimeEnv) == runtime.PlatformMacOrbStack
+		networkEnv := network.NewNetworkEnv(env.Fs, env.Cmd, cwd, isOrbStack)
+		if err := nh.Teardown(networkEnv, cwd); err != nil {
 			util.ProgressStep(out, "Warning: failed to cleanup network: %v\n", err)
 		}
 
@@ -76,4 +84,27 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	util.ProgressDone(out, "Container stopped\n")
 	return nil
+}
+
+// cleanupFirewall removes firewall rules for the container.
+// See AGD-027 for design decisions.
+func cleanupFirewall(runtimeEnv *runtime.RuntimeEnv, cmdRunner util.CommandRunner, rt runtime.Runtime, st *state.State, projectDir string, out io.Writer) {
+	// Get firewall implementation using shared command runner
+	isOrbStack := runtime.DetectPlatform(runtimeEnv) == runtime.PlatformMacOrbStack
+	networkEnv := network.NewNetworkEnv(afero.NewOsFs(), cmdRunner, projectDir, isOrbStack)
+	fw, fwType := network.New(networkEnv)
+	if fwType == network.TypeNone || fw == nil {
+		return
+	}
+
+	// Get container status to find the container ID
+	status, err := rt.Status(runtimeEnv, "", st)
+	if err != nil || status.State == runtime.StateNotFound {
+		return
+	}
+
+	// Cleanup firewall rules
+	if err := fw.Cleanup(status.ID); err != nil {
+		util.ProgressStep(out, "Warning: failed to cleanup firewall rules: %v\n", err)
+	}
 }

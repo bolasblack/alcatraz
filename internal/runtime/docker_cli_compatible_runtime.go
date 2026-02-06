@@ -112,7 +112,7 @@ func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, pro
 			return fmt.Errorf("failed to flush Mutagen syncs: %w", err)
 		}
 
-		if err := r.executeUpCommand(env, name, cfg.Commands.Up, progressOut); err != nil {
+		if err := r.executeUpCommand(env, cfg, name, progressOut); err != nil {
 			return err
 		}
 	}
@@ -171,6 +171,14 @@ func (r *dockerCLICompatibleRuntime) buildRunArgs(env *RuntimeEnv, cfg *config.C
 		}
 	}
 
+	// Add capability flags (AGD-026)
+	for _, cap := range cfg.Caps.Drop {
+		args = append(args, "--cap-drop", cap)
+	}
+	for _, cap := range cfg.Caps.Add {
+		args = append(args, "--cap-add", cap)
+	}
+
 	// Add image and keep-alive command
 	args = append(args, cfg.Image, KeepAliveCommand, KeepAliveArg)
 
@@ -194,9 +202,9 @@ func (r *dockerCLICompatibleRuntime) flushMutagenSyncs(env *RuntimeEnv, syncs []
 }
 
 // executeUpCommand runs the post-creation setup command.
-func (r *dockerCLICompatibleRuntime) executeUpCommand(env *RuntimeEnv, containerName, command string, progressOut io.Writer) error {
+func (r *dockerCLICompatibleRuntime) executeUpCommand(env *RuntimeEnv, cfg *config.Config, containerName string, progressOut io.Writer) error {
 	util.ProgressStep(progressOut, "Running setup command...\n")
-	execArgs := []string{"exec", containerName, "sh", "-c", command}
+	execArgs := []string{"exec", containerName, "sh", "-c", cfg.Commands.Up}
 	output, err := env.Cmd.Run(r.command, execArgs...)
 	if err != nil {
 		return fmt.Errorf("up command failed: %w: %s", err, string(output))
@@ -565,4 +573,23 @@ func parseContainerState(status string) ContainerState {
 func containsNoSuchContainer(output string) bool {
 	lower := strings.ToLower(output)
 	return strings.Contains(lower, "no such container")
+}
+
+// GetContainerIP returns the IP address of a container.
+// Used by firewall rules to restrict container network access.
+func (r *dockerCLICompatibleRuntime) GetContainerIP(env *RuntimeEnv, containerName string) (string, error) {
+	// Get the IP from the first network (usually bridge)
+	output, err := env.Cmd.RunQuiet(r.command, "inspect",
+		"--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+		containerName)
+	if err != nil {
+		return "", fmt.Errorf("failed to inspect container IP: %w", err)
+	}
+
+	ip := strings.TrimSpace(string(output))
+	if ip == "" {
+		return "", fmt.Errorf("container has no IP address")
+	}
+
+	return ip, nil
 }

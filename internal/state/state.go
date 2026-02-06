@@ -32,6 +32,8 @@ const (
 	CurrentVersion = "1"
 
 	// containerNameUUIDPrefixLen is the number of UUID characters used in container names.
+	// 12 characters matches Docker's short container ID length convention,
+	// providing sufficient uniqueness while keeping names readable.
 	containerNameUUIDPrefixLen = 12
 	// stateDirPerm is the permission for the state directory (rwxr-xr-x).
 	stateDirPerm = 0755
@@ -155,6 +157,7 @@ func syncRuntime(env *util.Env, projectDir string, state *State, runtimeName str
 }
 
 // Delete removes the state file (but not the .alca directory).
+// Part of the state CRUD API (Load/Save/Delete) for use by commands like "alca destroy".
 func Delete(env *util.Env, projectDir string) error {
 	path := StateFilePath(projectDir)
 	err := env.Fs.Remove(path)
@@ -189,6 +192,7 @@ type DriftChanges struct {
 	WorkdirExclude bool // true if changed (slice comparison, no diff detail)
 	Mounts         bool // true if changed (slice comparison, no diff detail)
 	Envs           bool // true if changed (map comparison, no diff detail)
+	Caps           bool // true if changed (struct comparison, no diff detail)
 }
 
 // DetectConfigDrift compares the state's config with the given config.
@@ -218,6 +222,7 @@ func enforceConfigFieldCompleteness(cfg *config.Config) {
 		Resources      config.Resources
 		Envs           map[string]config.EnvValue
 		Network        config.Network
+		Caps           config.Caps
 	}
 	_ = fields(*cfg)
 
@@ -276,7 +281,7 @@ func compareConfigs(old, new *config.Config) *DriftChanges {
 	if old.Workdir != new.Workdir {
 		c.Workdir = &[2]string{old.Workdir, new.Workdir}
 	}
-	if !stringSlicesEqual(old.WorkdirExclude, new.WorkdirExclude) {
+	if !config.StringSlicesEqual(old.WorkdirExclude, new.WorkdirExclude) {
 		c.WorkdirExclude = true
 	}
 	if old.Runtime != new.Runtime {
@@ -297,6 +302,9 @@ func compareConfigs(old, new *config.Config) *DriftChanges {
 	if hasEnvLiteralDrift(old.Envs, new.Envs) {
 		c.Envs = true
 	}
+	if !config.CapsEqual(old.Caps, new.Caps) {
+		c.Caps = true
+	}
 
 	if c == (DriftChanges{}) {
 		return nil
@@ -307,19 +315,6 @@ func compareConfigs(old, new *config.Config) *DriftChanges {
 // UpdateConfig updates the config in the state.
 func (s *State) UpdateConfig(cfg *config.Config) {
 	s.Config = cfg
-}
-
-// stringSlicesEqual checks if two string slices are equal.
-func stringSlicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // hasEnvLiteralDrift checks if env configuration has changed in ways that require rebuild.

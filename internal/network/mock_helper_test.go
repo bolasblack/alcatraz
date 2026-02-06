@@ -1,7 +1,5 @@
 package network
 
-import "github.com/bolasblack/alcatraz/internal/util"
-
 // MockNetworkHelper implements NetworkHelper for testing.
 // Provides test configuration fields and call recording.
 type MockNetworkHelper struct {
@@ -62,17 +60,17 @@ type TeardownCall struct {
 	ProjectDir string
 }
 
-func (m *MockNetworkHelper) HelperStatus(env *util.Env) HelperStatus {
+func (m *MockNetworkHelper) HelperStatus(env *NetworkEnv) HelperStatus {
 	m.HelperStatusCalled = true
 	return m.ReturnStatus
 }
 
-func (m *MockNetworkHelper) DetailedStatus(env *util.Env) DetailedStatusInfo {
+func (m *MockNetworkHelper) DetailedStatus(env *NetworkEnv) DetailedStatusInfo {
 	m.DetailedStatusCalled = true
 	return m.ReturnDetailedStatus
 }
 
-func (m *MockNetworkHelper) Setup(env *util.Env, projectDir string, progress ProgressFunc) (*PostCommitAction, error) {
+func (m *MockNetworkHelper) Setup(env *NetworkEnv, projectDir string, progress ProgressFunc) (*PostCommitAction, error) {
 	m.SetupCalls = append(m.SetupCalls, SetupCall{ProjectDir: projectDir})
 
 	if m.ReturnSetupError != nil {
@@ -86,12 +84,12 @@ func (m *MockNetworkHelper) Setup(env *util.Env, projectDir string, progress Pro
 	return action, nil
 }
 
-func (m *MockNetworkHelper) Teardown(env *util.Env, projectDir string) error {
+func (m *MockNetworkHelper) Teardown(env *NetworkEnv, projectDir string) error {
 	m.TeardownCalls = append(m.TeardownCalls, TeardownCall{ProjectDir: projectDir})
 	return m.ReturnTeardownError
 }
 
-func (m *MockNetworkHelper) InstallHelper(env *util.Env, progress ProgressFunc) (*PostCommitAction, error) {
+func (m *MockNetworkHelper) InstallHelper(env *NetworkEnv, progress ProgressFunc) (*PostCommitAction, error) {
 	m.InstallHelperCalled = true
 
 	if m.ReturnInstallError != nil {
@@ -105,7 +103,7 @@ func (m *MockNetworkHelper) InstallHelper(env *util.Env, progress ProgressFunc) 
 	return action, nil
 }
 
-func (m *MockNetworkHelper) UninstallHelper(env *util.Env, progress ProgressFunc) (*PostCommitAction, error) {
+func (m *MockNetworkHelper) UninstallHelper(env *NetworkEnv, progress ProgressFunc) (*PostCommitAction, error) {
 	m.UninstallHelperCalled = true
 
 	if m.ReturnUninstallError != nil {

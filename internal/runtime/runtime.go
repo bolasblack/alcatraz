@@ -17,11 +17,9 @@ type RuntimeEnv struct {
 	Cmd util.CommandRunner
 }
 
-// NewRuntimeEnv creates a new RuntimeEnv with default context.
-func NewRuntimeEnv() *RuntimeEnv {
-	return &RuntimeEnv{
-		Cmd: util.NewCommandRunner(),
-	}
+// NewRuntimeEnv creates a new RuntimeEnv with the given CommandRunner.
+func NewRuntimeEnv(cmd util.CommandRunner) *RuntimeEnv {
+	return &RuntimeEnv{Cmd: cmd}
 }
 
 // Common errors returned by runtime implementations.
@@ -96,4 +94,8 @@ type Runtime interface {
 
 	// RemoveContainer removes a container by name.
 	RemoveContainer(env *RuntimeEnv, name string) error
+
+	// GetContainerIP returns the IP address of a running container.
+	// Used by firewall rules to restrict container network access.
+	GetContainerIP(env *RuntimeEnv, containerName string) (string, error)
 }

@@ -1,6 +1,6 @@
-// Package network provides LaunchDaemon management for macOS network helper.
-// See AGD-023 for design decisions.
-package network
+//go:build darwin
+
+package pf
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/afero"
 
-	"github.com/bolasblack/alcatraz/internal/util"
+	"github.com/bolasblack/alcatraz/internal/network/shared"
 )
 
 // LaunchDaemon constants.
@@ -50,8 +50,8 @@ var launchDaemonPlist = buildLaunchDaemonPlist()
 // 2. Commit the TransactFs with sudo
 // 3. Call activateLaunchDaemon() after commit to load the daemon
 // See AGD-023 for lifecycle details.
-func (p *pfHelper) installHelper(env *util.Env, progress ProgressFunc) error {
-	progress = safeProgress(progress)
+func (p *pfHelper) installHelper(env *shared.NetworkEnv, progress shared.ProgressFunc) error {
+	progress = shared.SafeProgress(progress)
 
 	if err := p.createAnchorDirectory(env, progress); err != nil {
 		return err
@@ -74,12 +74,26 @@ func (p *pfHelper) installHelper(env *util.Env, progress ProgressFunc) error {
 
 // activateLaunchDaemon loads the LaunchDaemon after files have been committed.
 // Call this AFTER committing TransactFs changes to disk.
-func (p *pfHelper) activateLaunchDaemon(env *util.Env, progress ProgressFunc) error {
-	progress = safeProgress(progress)
+func (p *pfHelper) activateLaunchDaemon(env *shared.NetworkEnv, progress shared.ProgressFunc) error {
+	progress = shared.SafeProgress(progress)
 	if err := p.loadLaunchDaemon(env, progress); err != nil {
 		return err
 	}
+	// Reload pf.conf to activate the nat-anchor and anchor lines we added.
+	// Without this, the anchors exist in the file but are not loaded into pf.
+	if err := p.reloadPfConf(env, progress); err != nil {
+		return err
+	}
 	return p.loadInitialPfRules(env, progress)
+}
+
+// reloadPfConf reloads the main pf.conf to activate anchor references.
+func (p *pfHelper) reloadPfConf(env *shared.NetworkEnv, progress shared.ProgressFunc) error {
+	progress("Reloading pf.conf to activate anchors...\n")
+	if err := env.Cmd.SudoRun("pfctl", "-f", pfConfPath); err != nil {
+		return fmt.Errorf("failed to reload pf.conf: %w", err)
+	}
+	return nil
 }
 
 // uninstallHelper unloads daemon and stages file deletions.
@@ -88,8 +102,8 @@ func (p *pfHelper) activateLaunchDaemon(env *util.Env, progress ProgressFunc) er
 // 2. Commit the TransactFs with sudo
 // 3. Call flushPfRulesAfterUninstall() after commit if needed
 // Returns errors as warnings - caller decides whether to fail.
-func (p *pfHelper) uninstallHelper(env *util.Env, progress ProgressFunc) (warnings []error) {
-	progress = safeProgress(progress)
+func (p *pfHelper) uninstallHelper(env *shared.NetworkEnv, progress shared.ProgressFunc) (warnings []error) {
+	progress = shared.SafeProgress(progress)
 
 	// Unload daemon FIRST (before staging file deletions)
 	if err := p.unloadLaunchDaemon(env, progress); err != nil {
@@ -117,30 +131,32 @@ func (p *pfHelper) uninstallHelper(env *util.Env, progress ProgressFunc) (warnin
 
 // flushPfRulesAfterUninstall flushes pf rules after uninstall files have been committed.
 // Call this AFTER committing TransactFs changes to disk.
-func (p *pfHelper) flushPfRulesAfterUninstall(env *util.Env, progress ProgressFunc) error {
+func (p *pfHelper) flushPfRulesAfterUninstall(env *shared.NetworkEnv, progress shared.ProgressFunc) error {
 	return p.flushPfRules(env, progress)
 }
 
 // isHelperInstalled checks if the network helper is installed.
-func (p *pfHelper) isHelperInstalled(env *util.Env) bool {
+func (p *pfHelper) isHelperInstalled(env *shared.NetworkEnv) bool {
 	return p.isLaunchDaemonLoaded(env) && fileExists(env, pfAnchorDir)
 }
 
 // isHelperNeedsUpdate checks if plist or pf.conf anchor needs update.
-func (p *pfHelper) isHelperNeedsUpdate(env *util.Env) bool {
+func (p *pfHelper) isHelperNeedsUpdate(env *shared.NetworkEnv) bool {
 	// Check plist content
 	existingPlist, err := afero.ReadFile(env.Fs, launchDaemonPath)
 	if err == nil && string(existingPlist) != launchDaemonPlist {
 		return true
 	}
 
-	// Check pf.conf anchor (old wildcard vs new single)
+	// Check pf.conf anchors using line-based matching to avoid substring confusion.
+	// Note: "nat-anchor X" contains "anchor X" as a substring, so we must use
+	// exact line matching rather than strings.Contains.
 	pfConf, err := afero.ReadFile(env.Fs, pfConfPath)
 	if err == nil {
 		content := string(pfConf)
-		hasNew := strings.Contains(content, pfAnchorLine)
-		hasOld := strings.Contains(content, pfOldAnchorLine)
-		if hasOld || !hasNew {
+		hasNat := hasExactLine(content, pfAnchorLine)
+		hasFilter := hasExactLine(content, pfFilterAnchorLine)
+		if !hasNat || !hasFilter {
 			return true
 		}
 	}
@@ -148,8 +164,18 @@ func (p *pfHelper) isHelperNeedsUpdate(env *util.Env) bool {
 	return false
 }
 
+// hasExactLine checks if any line in content matches the target exactly (after trimming whitespace).
+func hasExactLine(content, target string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == target {
+			return true
+		}
+	}
+	return false
+}
+
 // createAnchorDirectory creates the pf anchor directory with proper permissions.
-func (p *pfHelper) createAnchorDirectory(env *util.Env, progress ProgressFunc) error {
+func (p *pfHelper) createAnchorDirectory(env *shared.NetworkEnv, progress shared.ProgressFunc) error {
 	progress("Creating %s...\n", pfAnchorDir)
 	if err := env.Fs.MkdirAll(pfAnchorDir, 0755); err != nil {
 		return fmt.Errorf("failed to create anchor directory: %w", err)
@@ -158,7 +184,7 @@ func (p *pfHelper) createAnchorDirectory(env *util.Env, progress ProgressFunc) e
 }
 
 // installPlistFile installs or updates the LaunchDaemon plist.
-func (p *pfHelper) installPlistFile(env *util.Env, progress ProgressFunc) error {
+func (p *pfHelper) installPlistFile(env *shared.NetworkEnv, progress shared.ProgressFunc) error {
 	// Check if content already matches
 	existingContent, err := afero.ReadFile(env.Fs, launchDaemonPath)
 	if err == nil && string(existingContent) == launchDaemonPlist {
@@ -177,7 +203,7 @@ func (p *pfHelper) installPlistFile(env *util.Env, progress ProgressFunc) error 
 }
 
 // loadLaunchDaemon loads the LaunchDaemon using launchctl.
-func (p *pfHelper) loadLaunchDaemon(env *util.Env, progress ProgressFunc) error {
+func (p *pfHelper) loadLaunchDaemon(env *shared.NetworkEnv, progress shared.ProgressFunc) error {
 	progress("Loading LaunchDaemon...\n")
 	if p.isLaunchDaemonLoaded(env) {
 		// Bootout first to allow re-bootstrap
@@ -193,7 +219,7 @@ func (p *pfHelper) loadLaunchDaemon(env *util.Env, progress ProgressFunc) error 
 }
 
 // loadInitialPfRules loads initial pf rules after daemon installation.
-func (p *pfHelper) loadInitialPfRules(env *util.Env, progress ProgressFunc) error {
+func (p *pfHelper) loadInitialPfRules(env *shared.NetworkEnv, progress shared.ProgressFunc) error {
 	progress("Loading initial pf rules...\n")
 	cmd := fmt.Sprintf("cat %s/* 2>/dev/null | pfctl -a %s -f -", pfAnchorDir, pfAnchorName)
 	output, err := env.Cmd.SudoRunQuiet("sh", "-c", cmd)
@@ -210,13 +236,13 @@ func (p *pfHelper) loadInitialPfRules(env *util.Env, progress ProgressFunc) erro
 
 // isLaunchDaemonLoaded checks if the LaunchDaemon is loaded in the system domain.
 // Uses 'launchctl print' to check system domain (not user domain).
-func (p *pfHelper) isLaunchDaemonLoaded(env *util.Env) bool {
+func (p *pfHelper) isLaunchDaemonLoaded(env *shared.NetworkEnv) bool {
 	_, err := env.Cmd.RunQuiet("launchctl", "print", "system/"+launchDaemonLabel)
 	return err == nil
 }
 
 // unloadLaunchDaemon unloads the LaunchDaemon.
-func (p *pfHelper) unloadLaunchDaemon(env *util.Env, progress ProgressFunc) error {
+func (p *pfHelper) unloadLaunchDaemon(env *shared.NetworkEnv, progress shared.ProgressFunc) error {
 	if !p.isLaunchDaemonLoaded(env) {
 		return nil
 	}
@@ -228,7 +254,7 @@ func (p *pfHelper) unloadLaunchDaemon(env *util.Env, progress ProgressFunc) erro
 }
 
 // removePlistFile removes the LaunchDaemon plist file.
-func (p *pfHelper) removePlistFile(env *util.Env, progress ProgressFunc) error {
+func (p *pfHelper) removePlistFile(env *shared.NetworkEnv, progress shared.ProgressFunc) error {
 	if !fileExists(env, launchDaemonPath) {
 		return nil
 	}
@@ -240,8 +266,8 @@ func (p *pfHelper) removePlistFile(env *util.Env, progress ProgressFunc) error {
 }
 
 // flushPfRules flushes all pf rules in the anchor.
-func (p *pfHelper) flushPfRules(env *util.Env, progress ProgressFunc) error {
-	progress = safeProgress(progress)
+func (p *pfHelper) flushPfRules(env *shared.NetworkEnv, progress shared.ProgressFunc) error {
+	progress = shared.SafeProgress(progress)
 	progress("Flushing pf rules in anchor %s...\n", pfAnchorName)
 	if err := env.Cmd.SudoRun("pfctl", "-a", pfAnchorName, "-F", "all"); err != nil {
 		return fmt.Errorf("failed to flush pf rules: %w", err)
@@ -250,7 +276,7 @@ func (p *pfHelper) flushPfRules(env *util.Env, progress ProgressFunc) error {
 }
 
 // removeAnchorDirectory removes the pf anchor directory.
-func (p *pfHelper) removeAnchorDirectory(env *util.Env, progress ProgressFunc) error {
+func (p *pfHelper) removeAnchorDirectory(env *shared.NetworkEnv, progress shared.ProgressFunc) error {
 	if !fileExists(env, pfAnchorDir) {
 		return nil
 	}

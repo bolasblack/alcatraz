@@ -55,10 +55,7 @@
         },
         "runtime": {
           "type": "string",
-          "enum": [
-            "auto",
-            "docker"
-          ],
+          "enum": ["auto", "docker"],
           "description": "Container runtime selection"
         },
         "commands": {
@@ -78,6 +75,39 @@
         "network": {
           "$ref": "#/$defs/Network",
           "description": "Network configuration"
+        },
+        "caps": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "description": "Additive mode: capabilities to add beyond defaults (CHOWN, DAC_OVERRIDE, FOWNER, KILL). Drops ALL first."
+            },
+            {
+              "properties": {
+                "drop": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "description": "Capabilities to drop (e.g., [\"NET_RAW\", \"MKNOD\"])"
+                },
+                "add": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "description": "Capabilities to add (e.g., [\"CHOWN\", \"FOWNER\"])"
+                }
+              },
+              "additionalProperties": false,
+              "type": "object",
+              "description": "Full control mode: explicit drop and add lists (no implicit defaults)"
+            }
+          ],
+          "description": "Container capability configuration. Array = additive mode, Object = full control mode."
         }
       },
       "additionalProperties": false,
@@ -141,10 +171,7 @@
             },
             "additionalProperties": false,
             "type": "object",
-            "required": [
-              "source",
-              "target"
-            ],
+            "required": ["source", "target"],
             "description": "Extended format with excludes"
           }
         ]

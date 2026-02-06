@@ -4,7 +4,6 @@ includes = ['./.alca.*.toml']
 image = "nixos/nix"
 
 workdir_exclude = [
-  ".alca*",
   "out",
   "out_*",
   "vendor",
@@ -16,6 +15,9 @@ mounts = [
   ".alca.cache/mise:/root/.local/share/mise",
 ]
 
+# Nix multi-user daemon requires SETUID/SETGID for sandbox builds
+caps = ["SETUID", "SETGID"]
+
 [commands]
 up = "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command true"
 enter = "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command"
@@ -26,7 +28,9 @@ cpus = 8
 
 [envs]
 NIXPKGS_ALLOW_UNFREE = "1"
-NIX_CONFIG = "extra-experimental-features = nix-command flakes"
+NIX_CONFIG = """
+extra-experimental-features = nix-command flakes
+"""
 
 [network]
-lan-access = ['*']
+lan-access = []

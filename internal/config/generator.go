@@ -148,6 +148,7 @@ func configToRaw(c Config) RawConfig {
 		Resources      Resources
 		Envs           map[string]EnvValue
 		Network        Network
+		Caps           Caps
 	}
 	_ = configFields(c)
 
@@ -175,6 +176,27 @@ func configToRaw(c Config) RawConfig {
 		}
 	}
 
+	// Convert Caps to raw format (object mode for explicit control)
+	var caps RawCaps
+	if len(c.Caps.Drop) > 0 || len(c.Caps.Add) > 0 {
+		capsMap := make(map[string]any)
+		if len(c.Caps.Drop) > 0 {
+			drop := make([]any, len(c.Caps.Drop))
+			for i, d := range c.Caps.Drop {
+				drop[i] = d
+			}
+			capsMap["drop"] = drop
+		}
+		if len(c.Caps.Add) > 0 {
+			add := make([]any, len(c.Caps.Add))
+			for i, a := range c.Caps.Add {
+				add[i] = a
+			}
+			capsMap["add"] = add
+		}
+		caps = capsMap
+	}
+
 	return RawConfig{
 		Image:     c.Image,
 		Workdir:   c.Workdir,
@@ -184,6 +206,7 @@ func configToRaw(c Config) RawConfig {
 		Resources: c.Resources,
 		Envs:      envs,
 		Network:   c.Network,
+		Caps:      caps,
 	}
 }
 

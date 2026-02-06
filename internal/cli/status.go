@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/config"
@@ -28,11 +29,10 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Create env for read-only file operations
-	env := util.NewReadonlyOsEnv()
-
-	// Create runtime environment once for all runtime operations
-	runtimeEnv := runtime.NewRuntimeEnv()
+	// Create shared dependencies once
+	cmdRunner := util.NewCommandRunner()
+	env := &util.Env{Fs: afero.NewReadOnlyFs(afero.NewOsFs()), Cmd: cmdRunner}
+	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
 
 	configPath := filepath.Join(cwd, ConfigFilename)
 

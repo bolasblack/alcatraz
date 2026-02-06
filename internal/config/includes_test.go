@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 func TestLoadWithIncludes_SimpleInclude(t *testing.T) {
@@ -602,5 +604,198 @@ func TestMergeConfigs(t *testing.T) {
 	// Envs merged
 	if len(result.Envs) != 2 {
 		t.Errorf("expected 2 envs, got %d", len(result.Envs))
+	}
+}
+
+// TestMergeConfigs_LANAccessEmptyOverlay verifies that when overlay has
+// an explicit empty slice for Network.LANAccess, the base value is preserved.
+// This tests the user scenario: main config has lan-access=[], included config has rules.
+func TestMergeConfigs_LANAccessEmptyOverlay(t *testing.T) {
+	base := Config{
+		Network: Network{
+			LANAccess: []string{"192.168.1.2:10000"},
+		},
+	}
+
+	// Explicit empty slice (not nil) - simulates TOML parsing of "lan-access = []"
+	overlay := Config{
+		Network: Network{
+			LANAccess: []string{},
+		},
+	}
+
+	result := mergeConfigs(base, overlay)
+
+	// Base LANAccess should be preserved when overlay is empty
+	if len(result.Network.LANAccess) != 1 {
+		t.Errorf("expected 1 LANAccess rule, got %d", len(result.Network.LANAccess))
+	}
+	if len(result.Network.LANAccess) > 0 && result.Network.LANAccess[0] != "192.168.1.2:10000" {
+		t.Errorf("expected LANAccess[0]='192.168.1.2:10000', got %q", result.Network.LANAccess[0])
+	}
+}
+
+// TestLoadConfig_LANAccessFromInclude tests the full TOML loading path:
+// main config has empty lan-access=[], included config has rules.
+// This is an integration test matching the real user scenario.
+func TestLoadConfig_LANAccessFromInclude(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	// Create main config with empty lan-access and includes
+	mainConfig := `
+image = "test:latest"
+includes = ["./*.local.toml"]
+
+[network]
+lan-access = []
+`
+	// Create local config with lan-access rule
+	localConfig := `
+[network]
+lan-access = ["192.168.1.2:10000"]
+`
+
+	_ = afero.WriteFile(fs, "/project/.alca.toml", []byte(mainConfig), 0644)
+	_ = afero.WriteFile(fs, "/project/.alca.local.toml", []byte(localConfig), 0644)
+
+	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
+
+	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	// The included lan-access rule should be present
+	if len(cfg.Network.LANAccess) != 1 {
+		t.Errorf("expected 1 LANAccess rule from include, got %d: %v", len(cfg.Network.LANAccess), cfg.Network.LANAccess)
+	}
+	if len(cfg.Network.LANAccess) > 0 && cfg.Network.LANAccess[0] != "192.168.1.2:10000" {
+		t.Errorf("expected LANAccess[0]='192.168.1.2:10000', got %q", cfg.Network.LANAccess[0])
+	}
+}
+
+// TestLoadConfig_CapsArrayMode tests caps parsing in array mode: caps = ["SETUID", "SETGID"]
+func TestLoadConfig_CapsArrayMode(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	config := `
+image = "test:latest"
+caps = ["SETUID", "SETGID"]
+`
+	_ = afero.WriteFile(fs, "/project/.alca.toml", []byte(config), 0644)
+
+	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
+
+	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	// Array mode should drop ALL and add defaults + user caps
+	expectedDrop := []string{"ALL"}
+	expectedAdd := []string{"CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL", "SETUID", "SETGID"}
+
+	if len(cfg.Caps.Drop) != len(expectedDrop) {
+		t.Errorf("expected Drop %v, got %v", expectedDrop, cfg.Caps.Drop)
+	}
+	if len(cfg.Caps.Add) != len(expectedAdd) {
+		t.Errorf("expected Add %v, got %v", expectedAdd, cfg.Caps.Add)
+	}
+
+	// Verify all expected caps are present
+	for _, expected := range expectedAdd {
+		found := false
+		for _, actual := range cfg.Caps.Add {
+			if actual == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected cap %q in Add, got %v", expected, cfg.Caps.Add)
+		}
+	}
+}
+
+// TestLoadConfig_CapsObjectMode tests caps parsing in object mode: [caps] add = [...] drop = [...]
+func TestLoadConfig_CapsObjectMode(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	config := `
+image = "test:latest"
+
+[caps]
+drop = ["NET_RAW"]
+add = ["SYS_ADMIN"]
+`
+	_ = afero.WriteFile(fs, "/project/.alca.toml", []byte(config), 0644)
+
+	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
+
+	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	// Object mode uses explicit values without defaults
+	if len(cfg.Caps.Drop) != 1 || cfg.Caps.Drop[0] != "NET_RAW" {
+		t.Errorf("expected Drop [NET_RAW], got %v", cfg.Caps.Drop)
+	}
+	if len(cfg.Caps.Add) != 1 || cfg.Caps.Add[0] != "SYS_ADMIN" {
+		t.Errorf("expected Add [SYS_ADMIN], got %v", cfg.Caps.Add)
+	}
+}
+
+// TestLoadConfig_CapsInlineTableMode tests caps parsing in inline table mode: caps = { add = [...] }
+func TestLoadConfig_CapsInlineTableMode(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	config := `
+image = "test:latest"
+caps = { add = ["CHOWN", "FOWNER"] }
+`
+	_ = afero.WriteFile(fs, "/project/.alca.toml", []byte(config), 0644)
+
+	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
+
+	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	// Inline table mode uses explicit values
+	if len(cfg.Caps.Drop) != 0 {
+		t.Errorf("expected empty Drop, got %v", cfg.Caps.Drop)
+	}
+	if len(cfg.Caps.Add) != 2 {
+		t.Errorf("expected 2 Add caps, got %v", cfg.Caps.Add)
+	}
+}
+
+// TestLoadConfig_CapsEmpty tests that empty caps uses defaults
+func TestLoadConfig_CapsEmpty(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	config := `
+image = "test:latest"
+`
+	_ = afero.WriteFile(fs, "/project/.alca.toml", []byte(config), 0644)
+
+	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
+
+	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	// No caps field means apply secure defaults
+	expectedDrop := []string{"ALL"}
+	expectedAdd := []string{"CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL"}
+
+	if len(cfg.Caps.Drop) != len(expectedDrop) {
+		t.Errorf("expected Drop %v, got %v", expectedDrop, cfg.Caps.Drop)
+	}
+	if len(cfg.Caps.Add) != len(expectedAdd) {
+		t.Errorf("expected Add %v, got %v", expectedAdd, cfg.Caps.Add)
 	}
 }

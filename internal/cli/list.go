@@ -5,6 +5,7 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/runtime"
@@ -25,11 +26,10 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Create env for read-only file operations
-	env := util.NewReadonlyOsEnv()
-
-	// Create runtime environment once for all runtime operations
-	runtimeEnv := runtime.NewRuntimeEnv()
+	// Create shared dependencies once
+	cmdRunner := util.NewCommandRunner()
+	env := &util.Env{Fs: afero.NewReadOnlyFs(afero.NewOsFs()), Cmd: cmdRunner}
+	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
 
 	// Load config (optional) and select runtime
 	// Log warning if config has issues but continue

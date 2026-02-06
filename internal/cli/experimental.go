@@ -53,12 +53,12 @@ func runReload(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Create TransactFs for file operations
+	// Create shared dependencies once
 	tfs := transact.New()
-	env := util.NewEnv(tfs)
+	cmdRunner := util.NewCommandRunner()
 
-	// Create runtime environment once for all runtime operations
-	runtimeEnv := runtime.NewRuntimeEnv()
+	env := &util.Env{Fs: tfs, Cmd: cmdRunner}
+	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
 
 	// Load configuration and runtime
 	cfg, rt, err := loadConfigAndRuntime(env, runtimeEnv, cwd)

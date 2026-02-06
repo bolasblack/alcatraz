@@ -17,21 +17,6 @@ func newTestEnv(t *testing.T) (*util.Env, afero.Fs) {
 	return env, memFs
 }
 
-func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultConfig()
-
-	if cfg.Image != "nixos/nix" {
-		t.Errorf("expected image 'nixos/nix', got %q", cfg.Image)
-	}
-	if cfg.Workdir != "/workspace" {
-		t.Errorf("expected workdir '/workspace', got %q", cfg.Workdir)
-	}
-	expectedEnter := "[ -f flake.nix ] && exec nix develop"
-	if cfg.Commands.Enter != expectedEnter {
-		t.Errorf("expected commands.enter %q, got %q", expectedEnter, cfg.Commands.Enter)
-	}
-}
-
 func TestLoadConfig(t *testing.T) {
 	content := `
 image = "ubuntu:latest"

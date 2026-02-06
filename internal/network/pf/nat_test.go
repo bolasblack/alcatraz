@@ -1,4 +1,6 @@
-package network
+//go:build darwin
+
+package pf
 
 import (
 	"fmt"
@@ -8,6 +10,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"github.com/bolasblack/alcatraz/internal/network/shared"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
@@ -334,7 +337,7 @@ k8s.enabled: false
 			mock := util.NewMockCommandRunner()
 			mock.Expect("orbctl config show", []byte(tt.output), tt.cmdErr)
 
-			env := util.NewTestEnv()
+			env := shared.NewTestNetworkEnv()
 			env.Cmd = mock
 
 			result, err := h.getOrbStackSubnet(env)
@@ -396,7 +399,7 @@ Ethernet Address: 11:22:33:44:55:66
 			mock := util.NewMockCommandRunner()
 			mock.Expect("networksetup -listallhardwareports", []byte(tt.output), tt.cmdErr)
 
-			env := util.NewTestEnv()
+			env := shared.NewTestNetworkEnv()
 			env.Cmd = mock
 
 			result, err := h.getPhysicalInterfaces(env)
@@ -465,7 +468,7 @@ Ethernet Address: aa:bb:cc:dd:ee:ff
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			env := util.NewTestEnv()
+			env := shared.NewTestNetworkEnv()
 
 			// Setup filesystem
 			if tt.existingRules != "" {
@@ -499,10 +502,10 @@ Ethernet Address: aa:bb:cc:dd:ee:ff
 // =============================================================================
 
 // newTestEnv creates a test environment with in-memory filesystem.
-func newTestEnv(t *testing.T) (*util.Env, afero.Fs) {
+func newTestEnv(t *testing.T) (*shared.NetworkEnv, afero.Fs) {
 	t.Helper()
 	memFs := afero.NewMemMapFs()
-	env := &util.Env{Fs: memFs}
+	env := &shared.NetworkEnv{Fs: memFs}
 	return env, memFs
 }
 
