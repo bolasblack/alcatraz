@@ -87,6 +87,14 @@ func NewNetworkHelper(cfg config.Network, runtimeName string) NetworkHelper {
 	return newNetworkHelperForPlatform(cfg, runtimeName)
 }
 
+// EnsureFirewallSystemConfig ensures platform-specific system configuration
+// exists for the firewall to function. For example, on macOS this ensures the
+// pf anchor references exist in /etc/pf.conf.
+// Safe to call multiple times (idempotent).
+func EnsureFirewallSystemConfig(env *NetworkEnv, fwType Type) error {
+	return ensureFirewallSystemConfig(env, fwType)
+}
+
 // commandExists checks if a command is available in PATH.
 func commandExists(cmd util.CommandRunner, name string) bool {
 	_, err := cmd.Run("which", name)
