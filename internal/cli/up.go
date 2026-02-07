@@ -307,11 +307,6 @@ On Linux, install nftables:
 		return nil
 	}
 
-	// Ensure system-level firewall config exists (e.g., pf anchor in /etc/pf.conf)
-	if err := network.EnsureFirewallSystemConfig(networkEnv, fwType); err != nil {
-		util.ProgressStep(out, "Warning: failed to configure system firewall: %v\n", err)
-	}
-
 	if fw == nil {
 		return nil
 	}

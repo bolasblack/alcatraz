@@ -269,6 +269,7 @@ anchor "com.apple/*"
 nat-anchor "com.apple/*"
 nat-anchor "alcatraz"
 anchor "com.apple/*"
+anchor "alcatraz"
 `,
 			expectError: false,
 		},
@@ -278,16 +279,18 @@ anchor "com.apple/*"
 nat-anchor "com.apple/*"
 nat-anchor "alcatraz"
 anchor "com.apple/*"
+anchor "alcatraz"
 `,
 			expectedContent: `scrub-anchor "com.apple/*"
 nat-anchor "com.apple/*"
 nat-anchor "alcatraz"
 anchor "com.apple/*"
+anchor "alcatraz"
 `,
 			expectError: false,
 		},
 		{
-			name: "migrates old wildcard anchor",
+			name: "old wildcard anchor preserved - ensurePfAnchor only adds",
 			initialContent: `scrub-anchor "com.apple/*"
 nat-anchor "com.apple/*"
 nat-anchor "alcatraz/*"
@@ -295,8 +298,10 @@ anchor "com.apple/*"
 `,
 			expectedContent: `scrub-anchor "com.apple/*"
 nat-anchor "com.apple/*"
+nat-anchor "alcatraz/*"
 nat-anchor "alcatraz"
 anchor "com.apple/*"
+anchor "alcatraz"
 `,
 			expectError: false,
 		},
@@ -308,6 +313,7 @@ anchor "com.apple/*"
 			expectedContent: `scrub-anchor "com.apple/*"
 nat-anchor "alcatraz"
 anchor "com.apple/*"
+anchor "alcatraz"
 `,
 			expectError: false,
 		},

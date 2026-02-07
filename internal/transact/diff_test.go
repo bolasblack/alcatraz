@@ -33,7 +33,7 @@ func TestComputeDiff_NewFile(t *testing.T) {
 	if string(ops[0].Content) != "new content" {
 		t.Errorf("expected 'new content', got %q", string(ops[0].Content))
 	}
-	if !ops[0].NeedSudo {
+	if os.Getuid() != 0 && !ops[0].NeedSudo {
 		t.Error("expected NeedSudo=true for /etc/ path")
 	}
 }
@@ -143,19 +143,25 @@ func TestComputeDiff_NoChanges(t *testing.T) {
 
 func TestNeedsSudo(t *testing.T) {
 	// Test paths that require sudo (non-writable system paths)
-	systemPaths := []string{
-		"/etc/pf.conf",
-		"/etc/pf.anchors/alcatraz",
-		"/Library/LaunchDaemons/com.test.plist",
-	}
-	for _, path := range systemPaths {
-		t.Run(path, func(t *testing.T) {
-			got := needsSudo(path)
-			// These paths should require sudo since they're not writable
-			if !got {
-				t.Errorf("needsSudo(%q) = false, expected true for system path", path)
-			}
-		})
+	// Skip when running as root — root has write access everywhere,
+	// so needsSudo correctly returns false.
+	if os.Getuid() == 0 {
+		t.Log("skipping system path tests: running as root")
+	} else {
+		systemPaths := []string{
+			"/etc/pf.conf",
+			"/etc/pf.anchors/alcatraz",
+			"/Library/LaunchDaemons/com.test.plist",
+		}
+		for _, path := range systemPaths {
+			t.Run(path, func(t *testing.T) {
+				got := needsSudo(path)
+				// These paths should require sudo since they're not writable
+				if !got {
+					t.Errorf("needsSudo(%q) = false, expected true for system path", path)
+				}
+			})
+		}
 	}
 
 	// Test writable paths (like /tmp)

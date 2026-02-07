@@ -242,10 +242,11 @@ anchor "com.apple/*"
 			name: "plist missing - not considered needing update",
 			setup: func(fs afero.Fs) {
 				// No plist file (helper not installed)
-				// Write valid pf.conf
+				// Write valid pf.conf with both anchors
 				content := `scrub-anchor "com.apple/*"
 nat-anchor "alcatraz"
 anchor "com.apple/*"
+anchor "alcatraz"
 `
 				_ = afero.WriteFile(fs, pfConfPath, []byte(content), 0644)
 			},

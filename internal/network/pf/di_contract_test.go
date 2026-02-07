@@ -45,11 +45,10 @@ func TestNew_StoresInjectedEnv(t *testing.T) {
 // injected CommandRunner, not a newly created one.
 func TestApplyRules_UsesInjectedCmd(t *testing.T) {
 	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(nil, mockCmd, "", false)
+	env := shared.NewNetworkEnv(afero.NewMemMapFs(), mockCmd, "", false)
 	firewall := New(env)
 
-	// Set up expectation for pfctl command
-	// The command pattern is: sh -c "echo \"<ruleset>\" | pfctl -a <anchor> -f -"
+	// All commands go through SudoRunQuiet, so Name is "sudo" with actual command in Args.
 	mockCmd.AllowUnexpected()
 
 	rules := []shared.LANAccessRule{
@@ -64,16 +63,16 @@ func TestApplyRules_UsesInjectedCmd(t *testing.T) {
 		t.Fatal("ApplyRules must use the injected Cmd - no calls recorded on mockCmd")
 	}
 
-	// Verify it called 'sh' with the piped command
+	// Verify it called 'sudo sh' for the pfctl load command
 	found := false
 	for _, call := range mockCmd.Calls {
-		if call.Name == "sh" {
+		if call.Name == "sudo sh" && strings.Contains(strings.Join(call.Args, " "), "pfctl") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("ApplyRules should call 'sh' via injected Cmd, got calls: %v", mockCmd.CallKeys())
+		t.Errorf("ApplyRules should call 'sudo sh -c ... pfctl ...' via injected Cmd, got calls: %v", mockCmd.CallKeys())
 	}
 }
 
@@ -81,7 +80,7 @@ func TestApplyRules_UsesInjectedCmd(t *testing.T) {
 // receives the expected arguments for pfctl.
 func TestApplyRules_CmdReceivesCorrectArgs(t *testing.T) {
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(nil, mockCmd, "", false)
+	env := shared.NewNetworkEnv(afero.NewMemMapFs(), mockCmd, "", false)
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{
@@ -90,32 +89,32 @@ func TestApplyRules_CmdReceivesCorrectArgs(t *testing.T) {
 
 	_ = firewall.ApplyRules("abc123def456", "172.20.0.5", rules)
 
-	// Verify the command includes the anchor name
+	// Verify the load command includes the anchor name and pfctl
 	if len(mockCmd.Calls) == 0 {
 		t.Fatal("Expected at least one command call")
 	}
 
-	call := mockCmd.Calls[0]
-	if call.Name != "sh" || len(call.Args) < 2 {
-		t.Fatalf("Expected 'sh -c <script>', got: %s %v", call.Name, call.Args)
+	// Find the sudo sh call that loads rules via pfctl
+	found := false
+	for _, call := range mockCmd.Calls {
+		if call.Name == "sudo sh" {
+			args := strings.Join(call.Args, " ")
+			if strings.Contains(args, "pfctl -a "+pfAnchorName) {
+				found = true
+				break
+			}
+		}
 	}
-
-	script := call.Args[1]
-	// Should contain the anchor name (truncated container ID)
-	if !strings.Contains(script, "alcatraz/abc123def456") {
-		t.Errorf("Script should contain anchor name 'alcatraz/abc123def456', got: %s", script)
-	}
-	// Should contain pfctl command
-	if !strings.Contains(script, "pfctl") {
-		t.Errorf("Script should contain 'pfctl', got: %s", script)
+	if !found {
+		t.Errorf("Expected 'sudo sh -c ... pfctl -a %s ...' call, got: %v", pfAnchorName, mockCmd.CallKeys())
 	}
 }
 
 // TestCleanup_UsesInjectedCmd verifies that Cleanup uses the injected
-// CommandRunner for pfctl flush operations.
+// CommandRunner for rule removal and anchor reload.
 func TestCleanup_UsesInjectedCmd(t *testing.T) {
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(nil, mockCmd, "", false)
+	env := shared.NewNetworkEnv(afero.NewMemMapFs(), mockCmd, "", false)
 	firewall := New(env)
 
 	_ = firewall.Cleanup("container123")
@@ -125,51 +124,48 @@ func TestCleanup_UsesInjectedCmd(t *testing.T) {
 		t.Fatal("Cleanup must use the injected Cmd - no calls recorded on mockCmd")
 	}
 
-	// Verify it called pfctl directly
-	found := false
+	// Verify it called sudo rm (for rule file removal) and sudo sh (for anchor reload)
+	hasRm := false
+	hasSh := false
 	for _, call := range mockCmd.Calls {
-		if call.Name == "pfctl" {
-			found = true
-			break
+		if call.Name == "sudo rm" {
+			hasRm = true
+		}
+		if call.Name == "sudo sh" {
+			hasSh = true
 		}
 	}
-	if !found {
-		t.Errorf("Cleanup should call 'pfctl' via injected Cmd, got calls: %v", mockCmd.CallKeys())
+	if !hasRm {
+		t.Errorf("Cleanup should call 'sudo rm' via injected Cmd, got calls: %v", mockCmd.CallKeys())
+	}
+	if !hasSh {
+		t.Errorf("Cleanup should call 'sudo sh' via injected Cmd, got calls: %v", mockCmd.CallKeys())
 	}
 }
 
-// TestCleanup_CmdReceivesFlushArgs verifies that Cleanup passes the correct
-// flush arguments to pfctl via the injected Cmd.
-func TestCleanup_CmdReceivesFlushArgs(t *testing.T) {
+// TestCleanup_CmdReceivesCorrectArgs verifies that Cleanup removes rule files
+// and reloads the anchor via the injected Cmd.
+func TestCleanup_CmdReceivesCorrectArgs(t *testing.T) {
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(nil, mockCmd, "", false)
+	env := shared.NewNetworkEnv(afero.NewMemMapFs(), mockCmd, "", false)
 	firewall := New(env)
 
 	_ = firewall.Cleanup("abc123def456")
 
-	// Find the pfctl call
-	var pfctlCall *util.CommandCall
-	for i := range mockCmd.Calls {
-		if mockCmd.Calls[i].Name == "pfctl" {
-			pfctlCall = &mockCmd.Calls[i]
-			break
+	// Find the sudo sh call that reloads the anchor
+	found := false
+	for _, call := range mockCmd.Calls {
+		if call.Name == "sudo sh" {
+			args := strings.Join(call.Args, " ")
+			if strings.Contains(args, "pfctl") && strings.Contains(args, pfAnchorName) {
+				found = true
+				break
+			}
 		}
 	}
 
-	if pfctlCall == nil {
-		t.Fatal("Expected pfctl call")
-	}
-
-	// Verify arguments: -a <anchor> -F all
-	args := strings.Join(pfctlCall.Args, " ")
-	if !strings.Contains(args, "-a") {
-		t.Errorf("pfctl args should contain '-a', got: %v", pfctlCall.Args)
-	}
-	if !strings.Contains(args, "alcatraz/abc123def456") {
-		t.Errorf("pfctl args should contain anchor name, got: %v", pfctlCall.Args)
-	}
-	if !strings.Contains(args, "-F all") {
-		t.Errorf("pfctl args should contain '-F all' for flush, got: %v", pfctlCall.Args)
+	if !found {
+		t.Errorf("Expected 'sudo sh -c ... pfctl ... %s ...' call, got: %v", pfAnchorName, mockCmd.CallKeys())
 	}
 }
 
@@ -187,7 +183,7 @@ func TestApplyRules_ReturnsErrorFromInjectedCmd(t *testing.T) {
 	mockCmdWithErr := util.NewMockCommandRunner()
 	mockCmdWithErr.Expect("sh -c echo \"# Block RFC1918 and other private ranges\\nblock drop quick from 172.20.0.5 to 10.0.0.0/8\\nblock drop quick from 172.20.0.5 to 172.16.0.0/12\\nblock drop quick from 172.20.0.5 to 192.168.0.0/16\\nblock drop quick from 172.20.0.5 to 169.254.0.0/16\\nblock drop quick from 172.20.0.5 to 127.0.0.0/8\\n\" | pfctl -a alcatraz/abc123def456 -f -", nil, expectedErr)
 
-	env := shared.NewNetworkEnv(nil, mockCmdWithErr, "", false)
+	env := shared.NewNetworkEnv(afero.NewMemMapFs(), mockCmdWithErr, "", false)
 	firewall := New(env)
 
 	err := firewall.ApplyRules("abc123def456", "172.20.0.5", nil)
@@ -198,11 +194,11 @@ func TestApplyRules_ReturnsErrorFromInjectedCmd(t *testing.T) {
 	}
 }
 
-// TestApplyRules_SkipsWhenAllLAN verifies that when AllLAN is set,
-// no commands are executed via the injected Cmd.
-func TestApplyRules_SkipsWhenAllLAN(t *testing.T) {
+// TestApplyRules_NoFilterRulesWhenAllLAN verifies that when AllLAN is set,
+// no filter rules are generated but cleanup commands still run.
+func TestApplyRules_NoFilterRulesWhenAllLAN(t *testing.T) {
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(nil, mockCmd, "", false)
+	env := shared.NewNetworkEnv(afero.NewMemMapFs(), mockCmd, "", false)
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{
@@ -215,8 +211,11 @@ func TestApplyRules_SkipsWhenAllLAN(t *testing.T) {
 		t.Errorf("ApplyRules with AllLAN should not error, got: %v", err)
 	}
 
-	// No commands should be called
-	if len(mockCmd.Calls) > 0 {
-		t.Errorf("ApplyRules with AllLAN should not call any commands, got: %v", mockCmd.CallKeys())
+	// Commands are expected (cleanup old files, reload anchor),
+	// but no filter rule file should be written (only rm -f calls).
+	for _, call := range mockCmd.Calls {
+		if call.Name == "mv" {
+			t.Errorf("ApplyRules with AllLAN should not write rule files, got mv call: %v", call.Args)
+		}
 	}
 }

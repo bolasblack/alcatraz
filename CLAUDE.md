@@ -1,5 +1,9 @@
 See [.agents/CLAUDE.md](.agents/CLAUDE.md) for the Agent Centric framework.
 
+## AGD Operations
+
+When creating or updating AGD files, **always load the `/agent-centric` skill first**. This ensures proper validation, indexing, and relationship maintenance.
+
 ## Config Changes Checklist
 
 When modifying config-related code (`internal/config/`):

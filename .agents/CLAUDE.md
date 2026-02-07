@@ -156,15 +156,17 @@ When creating or updating an AGD:
 2. Read related AGDs to determine if new AGD extends/modifies them
 3. If relationship exists:
    - Add `updates: AGD-XXX` or `obsoletes: AGD-XXX` to the new AGD
-   - Add `updated_by: AGD-YYY` or `obsoleted_by: AGD-YYY` to the old AGD
 
 **Example**: Creating AGD-022 (config includes) with `#config` tag:
+
 ```bash
 $ grep '#config' .agents/INDEX-TAGS.md
 decisions/AGD-009_cli-design.md: #cli, #config
 decisions/AGD-017_env-config-design.md: #config, #cli
 ...
-```
+
 AGD-009 defines the config file format. AGD-022 extends it with `includes` field.
+
 - AGD-022: add `updates: AGD-009`
-- AGD-009: add `AGD-022` to its `updated_by` field
+- AGD-009: `AGD-022` will be added to `updated_by` field automatically by the script
+```

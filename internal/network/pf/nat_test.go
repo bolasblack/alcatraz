@@ -81,12 +81,12 @@ func TestHasLANAccess(t *testing.T) {
 		{
 			name:      "specific CIDR only",
 			lanAccess: []string{"10.0.0.0/8", "192.168.0.0/16"},
-			expected:  false,
+			expected:  true, // any non-empty config means LAN access is configured
 		},
 		{
 			name:      "single specific entry",
 			lanAccess: []string{"192.168.1.100"},
-			expected:  false,
+			expected:  true, // any non-empty config means LAN access is configured
 		},
 	}
 

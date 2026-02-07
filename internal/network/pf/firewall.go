@@ -12,6 +12,15 @@ import (
 	"github.com/bolasblack/alcatraz/internal/network/shared"
 )
 
+// File prefixes ensure correct pf rule ordering when files are concatenated via cat *.
+// pf requires: translation (nat) rules before filtering (pass/block) rules.
+const (
+	// natRulePrefix is the file prefix for NAT/translation rules.
+	natRulePrefix = "0nat"
+	// filterRulePrefix is the file prefix for filter (pass/block) rules.
+	filterRulePrefix = "1filter"
+)
+
 // PF implements shared.Firewall using macOS pf (packet filter).
 // Each container gets its own anchor under alcatraz/ for isolation and clean teardown.
 type PF struct {
@@ -117,10 +126,21 @@ func projectFileName(projectPath string) string {
 	return strings.ReplaceAll(projectPath, "/", "-")
 }
 
-// filterRuleFile returns the path for a project's filter rule file.
-// Uses the same file as NAT rules (e.g., "-Users-alice-project").
-// Filter rules are appended to the existing project file.
+// natRuleFile returns the path for a project's NAT/translation rule file.
+// Uses "0nat" prefix to sort before filter rules (e.g., "0nat-Users-alice-project").
+func natRuleFile(projectDir string) string {
+	return filepath.Join(pfAnchorDir, natRulePrefix+projectFileName(projectDir))
+}
+
+// filterRuleFile returns the path for a project's filter (pass/block) rule file.
+// Uses "1filter" prefix to sort after NAT rules (e.g., "1filter-Users-alice-project").
 func filterRuleFile(projectDir string) string {
+	return filepath.Join(pfAnchorDir, filterRulePrefix+projectFileName(projectDir))
+}
+
+// legacyRuleFile returns the old single-file path for migration cleanup.
+// Old format stored both NAT and filter rules in one file (e.g., "-Users-alice-project").
+func legacyRuleFile(projectDir string) string {
 	return filepath.Join(pfAnchorDir, projectFileName(projectDir))
 }
 
@@ -134,33 +154,31 @@ func writeBroadNATRules(sb *strings.Builder, containerIP string, interfaces []st
 }
 
 // ApplyRules creates pf rules to apply network isolation with allow rules.
-// Rules are written to the project file /etc/pf.anchors/alcatraz/<project> for persistence,
-// then loaded via pfctl. LaunchDaemon reloads these files on boot.
-// Uses temp file + sudo mv pattern since /etc/pf.anchors requires root access.
+// NAT and filter rules are written to separate files with ordering prefixes
+// (0nat-*, 1filter-*) so that cat * produces correct pf rule ordering:
+// all translation rules before all filtering rules.
 //
-// For OrbStack: ALL NAT rules are generated per-container in project files:
+// For OrbStack: NAT rules are generated per-container:
 //   - lan-access: ['*'] → broad NAT to all interfaces
 //   - lan-access: [whitelist] → selective NAT + no-nat catch-all
 //   - lan-access: [] or none → no-nat catch-all only
 //
-// For Docker Desktop: uses filter rules (block non-whitelisted traffic).
+// For Docker Desktop: uses filter rules only (block non-whitelisted traffic).
 func (p *PF) ApplyRules(containerID string, containerIP string, rules []shared.LANAccessRule) error {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("# Container: %s (%s)\n", containerID, containerIP))
-
+	header := fmt.Sprintf("# Container: %s (%s)\n", containerID, containerIP)
 	hasAllLAN := shared.HasAllLAN(rules)
 
-	// OrbStack: ALL NAT logic is per-container in project files
-	// Docker Desktop: use filter rules only (pf sees real container IP)
+	// Build NAT content (OrbStack only)
+	var natContent string
 	if p.env.IsOrbStack {
+		var sb strings.Builder
+		sb.WriteString(header)
 		pfh := newPfHelper()
 		interfaces, _ := pfh.getPhysicalInterfaces(p.env)
 		if len(interfaces) > 0 {
 			if hasAllLAN {
-				// lan-access: ['*'] → broad NAT for this container
 				writeBroadNATRules(&sb, containerIP, interfaces)
 			} else if len(rules) > 0 {
-				// lan-access: [whitelist] → selective NAT + no-nat catch-all
 				sb.WriteString("# Selective NAT for whitelisted destinations\n")
 				for _, rule := range rules {
 					for _, iface := range interfaces {
@@ -168,41 +186,23 @@ func (p *PF) ApplyRules(containerID string, containerIP string, rules []shared.L
 					}
 				}
 				sb.WriteString("\n")
-
 				sb.WriteString("# Catch-all: prevent other traffic from being NAT'd\n")
-				sb.WriteString(fmt.Sprintf("no nat from %s to any\n\n", containerIP))
+				sb.WriteString(fmt.Sprintf("no nat from %s to any\n", containerIP))
 			} else {
-				// lan-access: [] or none → no-nat catch-all only
 				sb.WriteString("# No LAN access: block all NAT for this container\n")
-				sb.WriteString(fmt.Sprintf("no nat from %s to any\n\n", containerIP))
+				sb.WriteString(fmt.Sprintf("no nat from %s to any\n", containerIP))
 			}
 		}
+		natContent = sb.String()
 	}
 
-	// Generate filter rules for Docker Desktop (and defense-in-depth for OrbStack)
-	// Skip filter rules if all LAN access is allowed
+	// Build filter content (Docker Desktop + defense-in-depth for OrbStack)
+	var filterContent string
 	if !hasAllLAN {
-		ruleset := generatePfRuleset(containerIP, rules)
-		sb.WriteString(ruleset)
-	}
-
-	rulePath := filterRuleFile(p.env.ProjectDir)
-	fileContent := sb.String()
-
-	// Write to temp file first (no sudo needed)
-	tmpFile, err := afero.TempFile(p.env.Fs, "", "alcatraz-filter-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	defer func() { _ = p.env.Fs.Remove(tmpPath) }() // Clean up temp file
-
-	if _, err := tmpFile.WriteString(fileContent); err != nil {
-		_ = tmpFile.Close()
-		return fmt.Errorf("failed to write to temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("failed to close temp file: %w", err)
+		var sb strings.Builder
+		sb.WriteString(header)
+		sb.WriteString(generatePfRuleset(containerIP, rules))
+		filterContent = sb.String()
 	}
 
 	// Ensure directory exists with sudo
@@ -210,14 +210,21 @@ func (p *PF) ApplyRules(containerID string, containerIP string, rules []shared.L
 		return fmt.Errorf("failed to create anchor directory: %w", err)
 	}
 
-	// Move temp file to final location with sudo
-	if _, err := p.env.Cmd.SudoRunQuiet("mv", tmpPath, rulePath); err != nil {
-		return fmt.Errorf("failed to move filter rules to %s: %w", rulePath, err)
+	// Write NAT file (or remove if empty)
+	if err := writeOrRemoveRuleFile(p.env, natRuleFile(p.env.ProjectDir), natContent); err != nil {
+		return err
 	}
 
-	// Load ALL anchor files together to preserve NAT rules from _shared file.
-	// Using single-file load would overwrite the entire anchor content.
-	// This matches the pattern used by LaunchDaemon and loadInitialPfRules().
+	// Write filter file (or remove if empty)
+	if err := writeOrRemoveRuleFile(p.env, filterRuleFile(p.env.ProjectDir), filterContent); err != nil {
+		return err
+	}
+
+	// Remove legacy single-file format (migration from pre-split layout)
+	_, _ = p.env.Cmd.SudoRunQuiet("rm", "-f", legacyRuleFile(p.env.ProjectDir))
+
+	// Load ALL anchor files together. File prefixes ensure correct ordering:
+	// 0nat-* (translation) before 1filter-* (filtering).
 	cmd := fmt.Sprintf("cat %s/* 2>/dev/null | pfctl -a %s -f -", pfAnchorDir, pfAnchorName)
 	output, err := p.env.Cmd.SudoRunQuiet("sh", "-c", cmd)
 	if err != nil {
@@ -227,10 +234,40 @@ func (p *PF) ApplyRules(containerID string, containerIP string, rules []shared.L
 	return nil
 }
 
-// Cleanup removes pf rules for a container by removing the project file and reloading the anchor.
+// writeOrRemoveRuleFile writes content to a rule file, or removes the file if content is empty.
+// Uses temp file + sudo mv pattern since /etc/pf.anchors requires root access.
+func writeOrRemoveRuleFile(env *shared.NetworkEnv, path, content string) error {
+	if content == "" {
+		_, _ = env.Cmd.SudoRunQuiet("rm", "-f", path)
+		return nil
+	}
+
+	tmpFile, err := afero.TempFile(env.Fs, "", "alcatraz-rule-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer func() { _ = env.Fs.Remove(tmpPath) }()
+
+	if _, err := tmpFile.WriteString(content); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to write to temp file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	if _, err := env.Cmd.SudoRunQuiet("mv", tmpPath, path); err != nil {
+		return fmt.Errorf("failed to move rule file to %s: %w", path, err)
+	}
+	return nil
+}
+
+// Cleanup removes pf rules for a container by removing both NAT and filter files and reloading.
 func (p *PF) Cleanup(containerID string) error {
-	rulePath := filterRuleFile(p.env.ProjectDir)
-	_, _ = p.env.Cmd.SudoRunQuiet("rm", "-f", rulePath)
+	_, _ = p.env.Cmd.SudoRunQuiet("rm", "-f", natRuleFile(p.env.ProjectDir))
+	_, _ = p.env.Cmd.SudoRunQuiet("rm", "-f", filterRuleFile(p.env.ProjectDir))
+	_, _ = p.env.Cmd.SudoRunQuiet("rm", "-f", legacyRuleFile(p.env.ProjectDir))
 
 	// Reload anchor with remaining files (or empty if none left)
 	cmd := fmt.Sprintf("cat %s/* 2>/dev/null | pfctl -a %s -f - || pfctl -a %s -F all", pfAnchorDir, pfAnchorName, pfAnchorName)

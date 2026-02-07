@@ -32,3 +32,4 @@ decisions/AGD-026_container-capabilities-config.md: #config, #security, #runtime
 decisions/AGD-027_linux-nftables-primary.md: #linux, #network-isolation, #security
 decisions/AGD-028_lan-access-syntax.md: #config, #network-isolation, #security
 decisions/AGD-029_env-dependency-injection.md: #patterns
+decisions/AGD-030_orbstack-nftables-network-isolation.md: #macos, #network-isolation, #security, #runtime

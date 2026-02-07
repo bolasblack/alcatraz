@@ -15,16 +15,14 @@ type pfHelper struct{}
 var _ shared.NetworkHelper = (*pfHelper)(nil)
 
 func (p *pfHelper) Setup(env *shared.NetworkEnv, projectDir string, _ shared.ProgressFunc) (*shared.PostCommitAction, error) {
-	// Ensure _shared file exists (empty - NAT rules are generated per-container in project files)
-	// The _shared file must exist for file ordering: project files (e.g., "-Users-foo") sort
-	// before "_shared" in ASCII, so project-specific rules take precedence.
+	// Ensure _shared file exists (placeholder for shared rules)
 	if err := p.writeSharedRule(env, "# Shared rules (NAT handled per-container in project files)\n"); err != nil {
 		return nil, err
 	}
 
-	// Create project file
+	// Create project filter placeholder (will be overwritten by ApplyRules)
 	content := "# Project: " + projectDir + "\n"
-	if err := p.writeProjectFile(env, projectDir, content); err != nil {
+	if err := p.writeAnchorFile(env, filterRulePrefix+p.projectFileName(projectDir), content); err != nil {
 		return nil, err
 	}
 

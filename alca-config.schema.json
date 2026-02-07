@@ -55,7 +55,10 @@
         },
         "runtime": {
           "type": "string",
-          "enum": ["auto", "docker"],
+          "enum": [
+            "auto",
+            "docker"
+          ],
           "description": "Container runtime selection"
         },
         "commands": {
@@ -171,7 +174,10 @@
             },
             "additionalProperties": false,
             "type": "object",
-            "required": ["source", "target"],
+            "required": [
+              "source",
+              "target"
+            ],
             "description": "Extended format with excludes"
           }
         ]

@@ -8,12 +8,6 @@ import (
 	"github.com/bolasblack/alcatraz/internal/network/shared"
 )
 
-func ensureFirewallSystemConfig(_ *NetworkEnv, _ Type) error {
-	// nftables rules are loaded directly into the kernel via `nft -f`;
-	// no system config file reference is needed for immediate effect.
-	return nil
-}
-
 // newFirewallForType creates a Firewall for the given type.
 func newFirewallForType(t Type, env *NetworkEnv) Firewall {
 	switch t {

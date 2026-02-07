@@ -4,6 +4,7 @@ includes = ['./.alca.*.toml']
 image = "nixos/nix"
 
 workdir_exclude = [
+  ".alca.cache",
   "out",
   "out_*",
   "vendor",

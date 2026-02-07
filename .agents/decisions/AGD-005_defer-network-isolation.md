@@ -1,9 +1,10 @@
 ---
-title: "Defer Network Isolation Implementation"
-description: "Network isolation is researched but not implemented in initial release"
+title: Defer Network Isolation Implementation
+description: Network isolation is researched but not implemented in initial release
 tags: network-isolation
-updated_by: AGD-023
+updated_by: AGD-023, AGD-030
 ---
+
 
 ## Context
 

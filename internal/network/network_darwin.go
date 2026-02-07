@@ -8,13 +8,6 @@ import (
 	"github.com/bolasblack/alcatraz/internal/network/shared"
 )
 
-func ensureFirewallSystemConfig(env *NetworkEnv, fwType Type) error {
-	if fwType == TypePF {
-		return pf.EnsureAnchorConfig(env)
-	}
-	return nil
-}
-
 // newFirewallForType creates a Firewall for the given type.
 func newFirewallForType(t Type, env *NetworkEnv) Firewall {
 	switch t {

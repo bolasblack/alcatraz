@@ -233,65 +233,6 @@ func insertBeforeFirstAnchor(lines []string, anchorLine string) []string {
 	return append(lines, anchorLine)
 }
 
-// EnsureAnchorConfig ensures both nat-anchor and filter anchor lines exist
-// in /etc/pf.conf, and reloads pf.conf if changes were made.
-// Uses sudo for writing since /etc/pf.conf requires root access.
-// This is idempotent and safe to call multiple times.
-func EnsureAnchorConfig(env *shared.NetworkEnv) error {
-	content, err := afero.ReadFile(env.Fs, pfConfPath)
-	if err != nil {
-		return fmt.Errorf("failed to read pf.conf: %w", err)
-	}
-
-	contentStr := string(content)
-	hasNatAnchor := hasExactLine(contentStr, pfAnchorLine)
-	hasFilterAnchor := hasExactLine(contentStr, pfFilterAnchorLine)
-	if hasNatAnchor && hasFilterAnchor {
-		return nil
-	}
-
-	lines := strings.Split(contentStr, "\n")
-	if !hasNatAnchor {
-		lines = insertAnchorLine(lines, pfAnchorLine)
-	}
-	if !hasFilterAnchor {
-		lines = insertFilterAnchorLine(lines, pfFilterAnchorLine)
-	}
-
-	newContent := strings.Join(lines, "\n")
-	if !strings.HasSuffix(newContent, "\n") {
-		newContent += "\n"
-	}
-
-	// Write to temp file first (no sudo needed for /tmp)
-	tmpFile, err := afero.TempFile(env.Fs, "", "alcatraz-pfconf-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	defer func() { _ = env.Fs.Remove(tmpPath) }()
-
-	if _, err := tmpFile.WriteString(newContent); err != nil {
-		_ = tmpFile.Close()
-		return fmt.Errorf("failed to write temp pf.conf: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("failed to close temp file: %w", err)
-	}
-
-	// Move temp file to /etc/pf.conf with sudo
-	if _, err := env.Cmd.SudoRunQuiet("mv", tmpPath, pfConfPath); err != nil {
-		return fmt.Errorf("failed to update pf.conf: %w", err)
-	}
-
-	// Reload pf.conf to activate the new anchor lines
-	if _, err := env.Cmd.SudoRunQuiet("pfctl", "-f", pfConfPath); err != nil {
-		return fmt.Errorf("failed to reload pf.conf: %w", err)
-	}
-
-	return nil
-}
-
 // writePfConf writes the new pf.conf content to the staging filesystem.
 // The actual file write with sudo will happen during commit.
 func writePfConf(env *shared.NetworkEnv, lines []string) error {

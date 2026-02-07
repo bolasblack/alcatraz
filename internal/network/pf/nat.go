@@ -174,16 +174,22 @@ func findNewInterfaces(current, existing []string) []string {
 	return newIfaces
 }
 
-// deleteProjectFile removes the project-specific rule file.
+// deleteProjectFile removes the project-specific rule files (NAT + filter + legacy).
 // Returns (removeShared, error) where removeShared indicates the shared file
 // should also be removed (no other projects remain).
 func (p *pfHelper) deleteProjectFile(env *shared.NetworkEnv, projectPath string) (removeShared bool, err error) {
-	filename := p.projectFileName(projectPath)
-	projectFilePath := filepath.Join(pfAnchorDir, filename)
+	base := p.projectFileName(projectPath)
 
-	// Remove project file
-	if err := env.Fs.Remove(projectFilePath); err != nil && !os.IsNotExist(err) {
-		return false, fmt.Errorf("failed to remove project file: %w", err)
+	// Remove NAT, filter, and legacy rule files
+	for _, name := range []string{
+		natRulePrefix + base,
+		filterRulePrefix + base,
+		base, // legacy single-file format
+	} {
+		path := filepath.Join(pfAnchorDir, name)
+		if err := env.Fs.Remove(path); err != nil && !os.IsNotExist(err) {
+			return false, fmt.Errorf("failed to remove rule file %s: %w", name, err)
+		}
 	}
 
 	// Flush main anchor - LaunchDaemon will reload on file change

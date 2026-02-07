@@ -3,6 +3,7 @@ title: "macOS LAN Access via pf Anchor"
 description: "Use pf anchor and LaunchDaemon WatchPaths for container LAN access on macOS with OrbStack"
 tags: macos, network-isolation, security, config
 updates: AGD-005
+obsoleted_by: AGD-030
 ---
 
 ## Context
