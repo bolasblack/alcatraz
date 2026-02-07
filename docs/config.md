@@ -401,23 +401,25 @@ Linux capabilities configuration for container security. See [AGD-026](https://g
 image = "nixos/nix"
 ```
 
-**Result**: `--cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add KILL`
+**Result**: `--cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add KILL --cap-add SETUID --cap-add SETGID`
 
 Default capabilities:
 - `CHOWN`: Package managers (npm, pip, cargo) need to modify file ownership
 - `DAC_OVERRIDE`: Bypass file read/write/execute permission checks for file operations in containers
 - `FOWNER`: Modify file permissions and attributes during builds
 - `KILL`: Terminate child processes (test runners, dev servers)
+- `SETUID`: Required by package managers (apt, nix) for sandbox/daemon builds
+- `SETGID`: Required by package managers (apt, nix) for sandbox/daemon builds
 
 #### Mode 1: Additive (Array)
 
 Add capabilities beyond the defaults:
 
 ```toml
-caps = ["SETUID", "SETGID"]
+caps = ["NET_BIND_SERVICE"]
 ```
 
-**Result**: `--cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add KILL --cap-add SETUID --cap-add SETGID`
+**Result**: `--cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add KILL --cap-add SETUID --cap-add SETGID --cap-add NET_BIND_SERVICE`
 
 Use this when you need additional capabilities but want to keep the secure default base.
 
@@ -450,7 +452,7 @@ drop = ["NET_RAW", "MKNOD", "SYS_CHROOT"]
 | Error | Solution |
 |-------|----------|
 | `Permission denied` when writing files | Add `DAC_OVERRIDE` capability |
-| `Operation not permitted` with setuid | Add `SETUID` and/or `SETGID` capabilities |
+| `Operation not permitted` with setuid | Ensure `SETUID` and `SETGID` are in add list (included by default) |
 | Package manager fails to change ownership | Ensure `CHOWN` and `FOWNER` are in add list |
 
 ## Runtime-Specific Notes

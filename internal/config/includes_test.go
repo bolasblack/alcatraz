@@ -790,7 +790,7 @@ image = "test:latest"
 
 	// No caps field means apply secure defaults
 	expectedDrop := []string{"ALL"}
-	expectedAdd := []string{"CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL"}
+	expectedAdd := []string{"CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL", "SETUID", "SETGID"}
 
 	if len(cfg.Caps.Drop) != len(expectedDrop) {
 		t.Errorf("expected Drop %v, got %v", expectedDrop, cfg.Caps.Drop)

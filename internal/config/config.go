@@ -150,7 +150,7 @@ type Caps struct {
 // DefaultCaps are the capabilities added in additive mode.
 // These are sufficient for most AI development workflows.
 // See AGD-026 for rationale.
-var DefaultCaps = []string{"CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL"}
+var DefaultCaps = []string{"CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL", "SETUID", "SETGID"}
 
 // DefaultCapsDrop returns the default drop list (ALL) for additive mode.
 func DefaultCapsDrop() []string {
@@ -391,7 +391,7 @@ func capsJSONSchema() *jsonschema.Schema {
 			{
 				Type:        "array",
 				Items:       &jsonschema.Schema{Type: "string"},
-				Description: "Additive mode: capabilities to add beyond defaults (CHOWN, DAC_OVERRIDE, FOWNER, KILL). Drops ALL first.",
+				Description: "Additive mode: capabilities to add beyond defaults (CHOWN, DAC_OVERRIDE, FOWNER, KILL, SETUID, SETGID). Drops ALL first.",
 			},
 			{
 				Type:                 "object",

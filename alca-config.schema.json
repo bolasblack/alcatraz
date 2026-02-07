@@ -83,7 +83,7 @@
                 "type": "string"
               },
               "type": "array",
-              "description": "Additive mode: capabilities to add beyond defaults (CHOWN, DAC_OVERRIDE, FOWNER, KILL). Drops ALL first."
+              "description": "Additive mode: capabilities to add beyond defaults (CHOWN, DAC_OVERRIDE, FOWNER, KILL, SETUID, SETGID). Drops ALL first."
             },
             {
               "properties": {
