@@ -4,7 +4,16 @@ set -eu
 NFT_DIR="/files/alcatraz_nft"
 PLATFORM="${ALCA_PLATFORM:-}"
 
-log() { echo "[alcatraz-network-helper] $*"; }
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [alcatraz-network-helper] $*"; }
+
+# --- Get hash of all rule files ---
+get_dir_hash() {
+  if [ -d "$NFT_DIR" ]; then
+    find "$NFT_DIR" -name "*.nft" -type f | sort | xargs cat 2>/dev/null | md5sum | cut -d' ' -f1
+  else
+    echo ""
+  fi
+}
 
 # --- Readiness check ---
 readiness_check() {
@@ -44,6 +53,10 @@ readiness_check() {
 # We use shell redirection (< file) to open the file from container FS before nsenter,
 # then nft reads from /dev/stdin inside the host namespace via inherited fd.
 load_rules() {
+  # Capture current state hash at the start
+  local current_hash
+  current_hash=$(get_dir_hash)
+
   # Delete all alca-* tables for clean slate
   nsenter -t 1 -m -u -n -i nft list tables | grep "inet alca-" | while read _ _ table; do
     nsenter -t 1 -m -u -n -i nft delete table inet "$table" 2>/dev/null || true
@@ -63,6 +76,9 @@ load_rules() {
     done
   fi
   log "Loaded $loaded rule file(s)"
+
+  # Update last_hash to the state we just loaded
+  last_hash=$current_hash
 }
 
 # --- Reload handler ---
@@ -71,16 +87,16 @@ reload() {
 
   # Reload-then-recheck loop: keep reloading until state is stable
   while true; do
-    # Record current state (mtime of all .nft files)
-    state_before=$(find "$NFT_DIR" -name "*.nft" -type f -exec stat -c '%Y %n' {} \; 2>/dev/null | sort)
+    # Record current state (content hash of all .nft files)
+    hash_before=$(get_dir_hash)
 
     # Apply all rules
     load_rules
 
     # Check if state changed during reload
-    state_after=$(find "$NFT_DIR" -name "*.nft" -type f -exec stat -c '%Y %n' {} \; 2>/dev/null | sort)
+    hash_after=$(get_dir_hash)
 
-    if [ "$state_before" = "$state_after" ]; then
+    if [ "$hash_before" = "$hash_after" ]; then
       log "Reload complete (state stable)"
       break
     else
@@ -94,6 +110,7 @@ trap 'reload' HUP
 trap 'log "Shutting down"; exit 0' TERM INT
 
 # --- Main ---
+last_hash=""
 readiness_check
 load_rules
 
@@ -106,5 +123,14 @@ while true; do
   else
     sleep 30
   fi
-  load_rules
+
+  # Only reload if content actually changed
+  log "Check triggered"
+  current_hash=$(get_dir_hash)
+  if [ "$current_hash" != "$last_hash" ]; then
+    log "Content changed, reloading..."
+    load_rules
+  else
+    log "Content unchanged, skipping reload"
+  fi
 done
