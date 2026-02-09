@@ -1,133 +1,11 @@
 ---
-title: Configuration
-weight: 20
+title: Field Reference
+weight: 2
 ---
 
-# Configuration Reference
+# Field Reference
 
-This document describes the `.alca.toml` configuration file format for Alcatraz.
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Includes](#includes)
-- [Field Reference](#field-reference)
-- [Runtime-Specific Notes](#runtime-specific-notes)
-- [Network Configuration](#network-configuration)
-- [Full Example](#full-example)
-
-## Overview
-
-Alcatraz uses TOML format for configuration. The configuration file should be named `.alca.toml` and placed in your project root.
-
-## Includes
-
-Configuration files can include other files for composable configuration:
-
-```toml
-includes = [".alca.dev.toml", ".alca.local.toml"]
-```
-
-### Basic Usage
-
-```toml
-# .alca.toml - main config
-includes = [".alca.base.toml"]
-image = "myapp:latest"  # Override base image
-```
-
-```toml
-# .alca.base.toml - shared base config
-image = "nixos/nix"
-workdir = "/workspace"
-
-[commands]
-enter = "[ -f flake.nix ] && exec nix develop"
-```
-
-### Path Resolution
-
-- Paths are resolved **relative to the including file's directory** (not the current working directory)
-- Absolute paths are also supported
-
-### Glob Patterns
-
-Use glob patterns to include multiple files:
-
-```toml
-includes = [".alca.*.toml"]  # Includes .alca.dev.toml, .alca.local.toml, etc.
-```
-
-- Supported patterns: `*`, `?`, `[...]`
-- Empty glob results are OK (no error if no files match)
-- Literal paths (without glob characters) must exist or will error
-
-### Merge Behavior
-
-| Type | Behavior |
-|------|----------|
-| **Objects** | Deep merge (nested fields merged recursively) |
-| **Arrays** | Append (concatenate, no deduplication) |
-| **Same key** | Later value wins (overlay overrides base) |
-
-### Processing Order
-
-Includes are processed depth-first:
-
-```
-.alca.toml includes [.alca.dev.toml]
-.alca.dev.toml includes [.alca.common.toml]
-```
-
-1. Load `.alca.common.toml`
-2. Load `.alca.dev.toml`, merge with `.alca.common.toml`
-3. Load `.alca.toml`, merge with result
-
-### Error Handling
-
-- **Circular reference**: Error with clear message
-- **File not found (literal path)**: Error
-- **Empty glob result**: OK (continues without including anything)
-
-### Example: Environment-specific Configuration
-
-```toml
-# .alca.toml
-includes = [".alca.base.toml", ".alca.local.toml"]
-# .alca.local.toml is gitignored for machine-specific overrides
-
-# .alca.base.toml (checked into repo)
-image = "nixos/nix"
-workdir = "/workspace"
-mounts = ["~/.gitconfig:/root/.gitconfig:ro"]
-
-# .alca.local.toml (gitignored)
-mounts = ["/my/local/cache:/cache"]
-[resources]
-memory = "32g"
-cpus = 16
-```
-
-See [AGD-022](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-022_config-includes-support.md) for design rationale.
-
-## Field Reference
-
-| Field              | Type   | Required | Default                                  | Description                                    |
-| ------------------ | ------ | -------- | ---------------------------------------- | ---------------------------------------------- |
-| `image`            | string | Yes      | `"nixos/nix"`                            | Container image to use                         |
-| `workdir`          | string | No       | `"/workspace"`                           | Working directory inside container             |
-| `workdir_exclude`  | array  | No       | `[]`                                     | Patterns to exclude from workdir mount         |
-| `runtime`          | string | No       | `"auto"`                                 | Runtime selection mode                         |
-| `commands.up`      | string | No       | -                                        | Setup command (run once on container creation) |
-| `commands.enter`   | string | No       | `"[ -f flake.nix ] && exec nix develop"` | Entry command (run on each shell entry)        |
-| `mounts`           | array  | No       | `[]`                                     | Additional mount points                        |
-| `resources.memory` | string | No       | -                                        | Memory limit (e.g., "4g", "512m")              |
-| `resources.cpus`   | int    | No       | -                                        | CPU limit (e.g., 2, 4)                         |
-| `envs`             | table  | No       | See below                                | Environment variables for the container        |
-| `network.lan-access` | array | No      | `[]`                                     | LAN access configuration (macOS only)          |
-| `caps`             | array/table | No  | See below                                | Container Linux capabilities configuration     |
-
-### image
+## image
 
 The container image to use for the isolated environment.
 
@@ -137,10 +15,10 @@ image = "nixos/nix"
 
 - **Type**: string
 - **Required**: Yes
-- **Default**: `"nixos/nix"`
+- **Default**: None (must be specified)
 - **Examples**: `"ubuntu:22.04"`, `"alpine:latest"`, `"nixos/nix"`
 
-### workdir
+## workdir
 
 The working directory inside the container where your project will be mounted.
 
@@ -153,7 +31,7 @@ workdir = "/workspace"
 - **Default**: `"/workspace"`
 - **Notes**: Must be an absolute path
 
-### workdir_exclude
+## workdir_exclude
 
 Patterns to exclude from the workdir mount. When specified, Alcatraz uses [Mutagen](https://mutagen.io/) for file synchronization instead of direct bind mounts.
 
@@ -184,9 +62,9 @@ target = "/workspace"
 exclude = ["node_modules", ".git"]
 ```
 
-**Note**: You cannot use both `workdir_exclude` and a separate mount targeting the same path as `workdir`. Attempting to do so will result in an error.
+**Note**: You cannot add a mount targeting the same path as `workdir`. If you need to exclude subdirectories from syncing, use `workdir_exclude` instead of creating a separate mount.
 
-### runtime
+## runtime
 
 Selects which container runtime to use.
 
@@ -198,10 +76,10 @@ runtime = "auto"
 - **Required**: No
 - **Default**: `"auto"`
 - **Valid values**:
-  - `"auto"` - Auto-detect best available runtime (Linux: Podman > Docker; Other: Docker)
+  - `"auto"` - Auto-detect best available runtime (Linux: Podman > Docker; macOS: Docker / OrbStack)
   - `"docker"` - Force Docker regardless of other available runtimes
 
-### commands.up
+## commands.up
 
 Setup command executed once when the container is created. Use this for one-time initialization tasks.
 
@@ -217,7 +95,7 @@ up = "nix-channel --update && nix-env -iA nixpkgs.git"
   - `"apt-get update && apt-get install -y vim"`
   - `"nix-channel --update"`
 
-### commands.enter
+## commands.enter
 
 Entry command executed each time you enter the container shell. Use this for environment setup.
 
@@ -231,11 +109,11 @@ enter = "[ -f flake.nix ] && exec nix develop"
 - **Default**: `"[ -f flake.nix ] && exec nix develop"`
 - **Notes**: If the command uses `exec`, it replaces the shell process
 
-### mounts
+## mounts
 
 Additional mount points beyond the default project mount. Supports both simple string format and extended object format with exclude patterns.
 
-#### Simple String Format
+### Simple String Format
 
 ```toml
 mounts = [
@@ -247,7 +125,7 @@ mounts = [
 - **Format**: `"host_path:container_path"` or `"host_path:container_path:ro"`
 - **Options**: `ro` (read-only)
 
-#### Extended Object Format
+### Extended Object Format
 
 Use the extended format when you need to exclude files from being visible inside the container. See [AGD-025](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-025_mount-exclude-with-mutagen.md) for design rationale.
 
@@ -271,7 +149,7 @@ exclude = [
 | `readonly` | bool | No | `false` | Read-only mount |
 | `exclude` | array | No | `[]` | Glob patterns to exclude |
 
-#### Exclude Patterns
+### Exclude Patterns
 
 Exclude patterns follow gitignore-like syntax (Mutagen ignore format):
 
@@ -303,7 +181,7 @@ exclude = [
 - **Required**: No
 - **Default**: `[]`
 
-### resources.memory
+## resources.memory
 
 Memory limit for the container.
 
@@ -319,7 +197,7 @@ memory = "4g"
 - **Suffixes**: `b` (bytes), `k` (KB), `m` (MB), `g` (GB)
 - **Examples**: `"512m"`, `"2g"`, `"16g"`
 
-### resources.cpus
+## resources.cpus
 
 CPU limit for the container.
 
@@ -333,7 +211,7 @@ cpus = 4
 - **Default**: None (no limit, uses runtime default)
 - **Examples**: `1`, `2`, `4`, `8`
 
-### envs
+## envs
 
 Environment variables for the container. See [AGD-017](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-017_env-config-design.md) for design rationale.
 
@@ -355,7 +233,7 @@ EDITOR = { value = "${EDITOR}", override_on_enter = true }
   - `"string"` - Static value or `${VAR}` reference, set at container creation
   - `{ value = "...", override_on_enter = true }` - Also refresh on each `alca run`
 
-#### Variable Expansion
+### Variable Expansion
 
 Use `${VAR}` to read from host environment. Only simple syntax is supported:
 
@@ -369,7 +247,7 @@ MY_VAR = "${MY_CUSTOM_VAR}"
 GREETING = "hello${NAME}"    # Complex interpolation not supported
 ```
 
-#### Default Environment Variables
+### Default Environment Variables
 
 The following are passed by default with `override_on_enter = true`:
 
@@ -388,13 +266,13 @@ The following are passed by default with `override_on_enter = true`:
 
 User-defined values override these defaults.
 
-### caps
+## caps
 
 Linux capabilities configuration for container security. See [AGD-026](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-026_container-capabilities-config.md) for design rationale.
 
 **Security rationale**: Docker's default capabilities include dangerous ones like `NET_RAW` (network sniffing) and `MKNOD` (device creation) that AI development environments don't need. Alcatraz drops all capabilities by default and only adds the minimal set needed for development workflows.
 
-#### Default Behavior (No `caps` field)
+### Default Behavior (No `caps` field)
 
 ```toml
 # No caps field - secure defaults applied
@@ -411,7 +289,7 @@ Default capabilities:
 - `SETUID`: Required by package managers (apt, nix) for sandbox/daemon builds
 - `SETGID`: Required by package managers (apt, nix) for sandbox/daemon builds
 
-#### Mode 1: Additive (Array)
+### Mode 1: Additive (Array)
 
 Add capabilities beyond the defaults:
 
@@ -423,7 +301,7 @@ caps = ["NET_BIND_SERVICE"]
 
 Use this when you need additional capabilities but want to keep the secure default base.
 
-#### Mode 2: Full Control (Object)
+### Mode 2: Full Control (Object)
 
 Take complete control over capabilities:
 
@@ -437,7 +315,7 @@ add = ["CHOWN", "FOWNER", "KILL", "SETUID", "SETGID"]
 
 Use this when you want explicit control. No implicit defaults are applied in this mode.
 
-#### Example: Keep Docker Defaults, Drop Dangerous Ones
+### Example: Keep Docker Defaults, Drop Dangerous Ones
 
 ```toml
 [caps]
@@ -447,7 +325,7 @@ drop = ["NET_RAW", "MKNOD", "SYS_CHROOT"]
 
 **Result**: `--cap-drop NET_RAW --cap-drop MKNOD --cap-drop SYS_CHROOT`
 
-#### Troubleshooting
+### Troubleshooting
 
 | Error | Solution |
 |-------|----------|
@@ -464,112 +342,6 @@ Resource limits are passed as container-level flags:
 - Memory: `-m` or `--memory` flag
 - CPU: `--cpus` flag
 
-**Important**: On macOS, Docker Desktop runs containers in a VM with fixed resource allocation. Container limits are constrained by the VM's allocated resources. Configure VM resources via Docker Desktop > Settings > Resources.
+**Important**: On macOS, Docker Desktop runs containers in a VM with fixed resource allocation. Container limits are constrained by the VM's allocated resources. Configure VM resources via Docker Desktop > Settings > Resources. (OrbStack manages resources automatically — no manual configuration needed.)
 
 > **macOS Users**: We recommend [OrbStack](https://orbstack.dev/) as it provides automatic memory management (shrinking unused memory), which colima and lima do not support.
-
-## Network Configuration
-
-Configure network access for containers. See [AGD-023](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-023_macos-lan-access-pf-anchor.md) for design rationale.
-
-### network.lan-access
-
-Allow containers to access LAN hosts.
-
-```toml
-[network]
-lan-access = ["*"]
-```
-
-- **Type**: array of strings
-- **Required**: No
-- **Default**: `[]` (no LAN access)
-- **Valid values**: `"*"` (allow all LAN access)
-
-#### Platform Behavior
-
-| Platform | Runtime | Behavior |
-|----------|---------|----------|
-| macOS | Docker Desktop | LAN access works natively, no additional setup |
-| macOS | OrbStack | Requires network-helper for NAT rules |
-| Linux | Docker/Podman | LAN access works natively |
-
-#### OrbStack Setup (macOS only)
-
-When using OrbStack on macOS, containers cannot access LAN hosts by default due to a NAT issue. Alcatraz provides a network helper to configure pf firewall rules.
-
-```bash
-# One-time installation (requires sudo)
-alca network-helper install
-
-# Check status
-alca network-helper status
-
-# Uninstall
-alca network-helper uninstall
-```
-
-**How it works**:
-
-1. On `alca up`, if `lan-access = ["*"]` is configured:
-   - Docker Desktop: No action needed
-   - OrbStack: Creates NAT rule in `/etc/pf.anchors/alcatraz/`
-
-2. On `alca down`:
-   - Removes project-specific rule file
-   - If no other projects use LAN access, removes shared NAT rule
-
-**Manual cleanup** (if alca is broken):
-
-```bash
-# View what alcatraz added
-sudo pfctl -a "alcatraz" -s all
-
-# Remove all alcatraz rules
-sudo pfctl -a "alcatraz" -F all
-
-# Remove LaunchDaemon
-sudo launchctl unload /Library/LaunchDaemons/com.alcatraz.pf-watcher.plist
-sudo rm /Library/LaunchDaemons/com.alcatraz.pf-watcher.plist
-
-# Remove rule files
-sudo rm -rf /etc/pf.anchors/alcatraz/
-```
-
-## Full Example
-
-```toml
-# Container image
-image = "nixos/nix"
-
-# Working directory inside container
-workdir = "/workspace"
-
-# Runtime selection: auto or docker
-runtime = "auto"
-
-# Lifecycle commands
-[commands]
-up = "nix-channel --update"
-enter = "[ -f flake.nix ] && exec nix develop"
-
-# Additional mounts
-mounts = [
-  "~/.gitconfig:/root/.gitconfig:ro",
-  "~/.ssh:/root/.ssh:ro"
-]
-
-# Resource limits
-[resources]
-memory = "16g"
-cpus = 8
-
-# Environment variables
-[envs]
-NIXPKGS_ALLOW_UNFREE = "1"
-EDITOR = { value = "${EDITOR}", override_on_enter = true }
-
-# Network configuration (macOS only)
-[network]
-lan-access = ["*"]
-```

@@ -8,7 +8,7 @@ When creating or updating AGD files, **always load the `/agent-centric` skill fi
 
 When modifying config-related code (`internal/config/`):
 
-1. **Update documentation**: `docs/config.md` - add/update field descriptions, examples
+1. **Update documentation**: `docs/config/` - add/update field descriptions, examples
 2. **Regenerate schema**: Run `make schema` to update `alca-config.schema.json` for editor autocomplete
 3. **Create AGD if needed**: Record significant config design decisions
 

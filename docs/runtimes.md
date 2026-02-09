@@ -43,14 +43,14 @@ docker version --format '{{.Server.Version}}'
 
 ### macOS Behavior
 
-On macOS, Docker runs containers inside a Linux VM (Docker Desktop):
+On macOS, Docker runs containers inside a Linux VM (Docker Desktop or OrbStack):
 
 - **VM Model**: Single shared VM for all containers
-- **Memory**: Must be pre-allocated to the VM via Docker Desktop settings
-- **Memory Release**: The VM does **not** release unused memory back to macOS (known limitation)
+- **Memory**: Must be pre-allocated to the VM via Docker Desktop settings (OrbStack manages memory automatically)
+- **Memory Release**: Docker Desktop does **not** release unused memory back to macOS; OrbStack shrinks unused memory automatically
 - **Resource Limits**: Container limits (`-m`, `--cpus`) constrained by VM allocation
 
-To configure VM resources:
+To configure VM resources (Docker Desktop only; not needed for OrbStack):
 
 - Docker Desktop > Settings > Resources > Advanced
 - Or edit `~/.docker/daemon.json`
@@ -80,9 +80,15 @@ docker run -m 4g --cpus 4 ...
 
 | Issue                             | Solution                                              |
 | --------------------------------- | ----------------------------------------------------- |
-| "Docker not found"                | Install Docker Desktop or Docker Engine               |
-| "Cannot connect to Docker daemon" | Start Docker Desktop or `sudo systemctl start docker` |
-| Container slow / memory issues    | Increase Docker Desktop VM memory allocation          |
+| "Docker not found"                | Install Docker Desktop, [OrbStack](https://orbstack.dev/), or Docker Engine |
+| "Cannot connect to Docker daemon" | Start Docker Desktop / OrbStack or `sudo systemctl start docker` |
+| Container slow / memory issues    | Increase Docker Desktop VM memory (OrbStack manages this automatically) |
+
+## OrbStack
+
+[OrbStack](https://orbstack.dev/) is the recommended runtime on macOS. It provides its own `docker` CLI, so Alcatraz detects and uses it the same way as Docker — no additional configuration needed.
+
+OrbStack offers automatic memory management (shrinks unused memory), unlike Docker Desktop which requires manual pre-allocation.
 
 ## Podman
 
@@ -96,22 +102,9 @@ Alcatraz checks for Podman availability by running:
 podman version --format '{{.Version}}'
 ```
 
-### macOS Behavior
+### macOS
 
-On macOS, Podman requires a VM (`podman machine`):
-
-```bash
-# Initialize VM
-podman machine init --cpus 4 --memory 8192 --disk-size 100
-
-# Modify existing VM (QEMU only, not Apple Hypervisor)
-podman machine stop
-podman machine set --cpus 8 --memory 16384
-podman machine start
-```
-
-- **VM Model**: Single shared VM (similar to Docker Desktop)
-- **Memory Release**: Manual (same limitation as Docker)
+Podman is not supported on macOS. Use Docker (we recommend [OrbStack](https://orbstack.dev/)) instead.
 
 ### Linux Behavior
 
@@ -137,23 +130,21 @@ podman run -m 4g --cpus 4 ...
 
 | Issue                               | Solution                                                                  |
 | ----------------------------------- | ------------------------------------------------------------------------- |
-| "Podman not found"                  | Install via package manager (`brew install podman`, `apt install podman`) |
-| macOS: "podman machine not running" | Run `podman machine start`                                                |
-| macOS: Cannot set CPU/memory        | QEMU backend required, Apple Hypervisor has limitations                   |
+| "Podman not found"                  | Install via package manager (`apt install podman`) |
 
 ## Comparison Table
 
-| Feature                  | Docker (macOS)        | Docker (Linux)       | Podman (macOS)       | Podman (Linux)       |
-| ------------------------ | --------------------- | -------------------- | -------------------- | -------------------- |
-| **VM Model**             | Single shared VM      | None (native)        | Single shared VM     | None (native)        |
-| **Idle Memory**          | 3-4 GB                | ~0                   | 3-4 GB               | ~0                   |
-| **Memory Release**       | Manual                | Automatic            | Manual               | Automatic            |
-| **Resource Isolation**   | Shared VM             | Native cgroups       | Shared VM            | Native cgroups       |
-| **Host Config Needed**   | Yes (VM settings)     | No                   | Yes (VM settings)    | No                   |
-| **Per-container Limits** | Yes (`-m`, `--cpus`)  | Yes (`-m`, `--cpus`) | Yes (`-m`, `--cpus`) | Yes (`-m`, `--cpus`) |
-| **Live Update**          | `docker update`       | `docker update`      | Limited              | Limited              |
-| **Rootless**             | No                    | Optional             | No                   | Yes (default)        |
-| **Platform**             | macOS, Linux, Windows | Linux                | macOS, Linux         | Linux                |
+| Feature                  | Docker (macOS)        | Docker (Linux)       | Podman (Linux)       |
+| ------------------------ | --------------------- | -------------------- | -------------------- |
+| **VM Model**             | Single shared VM      | None (native)        | None (native)        |
+| **Idle Memory**          | 3-4 GB                | ~0                   | ~0                   |
+| **Memory Release**       | Manual                | Automatic            | Automatic            |
+| **Resource Isolation**   | Shared VM             | Native cgroups       | Native cgroups       |
+| **Host Config Needed**   | Yes (VM settings)     | No                   | No                   |
+| **Per-container Limits** | Yes (`-m`, `--cpus`)  | Yes (`-m`, `--cpus`) | Yes (`-m`, `--cpus`) |
+| **Live Update**          | `docker update`       | `docker update`      | Limited              |
+| **Rootless**             | No                    | Optional             | Yes (default)        |
+| **Platform**             | macOS, Linux, Windows | Linux                | Linux                |
 
 ## Verifying Runtime Selection
 
@@ -170,5 +161,4 @@ The status output indicates the active runtime.
 
 - [Docker Resource Constraints](https://docs.docker.com/engine/containers/resource_constraints/)
 - [Docker Desktop Settings](https://docs.docker.com/desktop/settings-and-maintenance/settings/)
-- [Podman Machine Init](https://docs.podman.io/en/latest/markdown/podman-machine-init.1.html)
 - [OrbStack](https://orbstack.dev/) — Recommended Docker runtime for macOS

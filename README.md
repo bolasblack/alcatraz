@@ -43,15 +43,16 @@ alca down
 
 ## Commands
 
-| Command     | Description                                 |
-| ----------- | ------------------------------------------- |
-| `init`      | Initialize `.alca.toml` configuration       |
-| `up`        | Start container (use `-f` to force rebuild) |
-| `down`      | Stop and remove container                   |
-| `run <cmd>` | Execute command in container                |
-| `status`    | Show container status and config drift      |
-| `list`      | List all Alcatraz containers                |
-| `cleanup`   | Remove orphaned containers                  |
+| Command                                     | Description                                 |
+| ------------------------------------------- | ------------------------------------------- |
+| `init`                                      | Initialize `.alca.toml` configuration       |
+| `up`                                        | Start container (use `-f` to force rebuild) |
+| `down`                                      | Stop and remove container                   |
+| `run <cmd>`                                 | Execute command in container                |
+| `status`                                    | Show container status and config drift      |
+| `list`                                      | List all Alcatraz containers                |
+| `cleanup`                                   | Remove orphaned containers                  |
+| `network-helper install\|uninstall\|status` | Manage network isolation helper             |
 
 ## Configuration
 
@@ -60,8 +61,8 @@ Create `.alca.toml` in your project root:
 ```toml
 image = "nixos/nix"
 workdir = "/workspace"
-runtime = "auto"  # auto, docker
-mounts = [".:/workspace"]
+runtime = "auto"  # auto, docker, podman
+mounts = ["/Users/<UserName>/.claude/:/root/.claude/"]
 
 [commands]
 up = "sleep infinity"
@@ -72,24 +73,25 @@ memory = "4g"
 cpus = 2
 ```
 
-| Field              | Description                                     |
-| ------------------ | ----------------------------------------------- |
-| `image`            | Container image                                 |
-| `workdir`          | Working directory inside container              |
-| `runtime`          | Container runtime (`auto`, `docker`)            |
-| `mounts`           | Volume mounts (default: current dir to workdir) |
-| `commands.up`      | Command to keep container running               |
-| `commands.enter`   | Command to run on `alca run`                    |
-| `resources.memory` | Memory limit (e.g. `4g`, `512m`)                |
-| `resources.cpus`   | Number of CPUs to allocate                      |
+| Field                | Description                                      |
+| -------------------- | ------------------------------------------------ |
+| `image`              | Container image                                  |
+| `workdir`            | Working directory inside container               |
+| `runtime`            | Container runtime (`auto`, `docker`, `podman`)   |
+| `mounts`             | Volume mounts (default: current dir to workdir)  |
+| `commands.up`        | Command to keep container running                |
+| `commands.enter`     | Command to run on `alca run`                     |
+| `resources.memory`   | Memory limit (e.g. `4g`, `512m`)                 |
+| `resources.cpus`     | Number of CPUs to allocate                       |
+| `network.lan-access` | LAN access for containers (`["*"]` to allow all) |
 
 ## Supported Runtimes
 
-| Runtime                | Platform     | Notes                            |
-| ---------------------- | ------------ | -------------------------------- |
-| Docker                 | Linux, macOS | Recommended                      |
-| Podman                 | Linux        | Auto-detected on Linux           |
-| Apple Containerization | macOS 26+    | Native, requires `container` CLI |
+| Runtime                           | Platform     | Notes                                       |
+| --------------------------------- | ------------ | ------------------------------------------- |
+| Docker                            | Linux, macOS | Via Docker Desktop or Docker Engine         |
+| [OrbStack](https://orbstack.dev/) | macOS        | Via `docker` command; recommended for macOS |
+| Podman                            | Linux        | Auto-detected on Linux                      |
 
 Runtime is auto-detected by default. Set `runtime` in config to override.
 

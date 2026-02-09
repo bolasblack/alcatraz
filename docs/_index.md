@@ -13,8 +13,9 @@ Alcatraz (`alca`) wraps AI agent processes in configurable containers, providing
 ## Features
 
 - **Zero-config startup** — `alca init && alca up` gets you running
-- **Auto-detect runtime** — Chooses Docker or Podman automatically
+- **Auto-detect runtime** — Chooses Docker, OrbStack, or Podman (Linux) automatically
 - **Nix/Flake integration** — Automatically activates `nix develop` environments
+- **Network isolation** — Restrict container network access with nftables-based firewall rules (see [Configuration]({{< relref "config" >}}))
 
 ## Quick Start
 
@@ -47,9 +48,16 @@ alca run make build
 
 - ### [Runtimes]({{< relref "runtimes" >}})
 
-  Docker and Podman. Platform differences and troubleshooting.
+  Docker and Podman (Linux-only). Platform differences and troubleshooting.
 
 - ### [Commands]({{< relref "commands" >}})
   CLI reference for all `alca` commands and flags.
+
+{{% /columns %}}
+{{% columns %}}
+
+- ### [Network]({{< relref "config/network" >}})
+
+  Network isolation and LAN access. Platform-specific firewall setup and troubleshooting.
 
 {{% /columns %}}

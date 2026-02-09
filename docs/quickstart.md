@@ -56,48 +56,47 @@ cd my-project
 alca init
 ```
 
-Output:
+You'll be prompted to select a template:
 
 ```
-Created .alca.toml
-Edit this file to customize your container settings.
+? Select a template:
+  > Nix - NixOS-based development environment
+    Debian - Debian-based environment with mise
 ```
 
-This creates a default `.alca.toml`:
+This creates a `.alca.toml` tailored to the selected preset. For example, the **Nix** preset generates:
 
 ```toml
 image = "nixos/nix"
-workdir = "/workspace"
-runtime = "auto"
 
 [commands]
-enter = "[ -f flake.nix ] && exec nix develop"
+# prebuild, to reduce the time costs on enter
+up = "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command true"
+enter = "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command"
+
+[envs]
+NIX_CONFIG = "extra-experimental-features = nix-command flakes"
+NIXPKGS_ALLOW_UNFREE = "1"
 ```
 
 ### Step 2: Configure (Optional)
 
-Edit `.alca.toml` to customize your setup:
+Edit `.alca.toml` to customize your setup. For example, add resource limits:
 
 ```toml
-image = "nixos/nix"
-workdir = "/workspace"
-runtime = "auto"
-
-[commands]
-enter = "[ -f flake.nix ] && exec nix develop"
-
 [resources]
 memory = "8g"
 cpus = 4
 ```
 
-Configuration options:
+Common configuration options:
 
 | Field              | Description                        |
 | ------------------ | ---------------------------------- |
 | `image`            | Container image to use             |
 | `workdir`          | Working directory inside container |
 | `runtime`          | `auto` or `docker`                 |
+| `commands.up`      | Setup command run on `alca up`     |
 | `commands.enter`   | Shell setup command for `alca run` |
 | `resources.memory` | Memory limit (e.g., `4g`, `512m`)  |
 | `resources.cpus`   | CPU limit (e.g., `4`)              |
@@ -168,51 +167,32 @@ Using runtime: docker
 Container stopped successfully.
 ```
 
-## Nix/Flake Integration
+## Nix Workflow
 
-Alcatraz automatically detects `flake.nix` in your project and integrates with `nix develop`.
+Alcatraz does not have built-in Nix or flake integration. Instead, the **Nix preset** from `alca init` generates a `.alca.toml` that configures Nix workflows through standard container commands.
 
 ### How It Works
 
-When you run commands with `alca run`:
+The Nix preset configures two commands:
 
-1. Alcatraz checks if `flake.nix` exists in your project root
-2. If found, commands are wrapped with `nix develop --command`
-3. Your flake's development environment is automatically activated
+- **`commands.up`** — runs on `alca up`, pre-builds the flake devshell so subsequent enters are fast
+- **`commands.enter`** — runs on `alca run`, drops into `nix develop` if a `flake.nix` is present
 
-### Example with Flake
+Both use a shell conditional (`[ -f flake.nix ] && ...`), so they are no-ops if your project doesn't have a flake.
 
-Given a `flake.nix`:
+### Example
 
-```nix
-{
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-
-  outputs = { nixpkgs, ... }:
-    let pkgs = nixpkgs.legacyPackages.x86_64-linux;
-    in {
-      devShells.x86_64-linux.default = pkgs.mkShell {
-        packages = [ pkgs.go pkgs.nodejs ];
-      };
-    };
-}
-```
-
-Commands automatically have access to `go` and `nodejs`:
+If your project has a `flake.nix` with Go and Node.js in its devshell:
 
 ```bash
-alca run go version   # Uses Go from your flake
-alca run node --version
+alca up                    # Pre-builds the Nix devshell
+alca run go version        # Uses Go from your flake
+alca run node --version    # Uses Node.js from your flake
 ```
 
-### Default Configuration
+### Customizing
 
-The default `commands.enter` setting handles flake detection:
-
-```toml
-[commands]
-enter = "[ -f flake.nix ] && exec nix develop"
-```
+The preset is just a starting point. You can edit `commands.up` and `commands.enter` in `.alca.toml` to suit your workflow — for example, removing the flake conditional if you always use Nix, or switching to a different base image.
 
 ## Configuration Drift Detection
 
@@ -251,4 +231,4 @@ Rebuild container with new configuration? [y/N]
 
 - See `alca --help` for all available commands
 - Check `alca <command> --help` for command-specific options
-- Review the [Configuration Reference](config.md) for all options
+- Review the [Configuration Reference]({{< relref "config" >}}) for all options
