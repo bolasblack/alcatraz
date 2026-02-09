@@ -5,7 +5,15 @@ weight: 3
 
 # Network Configuration
 
-Configure network access for containers. See [AGD-030](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-030_orbstack-nftables-network-isolation.md) for design rationale.
+By default, Alcatraz containers can access the internet but **cannot access your local network (LAN)**. This prevents AI agents from reaching local services, databases, or other machines on your network.
+
+## Quick Summary
+
+| Scenario | Internet | LAN | Config needed |
+|----------|----------|-----|---------------|
+| Default (no config) | Yes | No | None |
+| Allow specific LAN access | Yes | Configured hosts | `lan-access = [...]` |
+| Allow all LAN access | Yes | Yes | `lan-access = ["*"]` |
 
 ## network.lan-access
 
@@ -100,6 +108,8 @@ On Linux, Alcatraz uses the system's native nftables directly.
 2. On `alca down`:
    - Removes per-container rule files
    - Cleans up container-specific nftables tables
+
+For design rationale, see [AGD-030](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-030_orbstack-nftables-network-isolation.md).
 
 ## Manual Cleanup
 

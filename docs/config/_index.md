@@ -6,7 +6,7 @@ bookCollapseSection: true
 
 # Configuration Reference
 
-This document describes the `.alca.toml` configuration file format for Alcatraz.
+Configure your agent's isolated environment. Each setting controls what the container can access — from filesystem mounts to network rules — so you stay in control while your agent works freely.
 
 ## Overview
 
@@ -64,5 +64,5 @@ EDITOR = { value = "${EDITOR}", override_on_enter = true }
 
 # Network configuration
 [network]
-lan-access = ["*"]
+# lan-access = ["*"]  # Uncomment to allow LAN access (blocked by default)
 ```

@@ -161,6 +161,23 @@ Exclude patterns follow gitignore-like syntax (Mutagen ignore format):
 | `**/.env` | `.env` file at any depth |
 | `**/secrets/` | `secrets/` directory at any depth |
 
+**Security: hide sensitive files from your agent:**
+
+```toml
+[[mounts]]
+source = "."
+target = "/workspace"
+exclude = [
+  "**/.env",       # Environment secrets
+  "**/.env.*",     # Environment variants
+  "**/secrets/",   # Secret directories
+  "**/*.key",      # Private keys
+  "**/*.pem",      # Certificates
+]
+```
+
+Excluded files are invisible inside the container — even with full agent access within the sandbox.
+
 **Recommended excludes for Node.js projects:**
 
 ```toml
@@ -270,7 +287,7 @@ User-defined values override these defaults.
 
 Linux capabilities configuration for container security. See [AGD-026](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-026_container-capabilities-config.md) for design rationale.
 
-**Security rationale**: Docker's default capabilities include dangerous ones like `NET_RAW` (network sniffing) and `MKNOD` (device creation) that AI development environments don't need. Alcatraz drops all capabilities by default and only adds the minimal set needed for development workflows.
+**Security rationale**: Docker's default capabilities include dangerous ones like `NET_RAW` (network sniffing) and `MKNOD` (device creation) that AI code agents don't need. Alcatraz drops all capabilities by default and only adds the minimal set needed for development workflows, keeping your agent sandboxed with least-privilege access.
 
 ### Default Behavior (No `caps` field)
 

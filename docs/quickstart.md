@@ -5,7 +5,7 @@ weight: 10
 
 # Quickstart Guide
 
-Get started with Alcatraz in under 5 minutes.
+Set up a secure sandbox for your AI code agent in under 5 minutes. After this guide, your agent will have full autonomy inside the container while your host system stays protected.
 
 ## Installation
 
@@ -154,7 +154,22 @@ Container: Running
 Run 'alca run <command>' to execute commands.
 ```
 
-### Step 6: Stop the Container
+### Step 6: Run Your Agent
+
+Run your AI code agent inside the isolated environment:
+
+```bash
+# Claude Code with full permissions — safe inside the container
+alca run claude --dangerously-skip-permissions
+
+# Or any other agent
+alca run codex
+alca run gemini
+```
+
+Your agent has full access inside the container but cannot affect your host system.
+
+### Step 7: Stop the Container
 
 ```bash
 alca down

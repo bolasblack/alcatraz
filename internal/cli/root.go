@@ -15,9 +15,11 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "alca",
-	Short: "Alcatraz - Lightweight container isolation for AI coding assistants",
-	Long: `Alcatraz (alca) provides lightweight container isolation for AI coding assistants.
-It wraps AI agent processes in configurable containers for enhanced security.`,
+	Short: "Alcatraz - Run code agents unrestricted, but fearlessly",
+	Long: `Alcatraz (alca) — Run code agents unrestricted, but fearlessly.
+
+Wraps AI code agents in containers with file and network isolation,
+so you can run agents without guardrails and keep your system safe.`,
 	Version:       Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,

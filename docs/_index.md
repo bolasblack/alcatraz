@@ -6,16 +6,20 @@ bodyClass: page-home
 
 # Alcatraz
 
-Lightweight container isolation for AI coding assistants.
+Run code agents unrestricted, but fearlessly.
 
-Alcatraz (`alca`) wraps AI agent processes in configurable containers, providing enhanced security without complex setup. It auto-detects the best available runtime and manages container lifecycle with simple commands.
+AI code agents like Claude Code, Codex, and Gemini CLI are most powerful when you remove the guardrails. But unrestricted agents can read your secrets, delete files, or make network calls you didn't expect.
 
-## Features
+Alcatraz wraps your agent in a configurable container with file and network isolation. Your agent gets full access inside the sandbox. Your system stays safe outside it.
 
+## Why Alcatraz?
+
+- **Full agent freedom** — No permission prompts. No guardrails. Maximum productivity inside the container.
+- **Network on lockdown** — Zero LAN access by default. Kernel-level nftables firewall.
+- **File isolation** — Mount only what you choose. Hide secrets with exclude patterns.
 - **Zero-config startup** — `alca init && alca up` gets you running
-- **Auto-detect runtime** — Chooses Docker, OrbStack, or Podman (Linux) automatically
+- **Auto-detect runtime** — Chooses Docker, OrbStack, or Podman automatically
 - **Nix/Flake integration** — Automatically activates `nix develop` environments
-- **Network isolation** — Restrict container network access with nftables-based firewall rules (see [Configuration]({{< relref "config" >}}))
 
 ## Quick Start
 

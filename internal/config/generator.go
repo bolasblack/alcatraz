@@ -71,6 +71,7 @@ func getTemplateConfig(template Template) TemplateConfig {
 					Enter: "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command",
 				},
 				Envs: map[string]EnvValue{
+					"IS_SANDBOX":           {Value: "1"},
 					"NIXPKGS_ALLOW_UNFREE": {Value: "1"},
 					"NIX_CONFIG":           {Value: "extra-experimental-features = nix-command flakes"},
 				},
@@ -100,7 +101,9 @@ export PATH="/extra-bin:$PATH"
 ' >> ~/.bashrc
 . ~/.bashrc`,
 				},
-				Envs: map[string]EnvValue{},
+				Envs: map[string]EnvValue{
+					"IS_SANDBOX": {Value: "1"},
+				},
 			},
 			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prepare the environment",
