@@ -37,18 +37,18 @@ type CleanupCall struct {
 // Compile-time interface assertion.
 var _ Firewall = (*MockFirewall)(nil)
 
-func (m *MockFirewall) ApplyRules(containerID string, containerIP string, rules []LANAccessRule) error {
+func (m *MockFirewall) ApplyRules(containerID string, containerIP string, rules []LANAccessRule) (*PostCommitAction, error) {
 	m.ApplyRulesCalls = append(m.ApplyRulesCalls, ApplyRulesCall{
 		ContainerID: containerID,
 		ContainerIP: containerIP,
 		Rules:       rules,
 	})
-	return m.ReturnApplyError
+	return &PostCommitAction{}, m.ReturnApplyError
 }
 
-func (m *MockFirewall) Cleanup(containerID string) error {
+func (m *MockFirewall) Cleanup(containerID string) (*PostCommitAction, error) {
 	m.CleanupCalls = append(m.CleanupCalls, CleanupCall{
 		ContainerID: containerID,
 	})
-	return m.ReturnCleanupError
+	return &PostCommitAction{}, m.ReturnCleanupError
 }

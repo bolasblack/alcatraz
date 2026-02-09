@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -265,7 +266,7 @@ func TestParseLANAccessRule(t *testing.T) {
 					t.Errorf("ParseLANAccessRule(%q) expected error containing %q, got nil", tt.input, tt.errMatch)
 					return
 				}
-				if tt.errMatch != "" && !contains(err.Error(), tt.errMatch) {
+				if tt.errMatch != "" && !strings.Contains(err.Error(), tt.errMatch) {
 					t.Errorf("ParseLANAccessRule(%q) error = %q, want error containing %q", tt.input, err.Error(), tt.errMatch)
 				}
 				return
@@ -421,19 +422,4 @@ func TestProtocolString(t *testing.T) {
 			}
 		})
 	}
-}
-
-// contains checks if substr is in s (case-sensitive).
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && searchString(s, substr)))
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

@@ -1,12 +1,15 @@
-//go:build linux
-
 package nft
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/spf13/afero"
+
 	"github.com/bolasblack/alcatraz/internal/network/shared"
+	"github.com/bolasblack/alcatraz/internal/runtime"
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 func TestTableName(t *testing.T) {
@@ -56,7 +59,7 @@ func TestGenerateRulesetNoRules(t *testing.T) {
 	table := "alca-abc123def456"
 	containerIP := "172.17.0.2"
 
-	ruleset := generateRuleset(table, containerIP, nil)
+	ruleset := generateRuleset(table, containerIP, nil, "filter - 1")
 
 	// Verify idempotent header (shebang and delete pattern)
 	if !strings.Contains(ruleset, "#!/usr/sbin/nft -f") {
@@ -113,7 +116,7 @@ func TestGenerateRulesetWithAllowRules(t *testing.T) {
 		{IP: "10.0.0.0/8", Port: 0, Protocol: shared.ProtoAll, IsIPv6: false},
 	}
 
-	ruleset := generateRuleset(table, containerIP, rules)
+	ruleset := generateRuleset(table, containerIP, rules, "filter - 1")
 
 	// Verify allow rules are present
 	if !strings.Contains(ruleset, "ip saddr 172.17.0.2 ip daddr 192.168.1.100 tcp dport 8080 accept") {
@@ -145,7 +148,7 @@ func TestGenerateRulesetIPv6Container(t *testing.T) {
 	table := "alca-test"
 	containerIP := "2001:db8::2"
 
-	ruleset := generateRuleset(table, containerIP, nil)
+	ruleset := generateRuleset(table, containerIP, nil, "filter - 1")
 
 	// Verify IPv6 private ranges are blocked
 	if !strings.Contains(ruleset, "ip6 saddr 2001:db8::2 ip6 daddr fe80::/10 drop") {
@@ -206,7 +209,7 @@ func TestGenerateRulesetProtocolVariants(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ruleset := generateRuleset(table, containerIP, []shared.LANAccessRule{tt.rule})
+			ruleset := generateRuleset(table, containerIP, []shared.LANAccessRule{tt.rule}, "filter - 1")
 
 			for _, exp := range tt.expected {
 				if !strings.Contains(ruleset, exp) {
@@ -227,7 +230,7 @@ func TestGenerateRulesetSkipsAllLANRule(t *testing.T) {
 		{IP: "10.0.0.1", Port: 443, Protocol: shared.ProtoTCP, IsIPv6: false},
 	}
 
-	ruleset := generateRuleset(table, containerIP, rules)
+	ruleset := generateRuleset(table, containerIP, rules, "filter - 1")
 
 	// Verify normal rules are present
 	if !strings.Contains(ruleset, "192.168.1.100 tcp dport 8080 accept") {
@@ -249,7 +252,7 @@ func TestGenerateRulesetIPv6AllowRule(t *testing.T) {
 		{IP: "fe80::1", Port: 8080, Protocol: shared.ProtoTCP, IsIPv6: true},
 	}
 
-	ruleset := generateRuleset(table, containerIP, rules)
+	ruleset := generateRuleset(table, containerIP, rules, "filter - 1")
 
 	// IPv6 container to IPv6 destination
 	if !strings.Contains(ruleset, "ip6 saddr 2001:db8::2 ip6 daddr fe80::1 tcp dport 8080 accept") {
@@ -266,7 +269,7 @@ func TestGenerateRulesetMixedIPVersionAllowRules(t *testing.T) {
 		{IP: "fe80::1", Port: 443, Protocol: shared.ProtoTCP, IsIPv6: true},
 	}
 
-	ruleset := generateRuleset(table, containerIP, rules)
+	ruleset := generateRuleset(table, containerIP, rules, "filter - 1")
 
 	// IPv4 container to IPv4 destination
 	if !strings.Contains(ruleset, "ip saddr 172.17.0.2 ip daddr 192.168.1.100 tcp dport 8080 accept") {
@@ -279,35 +282,270 @@ func TestGenerateRulesetMixedIPVersionAllowRules(t *testing.T) {
 	}
 }
 
-func TestRuleFilePath(t *testing.T) {
+func TestIsDarwin_Linux(t *testing.T) {
+	env := shared.NewNetworkEnv(
+		afero.NewMemMapFs(),
+		util.NewMockCommandRunner(),
+		"/test",
+		runtime.PlatformLinux,
+	)
+	n := New(env).(*NFTables)
+	if n.isDarwin() {
+		t.Error("isDarwin() should return false for PlatformLinux")
+	}
+}
+
+func TestIsDarwin_MacOrbStack(t *testing.T) {
+	env := shared.NewNetworkEnv(
+		afero.NewMemMapFs(),
+		util.NewMockCommandRunner(),
+		"/test",
+		runtime.PlatformMacOrbStack,
+	)
+	n := New(env).(*NFTables)
+	if !n.isDarwin() {
+		t.Error("isDarwin() should return true for PlatformMacOrbStack")
+	}
+}
+
+func TestIsDarwin_MacDockerDesktop(t *testing.T) {
+	env := shared.NewNetworkEnv(
+		afero.NewMemMapFs(),
+		util.NewMockCommandRunner(),
+		"/test",
+		runtime.PlatformMacDockerDesktop,
+	)
+	n := New(env).(*NFTables)
+	if !n.isDarwin() {
+		t.Error("isDarwin() should return true for PlatformMacDockerDesktop")
+	}
+}
+
+func TestNftDir(t *testing.T) {
+	t.Run("Linux", func(t *testing.T) {
+		got := nftDirOnLinux()
+		want := "/etc/nftables.d/alcatraz"
+		if got != want {
+			t.Errorf("nftDirOnLinux() = %q, want %q", got, want)
+		}
+	})
+}
+
+// =============================================================================
+// writeRuleFile tests
+// =============================================================================
+
+func TestWriteRuleFile_CreatesFileWithContent(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	dir := "/etc/nftables.d/alcatraz"
+	content := "#!/usr/sbin/nft -f\ntable inet alca-test {}\n"
+
+	path, err := writeRuleFile(fs, dir, "test.nft", content)
+	if err != nil {
+		t.Fatalf("writeRuleFile() error = %v", err)
+	}
+
+	wantPath := "/etc/nftables.d/alcatraz/test.nft"
+	if path != wantPath {
+		t.Errorf("writeRuleFile() path = %q, want %q", path, wantPath)
+	}
+
+	got, err := afero.ReadFile(fs, path)
+	if err != nil {
+		t.Fatalf("failed to read written file: %v", err)
+	}
+	if string(got) != content {
+		t.Errorf("file content = %q, want %q", string(got), content)
+	}
+}
+
+func TestWriteRuleFile_CreatesDirectoryIfMissing(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	dir := "/some/deep/nested/dir"
+
+	exists, _ := afero.DirExists(fs, dir)
+	if exists {
+		t.Fatal("directory should not exist before writeRuleFile")
+	}
+
+	_, err := writeRuleFile(fs, dir, "rule.nft", "content")
+	if err != nil {
+		t.Fatalf("writeRuleFile() error = %v", err)
+	}
+
+	exists, _ = afero.DirExists(fs, dir)
+	if !exists {
+		t.Error("writeRuleFile should create the directory if missing")
+	}
+}
+
+func TestWriteRuleFile_OverwritesExistingFile(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	dir := "/etc/nftables.d/alcatraz"
+	_ = fs.MkdirAll(dir, 0755)
+	_ = afero.WriteFile(fs, dir+"/test.nft", []byte("old content"), 0644)
+
+	newContent := "new content"
+	_, err := writeRuleFile(fs, dir, "test.nft", newContent)
+	if err != nil {
+		t.Fatalf("writeRuleFile() error = %v", err)
+	}
+
+	got, _ := afero.ReadFile(fs, dir+"/test.nft")
+	if string(got) != newContent {
+		t.Errorf("file content = %q, want %q", string(got), newContent)
+	}
+}
+
+func TestWriteRuleFile_ErrorOnReadOnlyFs(t *testing.T) {
+	baseFs := afero.NewMemMapFs()
+	readOnlyFs := afero.NewReadOnlyFs(baseFs)
+
+	_, err := writeRuleFile(readOnlyFs, "/dir", "file.nft", "content")
+	if err == nil {
+		t.Error("writeRuleFile() should return error on read-only filesystem")
+	}
+}
+
+// =============================================================================
+// formatProtocolSuffixes tests
+// =============================================================================
+
+func TestFormatProtocolSuffixes(t *testing.T) {
 	tests := []struct {
-		name        string
-		containerID string
-		want        string
+		name  string
+		proto shared.Protocol
+		port  int
+		want  []string
 	}{
 		{
-			name:        "short container ID",
-			containerID: "abc123",
-			want:        "/etc/nftables.d/alcatraz/abc123.nft",
+			name:  "ProtoAll with no port — wildcard allow",
+			proto: shared.ProtoAll,
+			port:  0,
+			want:  []string{""},
 		},
 		{
-			name:        "full container ID",
-			containerID: "abc123def456789xyz",
-			want:        "/etc/nftables.d/alcatraz/abc123def456789xyz.nft",
+			name:  "TCP with specific port",
+			proto: shared.ProtoTCP,
+			port:  8080,
+			want:  []string{" tcp dport 8080"},
 		},
 		{
-			name:        "empty container ID",
-			containerID: "",
-			want:        "/etc/nftables.d/alcatraz/.nft",
+			name:  "UDP with specific port",
+			proto: shared.ProtoUDP,
+			port:  53,
+			want:  []string{" udp dport 53"},
+		},
+		{
+			name:  "TCP with no port — all TCP ports",
+			proto: shared.ProtoTCP,
+			port:  0,
+			want:  []string{" tcp dport 1-65535"},
+		},
+		{
+			name:  "UDP with no port — all UDP ports",
+			proto: shared.ProtoUDP,
+			port:  0,
+			want:  []string{" udp dport 1-65535"},
+		},
+		{
+			name:  "ProtoAll with specific port — expands to TCP and UDP",
+			proto: shared.ProtoAll,
+			port:  443,
+			want: []string{
+				" tcp dport 443",
+				" udp dport 443",
+			},
+		},
+		{
+			name:  "port 1 edge case",
+			proto: shared.ProtoTCP,
+			port:  1,
+			want:  []string{" tcp dport 1"},
+		},
+		{
+			name:  "port 65535 edge case",
+			proto: shared.ProtoUDP,
+			port:  65535,
+			want:  []string{fmt.Sprintf(" udp dport %d", 65535)},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ruleFilePath(tt.containerID)
-			if got != tt.want {
-				t.Errorf("ruleFilePath(%q) = %q, want %q", tt.containerID, got, tt.want)
+			got := formatProtocolSuffixes(tt.proto, tt.port)
+			if len(got) != len(tt.want) {
+				t.Fatalf("formatProtocolSuffixes(%v, %d) returned %d suffixes, want %d: %v",
+					tt.proto, tt.port, len(got), len(tt.want), got)
+			}
+			for i, s := range got {
+				if s != tt.want[i] {
+					t.Errorf("suffix[%d] = %q, want %q", i, s, tt.want[i])
+				}
 			}
 		})
+	}
+}
+
+func TestFormatProtocolSuffixes_UnknownProtocol(t *testing.T) {
+	// An unknown protocol value (not ProtoAll/TCP/UDP) with port=0 should return nil
+	got := formatProtocolSuffixes(shared.Protocol(99), 0)
+	if got != nil {
+		t.Errorf("formatProtocolSuffixes with unknown protocol should return nil, got %v", got)
+	}
+}
+
+// =============================================================================
+// New() VMHelperEnv pre-construction tests
+// =============================================================================
+
+func TestNew_VMHelperEnvPreConstructedOnDarwin(t *testing.T) {
+	platforms := []runtime.RuntimePlatform{
+		runtime.PlatformMacOrbStack,
+		runtime.PlatformMacDockerDesktop,
+	}
+
+	for _, platform := range platforms {
+		t.Run(string(platform), func(t *testing.T) {
+			env := shared.NewNetworkEnv(
+				afero.NewMemMapFs(),
+				util.NewMockCommandRunner(),
+				"/test",
+				platform,
+			)
+			n := New(env).(*NFTables)
+
+			if n.vmEnv == nil {
+				t.Errorf("New() with %s should pre-construct vmEnv, got nil", platform)
+			}
+		})
+	}
+}
+
+func TestNew_VMHelperEnvNilOnLinux(t *testing.T) {
+	env := shared.NewNetworkEnv(
+		afero.NewMemMapFs(),
+		util.NewMockCommandRunner(),
+		"/test",
+		runtime.PlatformLinux,
+	)
+	n := New(env).(*NFTables)
+
+	if n.vmEnv != nil {
+		t.Errorf("New() with PlatformLinux should not pre-construct vmEnv, got %v", n.vmEnv)
+	}
+}
+
+func TestNew_VMHelperEnvNilForEmptyPlatform(t *testing.T) {
+	env := shared.NewNetworkEnv(
+		afero.NewMemMapFs(),
+		util.NewMockCommandRunner(),
+		"/test",
+		"",
+	)
+	n := New(env).(*NFTables)
+
+	if n.vmEnv != nil {
+		t.Errorf("New() with empty platform should not pre-construct vmEnv, got %v", n.vmEnv)
 	}
 }

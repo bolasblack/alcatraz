@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/afero"
+
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
@@ -207,9 +209,46 @@ func commitIfNeeded(env *util.Env, tfs *transact.TransactFs, out io.Writer, msg 
 	return commitWithSudo(env, tfs, out, msg)
 }
 
-// stdoutProgressFunc returns a progress callback that writes to stdout.
-func stdoutProgressFunc() func(format string, args ...any) {
+// cliDeps holds shared CLI dependencies for commands that perform writes.
+type cliDeps struct {
+	Tfs        *transact.TransactFs
+	CmdRunner  util.CommandRunner
+	Env        *util.Env
+	RuntimeEnv *runtime.RuntimeEnv
+}
+
+// newCLIDeps creates the shared transactional dependencies used by most CLI commands.
+func newCLIDeps() cliDeps {
+	tfs := transact.New()
+	cmdRunner := util.NewCommandRunner()
+	return cliDeps{
+		Tfs:        tfs,
+		CmdRunner:  cmdRunner,
+		Env:        &util.Env{Fs: tfs, Cmd: cmdRunner},
+		RuntimeEnv: runtime.NewRuntimeEnv(cmdRunner),
+	}
+}
+
+// cliReadDeps holds shared CLI dependencies for read-only commands.
+type cliReadDeps struct {
+	CmdRunner  util.CommandRunner
+	Env        *util.Env
+	RuntimeEnv *runtime.RuntimeEnv
+}
+
+// newCLIReadDeps creates shared dependencies for read-only CLI commands.
+func newCLIReadDeps() cliReadDeps {
+	cmdRunner := util.NewCommandRunner()
+	return cliReadDeps{
+		CmdRunner:  cmdRunner,
+		Env:        &util.Env{Fs: afero.NewReadOnlyFs(afero.NewOsFs()), Cmd: cmdRunner},
+		RuntimeEnv: runtime.NewRuntimeEnv(cmdRunner),
+	}
+}
+
+// progressFunc returns a progress callback that writes to the given writer.
+func progressFunc(w io.Writer) func(format string, args ...any) {
 	return func(format string, args ...any) {
-		util.ProgressStep(os.Stdout, format, args...)
+		util.ProgressStep(w, format, args...)
 	}
 }

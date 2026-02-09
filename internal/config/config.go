@@ -135,7 +135,7 @@ func DefaultEnvs() map[string]EnvValue {
 }
 
 // Network defines network configuration for the container.
-// See AGD-023 for LAN access design decisions.
+// See AGD-030 for LAN access design decisions.
 type Network struct {
 	LANAccess []string `toml:"lan-access,omitempty" json:"lan-access,omitempty" jsonschema:"description=LAN access configuration (currently only '*' is supported)"`
 }

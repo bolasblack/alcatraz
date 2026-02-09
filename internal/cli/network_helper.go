@@ -3,15 +3,12 @@ package cli
 import (
 	"fmt"
 	"os"
-	"strings"
 
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/network"
 	"github.com/bolasblack/alcatraz/internal/runtime"
-	"github.com/bolasblack/alcatraz/internal/transact"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
@@ -20,8 +17,8 @@ var networkHelperCmd = &cobra.Command{
 	Short: "Manage network helper for LAN access",
 	Long: `Manage the network helper for container LAN access.
 
-On macOS: Installs a LaunchDaemon that watches pf anchor files and
-automatically reloads firewall rules when they change.
+On macOS: Installs a helper container that runs nftables inside the
+container runtime VM for network isolation.
 
 On Linux: Configures nftables to include alcatraz rule files from
 /etc/nftables.d/alcatraz/ for persistent firewall rules.`,
@@ -33,16 +30,15 @@ var networkHelperInstallCmd = &cobra.Command{
 	Long: `Install the network helper for automatic firewall rule management.
 
 On macOS:
-1. Create /etc/pf.anchors/alcatraz/ directory
-2. Install LaunchDaemon plist to /Library/LaunchDaemons/
-3. Load the LaunchDaemon
+1. Create ~/.alcatraz/files/alcatraz_nft/ directory
+2. Start the alcatraz-network-helper container
 
 On Linux:
 1. Create /etc/nftables.d/alcatraz/ directory
 2. Add include line to /etc/nftables.conf
 3. Reload nftables configuration
 
-Requires sudo privileges.`,
+Requires sudo privileges on Linux.`,
 	RunE: runNetworkHelperInstall,
 }
 
@@ -52,10 +48,7 @@ var networkHelperUninstallCmd = &cobra.Command{
 	Long: `Uninstall the network helper and clean up all rules.
 
 On macOS:
-1. Unload the LaunchDaemon
-2. Remove the plist file
-3. Flush all alcatraz pf rules
-4. Remove /etc/pf.anchors/alcatraz/ directory
+1. Stop and remove the alcatraz-network-helper container
 
 On Linux:
 1. Remove all rule files from /etc/nftables.d/alcatraz/
@@ -63,7 +56,7 @@ On Linux:
 3. Delete all alca-* nftables tables
 4. Remove /etc/nftables.d/alcatraz/ directory
 
-Requires sudo privileges.`,
+Requires sudo privileges on Linux.`,
 	RunE: runNetworkHelperUninstall,
 }
 
@@ -80,29 +73,42 @@ func init() {
 	networkHelperCmd.AddCommand(networkHelperStatusCmd)
 }
 
-// runNetworkHelperInstall installs the LaunchDaemon.
-// See AGD-023 for lifecycle details.
-func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
-	tfs := transact.New()
-	cmdRunner := util.NewCommandRunner()
+// networkHelperSetup holds the shared dependencies for network-helper subcommands.
+type networkHelperSetup struct {
+	deps       cliDeps
+	platform   runtime.RuntimePlatform
+	nh         network.NetworkHelper
+	networkEnv *network.NetworkEnv
+}
 
-	env := &util.Env{Fs: tfs, Cmd: cmdRunner}
-	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
-
-	// Detect runtime for network helper
-	runtimeName, err := detectRuntimeForNetworkHelper(runtimeEnv)
-	if err != nil {
-		return err
-	}
-
-	nh := network.NewNetworkHelper(config.Network{LANAccess: []string{"*"}}, runtimeName)
+// newNetworkHelperSetup creates shared deps for network-helper install/uninstall.
+// Returns nil if the network helper is not applicable on this platform.
+func newNetworkHelperSetup() *networkHelperSetup {
+	deps := newCLIDeps()
+	platform := runtime.DetectPlatform(deps.RuntimeEnv)
+	nh := network.NewNetworkHelper(config.Network{LANAccess: []string{"*"}}, platform)
 	if nh == nil {
+		return nil
+	}
+	networkEnv := network.NewNetworkEnv(deps.Env.Fs, deps.Env.Cmd, "", platform)
+	return &networkHelperSetup{
+		deps:       deps,
+		platform:   platform,
+		nh:         nh,
+		networkEnv: networkEnv,
+	}
+}
+
+// runNetworkHelperInstall installs the LaunchDaemon.
+// See AGD-030 for lifecycle details.
+func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
+	setup := newNetworkHelperSetup()
+	if setup == nil {
 		fmt.Println("Network helper not needed on this platform/runtime.")
 		return nil
 	}
 
-	isOrbStack := runtime.DetectPlatform(runtimeEnv) == runtime.PlatformMacOrbStack
-	networkEnv := network.NewNetworkEnv(env.Fs, env.Cmd, "", isOrbStack)
+	nh, networkEnv := setup.nh, setup.networkEnv
 
 	status := nh.HelperStatus(networkEnv)
 	if status.Installed && !status.NeedsUpdate {
@@ -116,13 +122,13 @@ func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	progress := stdoutProgressFunc()
+	progress := progressFunc(os.Stdout)
 	action, err := nh.InstallHelper(networkEnv, progress)
 	if err != nil {
 		return err
 	}
 
-	if err := commitIfNeeded(env, tfs, os.Stdout, "Writing system files"); err != nil {
+	if err := commitIfNeeded(setup.deps.Env, setup.deps.Tfs, os.Stdout, "Writing system files"); err != nil {
 		return err
 	}
 
@@ -137,27 +143,15 @@ func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
 }
 
 // runNetworkHelperUninstall removes the LaunchDaemon and cleans up.
-// See AGD-023 for lifecycle details.
+// See AGD-030 for lifecycle details.
 func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
-	tfs := transact.New()
-	cmdRunner := util.NewCommandRunner()
-
-	env := &util.Env{Fs: tfs, Cmd: cmdRunner}
-	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
-
-	runtimeName, err := detectRuntimeForNetworkHelper(runtimeEnv)
-	if err != nil {
-		return err
-	}
-
-	nh := network.NewNetworkHelper(config.Network{LANAccess: []string{"*"}}, runtimeName)
-	if nh == nil {
+	setup := newNetworkHelperSetup()
+	if setup == nil {
 		fmt.Println("Network helper not installed.")
 		return nil
 	}
 
-	isOrbStack := runtime.DetectPlatform(runtimeEnv) == runtime.PlatformMacOrbStack
-	networkEnv := network.NewNetworkEnv(env.Fs, env.Cmd, "", isOrbStack)
+	nh, networkEnv := setup.nh, setup.networkEnv
 
 	status := nh.HelperStatus(networkEnv)
 	if !status.Installed {
@@ -171,13 +165,13 @@ func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	progress := stdoutProgressFunc()
+	progress := progressFunc(os.Stdout)
 	action, err := nh.UninstallHelper(networkEnv, progress)
 	if err != nil {
 		return err
 	}
 
-	if err := commitIfNeeded(env, tfs, os.Stdout, "Removing system files"); err != nil {
+	if err := commitIfNeeded(setup.deps.Env, setup.deps.Tfs, os.Stdout, "Removing system files"); err != nil {
 		return err
 	}
 
@@ -193,24 +187,15 @@ func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
 
 // runNetworkHelperStatus shows the current status.
 func runNetworkHelperStatus(cmd *cobra.Command, args []string) error {
-	cmdRunner := util.NewCommandRunner()
-
-	env := &util.Env{Fs: afero.NewReadOnlyFs(afero.NewOsFs()), Cmd: cmdRunner}
-	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
-
-	runtimeName, err := detectRuntimeForNetworkHelper(runtimeEnv)
-	if err != nil {
-		return err
-	}
-
-	nh := network.NewNetworkHelper(config.Network{LANAccess: []string{"*"}}, runtimeName)
+	deps := newCLIReadDeps()
+	platform := runtime.DetectPlatform(deps.RuntimeEnv)
+	nh := network.NewNetworkHelper(config.Network{LANAccess: []string{"*"}}, platform)
 	if nh == nil {
 		fmt.Println("Network helper not applicable on this platform/runtime.")
 		return nil
 	}
 
-	isOrbStack := runtime.DetectPlatform(runtimeEnv) == runtime.PlatformMacOrbStack
-	networkEnv := network.NewNetworkEnv(env.Fs, env.Cmd, "", isOrbStack)
+	networkEnv := network.NewNetworkEnv(deps.Env.Fs, deps.Env.Cmd, "", platform)
 
 	status := nh.HelperStatus(networkEnv)
 
@@ -227,8 +212,8 @@ func runNetworkHelperStatus(cmd *cobra.Command, args []string) error {
 
 	// Detailed status from the implementation
 	detailed := nh.DetailedStatus(networkEnv)
+	printHelperSummary(status, detailed)
 	printRuleFiles(detailed)
-	printActivePfRules(detailed)
 
 	return nil
 }
@@ -245,38 +230,22 @@ func printRuleFiles(status network.DetailedStatusInfo) {
 	}
 }
 
-func printActivePfRules(status network.DetailedStatusInfo) {
+func printHelperSummary(helperStatus network.HelperStatus, detailedStatus network.DetailedStatusInfo) {
 	fmt.Println("")
-	fmt.Println("Active firewall rules:")
+	fmt.Println("Helper Summary:")
 
-	if !status.DaemonLoaded {
-		fmt.Println("  (daemon not loaded - rules may be stale)")
-	}
-
-	if len(status.RuleFiles) == 0 {
-		fmt.Println("  (none)")
-		return
+	// (1) Installation status
+	if helperStatus.Installed {
+		fmt.Println("  Installed: Yes")
+	} else {
+		fmt.Println("  Installed: No")
 	}
 
-	for _, f := range status.RuleFiles {
-		fmt.Printf("  [%s]\n", f.Name)
-		for _, line := range strings.Split(f.Content, "\n") {
-			if line != "" {
-				fmt.Printf("    %s\n", line)
-			}
-		}
+	// (2) Rules applied status
+	rulesApplied := len(detailedStatus.RuleFiles) > 0
+	if rulesApplied {
+		fmt.Printf("  Rules applied: Yes (%d rule files)\n", len(detailedStatus.RuleFiles))
+	} else {
+		fmt.Println("  Rules applied: No")
 	}
-}
-
-// detectRuntimeForNetworkHelper returns the runtime name for network helper operations.
-// Returns "orbstack" if OrbStack is detected, "docker" otherwise.
-func detectRuntimeForNetworkHelper(runtimeEnv *runtime.RuntimeEnv) (string, error) {
-	isOrbStack, err := runtime.IsOrbStack(runtimeEnv)
-	if err != nil {
-		return "", fmt.Errorf("failed to detect runtime: %w", err)
-	}
-	if isOrbStack {
-		return "orbstack", nil
-	}
-	return "docker", nil
 }

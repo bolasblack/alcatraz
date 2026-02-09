@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/runtime"
@@ -46,9 +45,8 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create shared dependencies once
-	cmdRunner := util.NewCommandRunner()
-	env := &util.Env{Fs: afero.NewReadOnlyFs(afero.NewOsFs()), Cmd: cmdRunner}
-	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
+	deps := newCLIReadDeps()
+	env, runtimeEnv := deps.Env, deps.RuntimeEnv
 
 	// Load config (optional) and select runtime
 	_, rt, err := loadConfigAndRuntimeOptional(env, runtimeEnv, cwd)

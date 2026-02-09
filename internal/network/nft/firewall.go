@@ -1,5 +1,3 @@
-//go:build linux
-
 package nft
 
 import (
@@ -9,23 +7,26 @@ import (
 
 	"github.com/spf13/afero"
 
+	"github.com/bolasblack/alcatraz/internal/network/darwin/vmhelper"
 	"github.com/bolasblack/alcatraz/internal/network/shared"
-)
-
-// Constants for nftables persistence paths.
-const (
-	nftablesConfPath    = "/etc/nftables.conf"
-	alcatrazNftDir      = "/etc/nftables.d/alcatraz"
-	alcatrazIncludeLine = `include "/etc/nftables.d/alcatraz/*.nft"`
+	"github.com/bolasblack/alcatraz/internal/runtime"
 )
 
 // Compile-time interface assertion.
 var _ shared.Firewall = (*NFTables)(nil)
 
-// NFTables implements shared.Firewall using Linux nftables.
-// Each container gets its own table for isolation and clean teardown.
+// NFTables implements shared.Firewall using nftables.
+// Each container gets its own table for isolation and clean teardown (AGD-030).
 type NFTables struct {
-	env *shared.NetworkEnv
+	env   *shared.NetworkEnv
+	vmEnv *vmhelper.VMHelperEnv // pre-constructed for Darwin; nil on Linux
+}
+
+// isDarwin reports whether this instance targets macOS (Darwin).
+// Uses the Runtime field which is set by CLI via runtime.DetectPlatform().
+// See runtime.IsDarwin() for the platform detection logic.
+func (n *NFTables) isDarwin() bool {
+	return runtime.IsDarwin(n.env.Runtime)
 }
 
 // tableName returns the nftables table name for a container.
@@ -34,42 +35,60 @@ func tableName(containerID string) string {
 	return "alca-" + shared.ShortContainerID(containerID)
 }
 
+// chainPriority returns the nftables chain priority string for the given runtime.
+// OrbStack: filter - 2 (must beat flowtable offload)
+// Docker Desktop: filter - 1
+func chainPriority(rt runtime.RuntimePlatform) string {
+	if rt == runtime.PlatformMacOrbStack {
+		return "filter - 2"
+	}
+	return "filter - 1"
+}
+
+// writeIdempotentHeader writes the nft shebang and idempotent create/delete table pattern.
+func writeIdempotentHeader(sb *strings.Builder, comment string, table string) {
+	sb.WriteString("#!/usr/sbin/nft -f\n")
+	fmt.Fprintf(sb, "# %s\n\n", comment)
+	sb.WriteString("# Delete table if exists (idempotent)\n")
+	fmt.Fprintf(sb, "table inet %s\n", table)
+	fmt.Fprintf(sb, "delete table inet %s\n\n", table)
+}
+
+// writeAllowRules writes per-container allow rules, skipping AllLAN entries.
+func writeAllowRules(sb *strings.Builder, containerIP string, containerIsV6 bool, rules []shared.LANAccessRule, comment string) {
+	if len(rules) == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "\t\t# %s\n", comment)
+	for _, rule := range rules {
+		if rule.AllLAN {
+			continue
+		}
+		writeNftAllowRule(sb, containerIP, containerIsV6, rule)
+	}
+	sb.WriteString("\n")
+}
+
 // generateRuleset generates the nftables ruleset for a container with allow rules.
 // If rules is empty, blocks all RFC1918 traffic.
 // Uses idempotent flush+recreate pattern per AGD-028.
 // This is a pure function for testability.
-func generateRuleset(tableName string, containerIP string, rules []shared.LANAccessRule) string {
+func generateRuleset(tableName string, containerIP string, rules []shared.LANAccessRule, priority string) string {
 	var sb strings.Builder
 
-	// Determine if container IP is IPv6
 	containerIsV6 := shared.IsIPv6(containerIP)
 
-	// Idempotent header: create empty table then delete it (ensures table exists for delete)
-	sb.WriteString("#!/usr/sbin/nft -f\n")
-	sb.WriteString(fmt.Sprintf("# Alcatraz container rules for table: %s\n\n", tableName))
-	sb.WriteString("# Delete table if exists (idempotent)\n")
-	sb.WriteString(fmt.Sprintf("table inet %s\n", tableName))
-	sb.WriteString(fmt.Sprintf("delete table inet %s\n\n", tableName))
+	writeIdempotentHeader(&sb, fmt.Sprintf("Alcatraz container rules for table: %s", tableName), tableName)
 
 	// Create fresh table with rules
 	sb.WriteString("# Create fresh table with rules\n")
-	sb.WriteString(fmt.Sprintf("table inet %s {\n", tableName))
+	fmt.Fprintf(&sb, "table inet %s {\n", tableName)
 	sb.WriteString("\tchain forward {\n")
-	sb.WriteString("\t\ttype filter hook forward priority filter - 1; policy accept;\n\n")
+	fmt.Fprintf(&sb, "\t\ttype filter hook forward priority %s; policy accept;\n\n", priority)
 	sb.WriteString("\t\t# Allow established/related connections (return traffic)\n")
 	sb.WriteString("\t\tct state established,related accept\n\n")
 
-	// Generate allow rules for each lan-access entry
-	if len(rules) > 0 {
-		sb.WriteString("\t\t# Allow rules from lan-access configuration\n")
-		for _, rule := range rules {
-			if rule.AllLAN {
-				continue // AllLAN means no blocking needed
-			}
-			writeNftAllowRule(&sb, containerIP, containerIsV6, rule)
-		}
-		sb.WriteString("\n")
-	}
+	writeAllowRules(&sb, containerIP, containerIsV6, rules, "Allow rules from lan-access configuration")
 
 	// Block RFC1918 and private ranges
 	sb.WriteString("\t\t# Block RFC1918 and other private ranges from container\n")
@@ -101,76 +120,162 @@ func writeNftAllowRule(sb *strings.Builder, containerIP string, containerIsV6 bo
 
 	base := fmt.Sprintf("\t\t%s saddr %s %s daddr %s", srcIPCmd, containerIP, dstIPCmd, rule.IP)
 
-	switch {
-	case rule.Port == 0 && rule.Protocol == shared.ProtoAll:
-		// All ports, all protocols
-		sb.WriteString(base + " accept\n")
-	case rule.Port == 0 && rule.Protocol == shared.ProtoTCP:
-		// All TCP ports
-		sb.WriteString(base + " tcp dport 1-65535 accept\n")
-	case rule.Port == 0 && rule.Protocol == shared.ProtoUDP:
-		// All UDP ports
-		sb.WriteString(base + " udp dport 1-65535 accept\n")
-	case rule.Port > 0 && rule.Protocol == shared.ProtoTCP:
-		sb.WriteString(base + fmt.Sprintf(" tcp dport %d accept\n", rule.Port))
-	case rule.Port > 0 && rule.Protocol == shared.ProtoUDP:
-		sb.WriteString(base + fmt.Sprintf(" udp dport %d accept\n", rule.Port))
-	case rule.Port > 0 && rule.Protocol == shared.ProtoAll:
-		// Both TCP and UDP for specific port
-		sb.WriteString(base + fmt.Sprintf(" tcp dport %d accept\n", rule.Port))
-		sb.WriteString(base + fmt.Sprintf(" udp dport %d accept\n", rule.Port))
+	for _, suffix := range formatProtocolSuffixes(rule.Protocol, rule.Port) {
+		sb.WriteString(base + suffix + " accept\n")
 	}
 }
 
-// ruleFilePath returns the persistent rule file path for a container.
-func ruleFilePath(containerID string) string {
-	return filepath.Join(alcatrazNftDir, containerID+".nft")
+// formatProtocolSuffixes returns the nft rule suffixes for a protocol/port combination.
+// Each suffix is appended to the base "saddr X daddr Y" to form a complete rule.
+func formatProtocolSuffixes(proto shared.Protocol, port int) []string {
+	switch {
+	case port == 0 && proto == shared.ProtoAll:
+		return []string{""}
+	case port == 0 && proto == shared.ProtoTCP:
+		return []string{" tcp dport 1-65535"}
+	case port == 0 && proto == shared.ProtoUDP:
+		return []string{" udp dport 1-65535"}
+	case port > 0 && proto == shared.ProtoTCP:
+		return []string{fmt.Sprintf(" tcp dport %d", port)}
+	case port > 0 && proto == shared.ProtoUDP:
+		return []string{fmt.Sprintf(" udp dport %d", port)}
+	case port > 0 && proto == shared.ProtoAll:
+		return []string{
+			fmt.Sprintf(" tcp dport %d", port),
+			fmt.Sprintf(" udp dport %d", port),
+		}
+	default:
+		return nil
+	}
 }
 
 // ApplyRules creates nftables rules to apply network isolation with allow rules.
-// Rules are persisted to /etc/nftables.d/alcatraz/<container-id>.nft for reload support.
-// Rules are loaded atomically via `nft -f` to satisfy AGD-008 crash safety requirements.
-func (n *NFTables) ApplyRules(containerID string, containerIP string, rules []shared.LANAccessRule) error {
+// On Linux: persisted to /etc/nftables.d/alcatraz/<container-id>.nft, loaded via `nft -f`.
+// On macOS: persisted to ~/.alcatraz/files/alcatraz_nft/<container-table>.nft, reload via docker exec.
+// Returns PostCommitAction that MUST be called after TransactFs.Commit().
+func (n *NFTables) ApplyRules(containerID string, containerIP string, rules []shared.LANAccessRule) (*shared.PostCommitAction, error) {
 	// If any rule allows all LAN, skip firewall entirely
 	if shared.HasAllLAN(rules) {
-		return nil
+		return &shared.PostCommitAction{}, nil
 	}
 
-	table := tableName(containerID)
-	ruleset := generateRuleset(table, containerIP, rules)
-	fs := n.env.Fs
-
-	// Ensure alcatraz nft directory exists
-	if err := fs.MkdirAll(alcatrazNftDir, 0755); err != nil {
-		return fmt.Errorf("failed to create nftables directory %s: %w", alcatrazNftDir, err)
+	if n.isDarwin() {
+		return n.applyRulesOnDarwin(containerID, containerIP, rules)
 	}
+	return n.applyRulesOnLinux(containerID, containerIP, rules)
+}
 
-	// Write to persistent file location
-	rulePath := ruleFilePath(containerID)
+// writeRuleFile creates the directory and writes the ruleset file atomically.
+func writeRuleFile(fs afero.Fs, dir string, fileName string, ruleset string) (string, error) {
+	if err := fs.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create nft directory %s: %w", dir, err)
+	}
+	rulePath := filepath.Join(dir, fileName)
 	if err := afero.WriteFile(fs, rulePath, []byte(ruleset), 0644); err != nil {
-		return fmt.Errorf("failed to write ruleset to %s: %w", rulePath, err)
+		return "", fmt.Errorf("failed to write ruleset to %s: %w", rulePath, err)
 	}
+	return rulePath, nil
+}
 
-	// Load ruleset atomically (idempotent format handles existing table)
-	// Requires sudo for nftables access
-	output, err := n.env.Cmd.SudoRunQuiet("nft", "-f", rulePath)
+// applyRulesOnLinux applies per-container rules on Linux.
+// Writes the rule file via Fs, returns PostCommitAction to load rules via nft.
+func (n *NFTables) applyRulesOnLinux(containerID string, containerIP string, rules []shared.LANAccessRule) (*shared.PostCommitAction, error) {
+	table := tableName(containerID)
+	ruleset := generateRuleset(table, containerIP, rules, "filter - 1")
+
+	rulePath, err := writeRuleFile(n.env.Fs, nftDirOnLinux(), containerID+".nft", ruleset)
 	if err != nil {
-		return fmt.Errorf("failed to load nftables rules for table %s: %w: %s", table, err, strings.TrimSpace(string(output)))
+		return nil, err
 	}
 
-	return nil
+	// Post-commit: load ruleset atomically (idempotent format handles existing table)
+	return &shared.PostCommitAction{
+		Run: func(_ shared.ProgressFunc) error {
+			output, err := n.env.Cmd.SudoRunQuiet("nft", "-f", rulePath)
+			if err != nil {
+				return fmt.Errorf("failed to load nftables rules from %s for table %s: %w: %s", rulePath, table, err, strings.TrimSpace(string(output)))
+			}
+			return nil
+		},
+	}, nil
+}
+
+// applyRulesOnDarwin applies per-container rules on macOS per AGD-030.
+// Writes the rule file via Fs, returns PostCommitAction to reload VM helper.
+func (n *NFTables) applyRulesOnDarwin(containerID string, containerIP string, rules []shared.LANAccessRule) (*shared.PostCommitAction, error) {
+	table := tableName(containerID)
+	ruleset := generateRuleset(table, containerIP, rules, chainPriority(n.env.Runtime))
+
+	dir, err := nftDirOnDarwin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine nft directory: %w", err)
+	}
+
+	fileName := table + ".nft"
+	rulePath, err := writeRuleFile(n.env.Fs, dir, fileName, ruleset)
+	if err != nil {
+		return nil, err
+	}
+
+	// Post-commit: trigger reload via network helper container
+	return &shared.PostCommitAction{
+		Run: func(_ shared.ProgressFunc) error {
+			if err := n.reloadVMHelper(); err != nil {
+				return fmt.Errorf("failed to trigger nft reload on darwin for %s: %w", rulePath, err)
+			}
+			return nil
+		},
+	}, nil
 }
 
 // Cleanup removes all firewall rules for a container.
-// Deletes both the persistent rule file and the nftables table.
-func (n *NFTables) Cleanup(containerID string) error {
+// On Linux: deletes the persistent rule file and the nftables table.
+// On macOS: removes the per-container .nft file and triggers reload.
+// Returns PostCommitAction that MUST be called after TransactFs.Commit().
+func (n *NFTables) Cleanup(containerID string) (*shared.PostCommitAction, error) {
+	if n.isDarwin() {
+		return n.cleanupOnDarwin(containerID)
+	}
+	return n.cleanupOnLinux(containerID)
+}
+
+// cleanupOnLinux removes per-container rules on Linux.
+// Removes the rule file via Fs, returns PostCommitAction to delete the nftables table.
+func (n *NFTables) cleanupOnLinux(containerID string) (*shared.PostCommitAction, error) {
 	// Delete rule file (best-effort, ignore if not exists)
-	rulePath := ruleFilePath(containerID)
+	rulePath := filepath.Join(nftDirOnLinux(), containerID+".nft")
 	_ = n.env.Fs.Remove(rulePath)
 
-	// Delete nftables table
+	// Post-commit: delete nftables table
 	table := tableName(containerID)
-	return n.deleteTable(table)
+	return &shared.PostCommitAction{
+		Run: func(_ shared.ProgressFunc) error {
+			return n.deleteTable(table)
+		},
+	}, nil
+}
+
+// cleanupOnDarwin removes per-container rules on macOS.
+// Removes the rule file via Fs, returns PostCommitAction to reload VM helper.
+func (n *NFTables) cleanupOnDarwin(containerID string) (*shared.PostCommitAction, error) {
+	dir, err := nftDirOnDarwin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine nft directory: %w", err)
+	}
+
+	fileName := tableName(containerID) + ".nft"
+	rulePath := filepath.Join(dir, fileName)
+	_ = n.env.Fs.Remove(rulePath)
+
+	// Post-commit: trigger reload via network helper container
+	return &shared.PostCommitAction{
+		Run: func(_ shared.ProgressFunc) error {
+			if err := n.reloadVMHelper(); err != nil {
+				return fmt.Errorf("failed to trigger nft reload on darwin after cleanup of %s: %w", rulePath, err)
+			}
+			return nil
+		},
+	}, nil
 }
 
 // deleteTable removes an nftables table. Returns nil if table doesn't exist.

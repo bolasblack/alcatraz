@@ -1,15 +1,16 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/network"
+	"github.com/bolasblack/alcatraz/internal/network/darwin/vmhelper"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/bolasblack/alcatraz/internal/transact"
@@ -45,11 +46,8 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create shared dependencies once
-	tfs := transact.New()
-	cmdRunner := util.NewCommandRunner()
-
-	env := &util.Env{Fs: tfs, Cmd: cmdRunner}
-	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
+	deps := newCLIDeps()
+	tfs, env, runtimeEnv := deps.Tfs, deps.Env, deps.RuntimeEnv
 
 	// Load configuration
 	util.ProgressStep(out, "Loading config from %s\n", ConfigFilename)
@@ -66,6 +64,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 	util.ProgressStep(out, "Detected runtime: %s\n", rt.Name())
 
+	// TODO: extract to validateMounts(runtimeEnv, rt, cfg) — mount-related validations
 	// Validate Mutagen is available if any mount requires it
 	if err := runtime.ValidateMutagenAvailable(runtimeEnv, cfg); err != nil {
 		return err
@@ -80,15 +79,15 @@ func runUp(cmd *cobra.Command, args []string) error {
 			"  3. Use Docker instead", err)
 	}
 
+	// Detect platform once for all network operations
+	platform := runtime.DetectPlatform(runtimeEnv)
+
 	// Network helper (handles all platform-specific logic)
-	nh := network.NewNetworkHelper(cfg.Network, rt.Name())
+	nh := network.NewNetworkHelper(cfg.Network, platform)
 	if nh != nil {
-		if err := setupNetwork(nh, env, tfs, cwd, runtimeEnv, out); err != nil {
+		if err := setupNetwork(nh, env, tfs, cwd, platform, out); err != nil {
 			return err
 		}
-		// Reset tfs/env for subsequent operations since network setup may have committed
-		tfs = transact.New()
-		env = &util.Env{Fs: tfs, Cmd: cmdRunner}
 	}
 
 	// Load or create state
@@ -114,6 +113,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// TODO: extract to saveStateIfNeeded(env, tfs, cfg, st, cwd, out) — state persistence
 	// Update state with current config only when rebuilding or first time
 	if needsRebuild || isNew {
 		st.UpdateConfig(cfg)
@@ -133,9 +133,15 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// Setup firewall rules for network isolation
 	// See AGD-027 for design decisions
-	if err := setupFirewall(runtimeEnv, cmdRunner, cfg, rt, st, cwd, out); err != nil {
-		// Firewall errors are warnings, not fatal - container is already running
-		util.ProgressStep(out, "Warning: %v\n", err)
+	// Files written via tfs, committed to real disk before nft loads them.
+	firewallEnv := network.NewNetworkEnv(tfs, deps.CmdRunner, cwd, platform)
+	if err := setupFirewall(firewallEnv, env, tfs, runtimeEnv, cfg.Network, rt, st, out); err != nil {
+		if errors.Is(err, errSkipFirewall) {
+			// User declined helper install — already messaged, not an error
+		} else {
+			// Firewall errors are warnings, not fatal - container is already running
+			util.ProgressStep(out, "Warning: %v\n", err)
+		}
 	}
 
 	util.ProgressDone(out, "Environment ready\n")
@@ -193,14 +199,11 @@ func rebuildContainerIfNeeded(runtimeEnv *runtime.RuntimeEnv, cfg *config.Config
 }
 
 // setupNetwork configures network helper for LAN access.
-// See AGD-023 for design decisions.
-func setupNetwork(nh network.NetworkHelper, env *util.Env, tfs *transact.TransactFs, projectDir string, runtimeEnv *runtime.RuntimeEnv, out io.Writer) error {
-	progress := func(format string, args ...any) {
-		util.ProgressStep(out, format, args...)
-	}
+// See AGD-030 for design decisions.
+func setupNetwork(nh network.NetworkHelper, env *util.Env, tfs *transact.TransactFs, projectDir string, platform runtime.RuntimePlatform, out io.Writer) error {
+	progress := progressFunc(out)
 
-	isOrbStack := runtime.DetectPlatform(runtimeEnv) == runtime.PlatformMacOrbStack
-	networkEnv := network.NewNetworkEnv(env.Fs, env.Cmd, projectDir, isOrbStack)
+	networkEnv := network.NewNetworkEnv(env.Fs, env.Cmd, projectDir, platform)
 
 	// Check and install helper if needed
 	status := nh.HelperStatus(networkEnv)
@@ -250,12 +253,12 @@ func setupNetwork(nh network.NetworkHelper, env *util.Env, tfs *transact.Transac
 
 // setupFirewall applies firewall rules for network isolation.
 // Only applies when:
-// - A firewall backend is available (nftables on Linux, pf on macOS)
+// - A firewall backend is available (nftables on Linux, nftables via VM on macOS)
 // - lan-access is NOT ["*"] (user wants network isolation)
 // See AGD-027 for design decisions.
-func setupFirewall(runtimeEnv *runtime.RuntimeEnv, cmdRunner util.CommandRunner, cfg *config.Config, rt runtime.Runtime, st *state.State, projectDir string, out io.Writer) error {
+func setupFirewall(networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, netCfg config.Network, rt runtime.Runtime, st *state.State, out io.Writer) error {
 	// Parse lan-access rules
-	rules, err := network.ParseLANAccessRules(cfg.Network.LANAccess)
+	rules, err := network.ParseLANAccessRules(netCfg.LANAccess)
 	if err != nil {
 		return fmt.Errorf("invalid lan-access configuration: %w", err)
 	}
@@ -265,30 +268,16 @@ func setupFirewall(runtimeEnv *runtime.RuntimeEnv, cmdRunner util.CommandRunner,
 		return nil
 	}
 
-	// Detect firewall availability using shared command runner
-	isOrbStack := runtime.DetectPlatform(runtimeEnv) == runtime.PlatformMacOrbStack
-	networkEnv := network.NewNetworkEnv(afero.NewOsFs(), cmdRunner, projectDir, isOrbStack)
-	fw, fwType := network.New(networkEnv)
-
-	// OrbStack warning: partial lan-access (specific IPs/ports) doesn't work due to NAT
-	// Only lan-access=["*"] (allow all) or lan-access=[] (block all) are effective
-	if fwType == network.TypePF && len(rules) > 0 {
-		isOrbStack, _ := runtime.IsOrbStack(runtimeEnv)
-		if isOrbStack {
-			util.ProgressStep(out, `
-⚠️  OrbStack partial lan-access limitation
-
-OrbStack's NAT architecture prevents pf from filtering by container IP.
-Only these lan-access modes work reliably with OrbStack:
-  - lan-access: ["*"]  (allow all LAN access)
-  - lan-access: []     (block all LAN access)
-
-Your current config has partial access rules which may not be enforced.
-For full lan-access control, use Docker Desktop instead of OrbStack.
-
-`)
+	// On darwin, the VM helper must be installed for nft reload.
+	// If setupNetwork didn't run (e.g. lan-access is empty), the helper may not be installed.
+	if runtime.IsDarwin(networkEnv.Runtime) {
+		if err := ensureVMHelper(networkEnv, env, tfs, out); err != nil {
+			return err
 		}
 	}
+
+	// Detect firewall availability
+	fw, fwType := network.New(networkEnv)
 
 	if fwType == network.TypeNone {
 		// No firewall available - emit warning per AGD-027
@@ -325,11 +314,75 @@ On Linux, install nftables:
 
 	util.ProgressStep(out, "Applying network isolation rules...\n")
 
-	// Apply firewall rules with lan-access allowlist
-	if err := fw.ApplyRules(status.ID, containerIP, rules); err != nil {
+	// Apply firewall rules with lan-access allowlist (writes files via tfs)
+	action, err := fw.ApplyRules(status.ID, containerIP, rules)
+	if err != nil {
 		return fmt.Errorf("failed to apply firewall rules: %w", err)
+	}
+
+	// Commit tfs to write files to real disk
+	if err := commitIfNeeded(env, tfs, out, "Writing firewall rules"); err != nil {
+		return fmt.Errorf("commit firewall files: %w", err)
+	}
+
+	// Run post-commit action (nft -f or reload)
+	if action != nil && action.Run != nil {
+		if err := action.Run(nil); err != nil {
+			return fmt.Errorf("load firewall rules: %w", err)
+		}
 	}
 
 	util.ProgressStep(out, "Network isolation enabled\n")
 	return nil
 }
+
+// ensureVMHelper checks if the VM helper is installed on darwin and prompts to install if needed.
+// Returns nil if the helper is already installed or was successfully installed.
+// Returns a non-nil error sentinel to signal the caller to skip firewall setup (not a real error).
+func ensureVMHelper(networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, out io.Writer) error {
+	vmEnv := vmhelper.NewVMHelperEnv(networkEnv.Fs, networkEnv.Cmd)
+
+	installed, err := vmhelper.IsInstalled(vmEnv)
+	if err != nil {
+		return fmt.Errorf("failed to check VM helper status: %w", err)
+	}
+	if installed {
+		return nil
+	}
+
+	util.ProgressStep(out, "Network helper required for network isolation.\n")
+	if !promptConfirm("Install now?") {
+		util.ProgressStep(out, "Skipping network isolation — helper not installed\n")
+		return errSkipFirewall
+	}
+
+	// Install the helper (same flow as setupNetwork)
+	progress := progressFunc(out)
+	nh := network.NewNetworkHelper(
+		config.Network{LANAccess: []string{"_placeholder"}},
+		networkEnv.Runtime,
+	)
+	if nh == nil {
+		return fmt.Errorf("failed to create network helper for install")
+	}
+
+	action, err := nh.InstallHelper(networkEnv, progress)
+	if err != nil {
+		return fmt.Errorf("failed to install network helper: %w", err)
+	}
+
+	if err := commitIfNeeded(env, tfs, out, "Writing network helper to system directories"); err != nil {
+		return fmt.Errorf("failed to commit: %w", err)
+	}
+
+	if action.Run != nil {
+		if err := action.Run(progress); err != nil {
+			return fmt.Errorf("post-install failed: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// errSkipFirewall is a sentinel error used to skip firewall setup without reporting an error.
+var errSkipFirewall = errors.New("skip firewall")

@@ -12,6 +12,8 @@ func ShortContainerID(containerID string) string {
 }
 
 // IsIPv6 returns true if the IP address string is IPv6.
+// Precondition: ip must be a valid IP address or CIDR (not a host:port combo).
+// This is safe because IPv4 addresses never contain ':'.
 func IsIPv6(ip string) bool {
 	return strings.Contains(ip, ":")
 }

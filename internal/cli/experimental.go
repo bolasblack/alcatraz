@@ -9,7 +9,6 @@ import (
 
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
-	"github.com/bolasblack/alcatraz/internal/transact"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
@@ -54,11 +53,8 @@ func runReload(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create shared dependencies once
-	tfs := transact.New()
-	cmdRunner := util.NewCommandRunner()
-
-	env := &util.Env{Fs: tfs, Cmd: cmdRunner}
-	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
+	deps := newCLIDeps()
+	tfs, env, runtimeEnv := deps.Tfs, deps.Env, deps.RuntimeEnv
 
 	// Load configuration and runtime
 	cfg, rt, err := loadConfigAndRuntime(env, runtimeEnv, cwd)

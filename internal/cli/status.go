@@ -5,13 +5,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
-	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 var statusCmd = &cobra.Command{
@@ -30,9 +28,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create shared dependencies once
-	cmdRunner := util.NewCommandRunner()
-	env := &util.Env{Fs: afero.NewReadOnlyFs(afero.NewOsFs()), Cmd: cmdRunner}
-	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
+	deps := newCLIReadDeps()
+	env, runtimeEnv := deps.Env, deps.RuntimeEnv
 
 	configPath := filepath.Join(cwd, ConfigFilename)
 

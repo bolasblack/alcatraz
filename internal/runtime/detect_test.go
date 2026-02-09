@@ -11,6 +11,27 @@ import (
 
 // IsOrbStack tests moved to runtime_mock_test.go (mock-based, deterministic).
 
+func TestIsDarwin(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform RuntimePlatform
+		want     bool
+	}{
+		{"Linux", PlatformLinux, false},
+		{"macOS OrbStack", PlatformMacOrbStack, true},
+		{"macOS Docker Desktop", PlatformMacDockerDesktop, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsDarwin(tt.platform)
+			if got != tt.want {
+				t.Errorf("IsDarwin(%q) = %v, want %v", tt.platform, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAll(t *testing.T) {
 	runtimes := All()
 	if len(runtimes) != 2 {

@@ -10,7 +10,9 @@ import (
 	"runtime"
 
 	"github.com/bolasblack/alcatraz/internal/config"
+	"github.com/bolasblack/alcatraz/internal/network/nft"
 	"github.com/bolasblack/alcatraz/internal/network/shared"
+	alcaruntime "github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
@@ -44,7 +46,6 @@ type (
 const (
 	TypeNone     = shared.TypeNone
 	TypeNFTables = shared.TypeNFTables
-	TypePF       = shared.TypePF
 	ProtoAll     = shared.ProtoAll
 	ProtoTCP     = shared.ProtoTCP
 	ProtoUDP     = shared.ProtoUDP
@@ -63,7 +64,7 @@ var (
 func Detect(cmd util.CommandRunner) Type {
 	switch runtime.GOOS {
 	case "darwin":
-		return TypePF
+		return TypeNFTables
 	case "linux":
 		if commandExists(cmd, "nft") && nftablesWorking(cmd) {
 			return TypeNFTables
@@ -83,8 +84,8 @@ func New(env *NetworkEnv) (Firewall, Type) {
 
 // NewNetworkHelper creates a NetworkHelper for the given platform and runtime.
 // Returns nil if network isolation is not needed.
-func NewNetworkHelper(cfg config.Network, runtimeName string) NetworkHelper {
-	return newNetworkHelperForPlatform(cfg, runtimeName)
+func NewNetworkHelper(cfg config.Network, platform alcaruntime.RuntimePlatform) NetworkHelper {
+	return newNetworkHelperForPlatform(cfg, platform)
 }
 
 // commandExists checks if a command is available in PATH.
@@ -97,4 +98,19 @@ func commandExists(cmd util.CommandRunner, name string) bool {
 func nftablesWorking(cmd util.CommandRunner) bool {
 	_, err := cmd.Run("nft", "list", "tables")
 	return err == nil
+}
+
+// newFirewallForType creates a Firewall for the given type.
+func newFirewallForType(t Type, env *NetworkEnv) Firewall {
+	switch t {
+	case TypeNFTables:
+		return nft.New(env)
+	default:
+		return nil
+	}
+}
+
+// newNetworkHelperForPlatform creates a platform-specific NetworkHelper.
+func newNetworkHelperForPlatform(cfg config.Network, platform alcaruntime.RuntimePlatform) shared.NetworkHelper {
+	return nft.NewHelper(cfg, platform)
 }

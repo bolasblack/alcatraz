@@ -23,7 +23,7 @@ func TestNewNetworkEnv_StoresInjectedDeps(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
 
-	env := NewNetworkEnv(mockFs, mockCmd, "", false)
+	env := NewNetworkEnv(mockFs, mockCmd, "", "")
 
 	// Verify the EXACT instances are stored (pointer equality)
 	if env.Fs != mockFs {
@@ -41,32 +41,13 @@ func TestNewNetworkEnv_StoresInjectedDeps(t *testing.T) {
 //	if fs == nil { fs = afero.NewOsFs() }
 func TestNewNetworkEnv_DoesNotCreateOwnDeps(t *testing.T) {
 	// Pass nil explicitly - constructor should store nil, not create defaults
-	env := NewNetworkEnv(nil, nil, "", false)
+	env := NewNetworkEnv(nil, nil, "", "")
 
 	if env.Fs != nil {
 		t.Error("NewNetworkEnv should not create a default Fs when nil is provided")
 	}
 	if env.Cmd != nil {
 		t.Error("NewNetworkEnv should not create a default Cmd when nil is provided")
-	}
-}
-
-// TestNetworkEnv_FieldsArePublic verifies that Fs and Cmd fields are
-// accessible for callers to use. This ensures the struct doesn't hide
-// dependencies behind private fields that would require getters.
-func TestNetworkEnv_FieldsArePublic(t *testing.T) {
-	mockFs := afero.NewMemMapFs()
-	mockCmd := util.NewMockCommandRunner()
-
-	env := NewNetworkEnv(mockFs, mockCmd, "", false)
-
-	// These assignments would fail at compile time if fields were private
-	_ = afero.Fs(env.Fs)
-	_ = util.CommandRunner(env.Cmd)
-
-	// Verify we can use the fields directly
-	if env.Fs == nil || env.Cmd == nil {
-		t.Error("Fs and Cmd fields must be publicly accessible and non-nil when provided")
 	}
 }
 
@@ -97,7 +78,7 @@ func TestNewTestNetworkEnv_CreatesMocks(t *testing.T) {
 // injected Fs actually use it (not create a new one internally).
 func TestNetworkEnv_InjectedFsIsUsable(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
-	env := NewNetworkEnv(mockFs, nil, "", false)
+	env := NewNetworkEnv(mockFs, nil, "", "")
 
 	// Write a file using the env's Fs
 	testContent := []byte("test content")
@@ -121,7 +102,7 @@ func TestNetworkEnv_InjectedFsIsUsable(t *testing.T) {
 // records calls when used through the env.
 func TestNetworkEnv_InjectedCmdIsUsable(t *testing.T) {
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := NewNetworkEnv(nil, mockCmd, "", false)
+	env := NewNetworkEnv(nil, mockCmd, "", "")
 
 	// Run a command through env.Cmd
 	_, _ = env.Cmd.Run("test-command", "arg1", "arg2")

@@ -1,30 +1,20 @@
-//go:build linux
-
-// Package nft implements network isolation for Linux using nftables.
-// See AGD-027 for the decision to use nftables as the primary Linux network.
+// Package nft implements network isolation using nftables.
+// On Linux: per-container tables via direct nft execution (AGD-027).
+// On macOS: per-project rules via VM nftables (AGD-030).
 // See AGD-028 for the lan-access rule syntax specification.
 package nft
 
 import (
-	"github.com/bolasblack/alcatraz/internal/config"
+	"github.com/bolasblack/alcatraz/internal/network/darwin/vmhelper"
 	"github.com/bolasblack/alcatraz/internal/network/shared"
+	"github.com/bolasblack/alcatraz/internal/runtime"
 )
 
 // New creates a new NFTables firewall instance.
 func New(env *shared.NetworkEnv) shared.Firewall {
-	return &NFTables{env: env}
-}
-
-// NewHelper creates a NetworkHelper for Linux.
-func NewHelper(cfg config.Network, _ string) shared.NetworkHelper {
-	if !hasLANAccess(cfg.LANAccess) {
-		return nil
+	var vmEnv *vmhelper.VMHelperEnv
+	if runtime.IsDarwin(env.Runtime) {
+		vmEnv = vmhelper.NewVMHelperEnv(env.Fs, env.Cmd)
 	}
-	return &nftHelper{}
-}
-
-// hasLANAccess checks if LAN access is configured.
-// Returns true if any lan-access rules are specified (not just wildcard).
-func hasLANAccess(lanAccess []string) bool {
-	return len(lanAccess) > 0
+	return &NFTables{env: env, vmEnv: vmEnv}
 }

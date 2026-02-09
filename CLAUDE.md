@@ -53,3 +53,42 @@ All `internal/` business modules receive `Fs` and `CommandRunner` from external 
 - **Simple modules**: use `util.Env` directly
 - **Complex modules** (network, runtime, etc.): define own `XxxEnv` with `NewXxxEnv(fs, cmd)` constructor
 - **CLI pattern**: create `cmdRunner`, `fs` once, pass the same instance to all Env constructors
+
+### Cross-Platform Testability via DI
+
+Platform-specific code should avoid platform-specific imports when possible. Inject platform behavior via DI so code compiles and tests on all platforms.
+
+- Exemplar: `darwin/vmhelper/` — zero build constraints, 89% test coverage, fully testable on Linux
+- If a function doesn't call platform syscalls, it doesn't need a build constraint
+- Use `runtime.GOOS` or injected platform values for runtime dispatch instead of build-time file separation
+
+### Platform-Specific File Naming (Dot Separator)
+
+Platform-specific files use a dot separator: `name.platform.go` (e.g., `helper.darwin.go`, `helper.linux.go`).
+
+- Keeps the descriptive name first and platform last
+- Avoids Go compiler's implicit build constraint from `_GOOS.go` suffix
+- Code inside these files has no platform-specific imports — testable on all platforms
+- Test files follow the same pattern: `firewall.darwin_test.go`
+
+### Testing Principles
+
+Tests exist to discover bugs — mismatches between implementation and expectation.
+
+- **Write expected behavior first**, run the test, then fix the implementation if it fails
+- **Test behavior, not implementation**: test inputs/outputs from the caller's perspective. If a test breaks when you refactor internals without changing behavior, it's a bad test
+- **No implementation mirroring**: don't assert concrete types, internal field values, or call sequences. Test through interfaces
+
+## Build
+
+### Makefile Embedded File Tracking
+
+Non-`.go` embedded files (e.g., `entry.sh` via `//go:embed`) must be added to `EMBED_SRC` in the Makefile. Otherwise `make build` won't detect changes to these files and will skip rebuilding.
+
+### TransactFs Commit Ordering
+
+Files that need to exist on the real filesystem (e.g., scripts read by Docker containers via volume mounts) must be written in the **pre-commit** phase via TransactFs. The post-commit phase (e.g., Docker operations) can only read files that have already been committed to disk.
+
+- Pre-commit: `WriteEntryScript()` — stages file in TransactFs
+- `commitIfNeeded()` — flushes to disk
+- Post-commit: `InstallHelper()` — Docker ops that read from disk

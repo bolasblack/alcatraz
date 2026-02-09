@@ -66,6 +66,11 @@ func DetectPlatform(env *RuntimeEnv) RuntimePlatform {
 	return platform
 }
 
+// IsDarwin returns true if the platform is macOS (OrbStack or Docker Desktop).
+func IsDarwin(platform RuntimePlatform) bool {
+	return platform == PlatformMacOrbStack || platform == PlatformMacDockerDesktop
+}
+
 // ShouldUseMutagen determines if Mutagen sync should be used for a mount.
 // Decision table from AGD-025:
 //

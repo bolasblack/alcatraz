@@ -4,24 +4,25 @@ package shared
 import (
 	"github.com/spf13/afero"
 
+	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 // NetworkEnv provides dependency injection for filesystem and command execution.
 type NetworkEnv struct {
-	Fs         afero.Fs           // Filesystem abstraction
-	Cmd        util.CommandRunner // Command execution abstraction
-	ProjectDir string             // Project directory path (for pf project-based filenames)
-	IsOrbStack bool               // True if running on OrbStack (injected by CLI)
+	Fs         afero.Fs                // Filesystem abstraction
+	Cmd        util.CommandRunner      // Command execution abstraction
+	ProjectDir string                  // Project directory path
+	Runtime    runtime.RuntimePlatform // Container runtime platform (injected by CLI)
 }
 
 // NewNetworkEnv creates a NetworkEnv with externally provided dependencies.
-func NewNetworkEnv(fs afero.Fs, cmd util.CommandRunner, projectDir string, isOrbStack bool) *NetworkEnv {
+func NewNetworkEnv(fs afero.Fs, cmd util.CommandRunner, projectDir string, rt runtime.RuntimePlatform) *NetworkEnv {
 	return &NetworkEnv{
 		Fs:         fs,
 		Cmd:        cmd,
 		ProjectDir: projectDir,
-		IsOrbStack: isOrbStack,
+		Runtime:    rt,
 	}
 }
 
@@ -44,10 +45,8 @@ type Type int
 const (
 	// TypeNone indicates no firewall is available.
 	TypeNone Type = iota
-	// TypeNFTables indicates Linux nftables is available.
+	// TypeNFTables indicates nftables is available (Linux native, macOS via VM).
 	TypeNFTables
-	// TypePF indicates macOS pf is available.
-	TypePF
 )
 
 // String returns a human-readable name for the firewall type.
@@ -55,8 +54,6 @@ func (t Type) String() string {
 	switch t {
 	case TypeNFTables:
 		return "nftables"
-	case TypePF:
-		return "pf"
 	default:
 		return "none"
 	}
@@ -70,10 +67,12 @@ type Firewall interface {
 	// rules are parsed lan-access entries (allow-listed destinations).
 	// If rules is empty, all RFC1918 traffic is blocked.
 	// If any rule has AllLAN=true, no blocking is applied.
-	ApplyRules(containerID string, containerIP string, rules []LANAccessRule) error
+	// Returns PostCommitAction that MUST be called after TransactFs.Commit().
+	ApplyRules(containerID string, containerIP string, rules []LANAccessRule) (*PostCommitAction, error)
 
 	// Cleanup removes all firewall rules for a container.
-	Cleanup(containerID string) error
+	// Returns PostCommitAction that MUST be called after TransactFs.Commit().
+	Cleanup(containerID string) (*PostCommitAction, error)
 }
 
 // =============================================================================
@@ -117,8 +116,6 @@ type HelperStatus struct {
 
 // DetailedStatusInfo provides implementation-specific status for display.
 type DetailedStatusInfo struct {
-	// DaemonLoaded indicates whether the system daemon is running.
-	DaemonLoaded bool
 	// RuleFiles lists the rule files managed by this helper.
 	RuleFiles []RuleFileInfo
 }

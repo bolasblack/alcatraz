@@ -8,6 +8,8 @@ OUT_DIR := out
 BIN_DIR := $(OUT_DIR)/bin
 
 GO_SRC := $(shell find . -name '*.go' -type f -not -path './.alca.cache/*' -not -path './vendor/*' -not -path './.git/*')
+EMBED_SRC := $(shell find . -name '*.sh' -type f -not -path './.alca.cache/*' -not -path './vendor/*' -not -path './.git/*')
+BUILD_SRC := $(GO_SRC) $(EMBED_SRC)
 
 # ========= Cross-compilation builds =========
 # Build all targets
@@ -15,34 +17,34 @@ build: schema build\:linux\:amd64 build\:linux\:arm64 build\:linux\:amd64-static
 
 # Linux glibc builds
 build\:linux\:amd64: $(BIN_DIR)/alca-linux-amd64
-$(BIN_DIR)/alca-linux-amd64: $(GO_SRC)
+$(BIN_DIR)/alca-linux-amd64: $(BUILD_SRC)
 	@mkdir -p $(BIN_DIR)
 	GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/alca
 
 build\:linux\:arm64: $(BIN_DIR)/alca-linux-arm64
-$(BIN_DIR)/alca-linux-arm64: $(GO_SRC)
+$(BIN_DIR)/alca-linux-arm64: $(BUILD_SRC)
 	@mkdir -p $(BIN_DIR)
 	GOOS=linux GOARCH=arm64 go build -o $@ ./cmd/alca
 
 # Linux static builds (CGO_ENABLED=0 for pure Go static binary)
 build\:linux\:amd64-static: $(BIN_DIR)/alca-linux-amd64-static
-$(BIN_DIR)/alca-linux-amd64-static: $(GO_SRC)
+$(BIN_DIR)/alca-linux-amd64-static: $(BUILD_SRC)
 	@mkdir -p $(BIN_DIR)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/alca
 
 build\:linux\:arm64-static: $(BIN_DIR)/alca-linux-arm64-static
-$(BIN_DIR)/alca-linux-arm64-static: $(GO_SRC)
+$(BIN_DIR)/alca-linux-arm64-static: $(BUILD_SRC)
 	@mkdir -p $(BIN_DIR)
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $@ ./cmd/alca
 
 # Darwin builds
 build\:darwin\:amd64: $(BIN_DIR)/alca-darwin-amd64
-$(BIN_DIR)/alca-darwin-amd64: $(GO_SRC)
+$(BIN_DIR)/alca-darwin-amd64: $(BUILD_SRC)
 	@mkdir -p $(BIN_DIR)
 	GOOS=darwin GOARCH=amd64 go build -o $@ ./cmd/alca
 
 build\:darwin\:arm64: $(BIN_DIR)/alca-darwin-arm64
-$(BIN_DIR)/alca-darwin-arm64: $(GO_SRC)
+$(BIN_DIR)/alca-darwin-arm64: $(BUILD_SRC)
 	@mkdir -p $(BIN_DIR)
 	GOOS=darwin GOARCH=arm64 go build -o $@ ./cmd/alca
 

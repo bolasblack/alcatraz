@@ -2,27 +2,7 @@ package shared
 
 import (
 	"testing"
-
-	"github.com/spf13/afero"
-
-	"github.com/bolasblack/alcatraz/internal/util"
 )
-
-func TestNewNetworkEnv(t *testing.T) {
-	fs := afero.NewOsFs()
-	cmd := util.NewCommandRunner()
-	env := NewNetworkEnv(fs, cmd, "", false)
-
-	if env == nil {
-		t.Fatal("NewNetworkEnv() should return non-nil NetworkEnv")
-	}
-	if env.Fs != fs {
-		t.Error("NewNetworkEnv().Fs should be the provided filesystem")
-	}
-	if env.Cmd != cmd {
-		t.Error("NewNetworkEnv().Cmd should be the provided CommandRunner")
-	}
-}
 
 func TestNewTestNetworkEnv(t *testing.T) {
 	env := NewTestNetworkEnv()
@@ -45,7 +25,6 @@ func TestTypeString(t *testing.T) {
 	}{
 		{TypeNone, "none"},
 		{TypeNFTables, "nftables"},
-		{TypePF, "pf"},
 		{Type(99), "none"}, // Unknown type defaults to "none"
 	}
 

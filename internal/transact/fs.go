@@ -1,7 +1,7 @@
 // Package transact provides transactional file system operations.
 // It allows staging file changes in memory, computing diffs against the real filesystem,
 // and committing changes with callback-based operations.
-// See AGD-023 for design decisions.
+// See AGD-030 for design decisions.
 package transact
 
 import (

@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/network"
@@ -33,11 +32,8 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create shared dependencies once
-	tfs := transact.New()
-	cmdRunner := util.NewCommandRunner()
-
-	env := &util.Env{Fs: tfs, Cmd: cmdRunner}
-	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
+	deps := newCLIDeps()
+	tfs, env, runtimeEnv := deps.Tfs, deps.Env, deps.RuntimeEnv
 
 	// Load config (optional) and select runtime
 	cfg, rt, err := loadConfigAndRuntimeOptional(env, runtimeEnv, cwd)
@@ -58,9 +54,15 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	platform := runtime.DetectPlatform(runtimeEnv)
+
 	// Cleanup firewall rules before stopping container (need container ID)
 	// See AGD-027 for design decisions
-	cleanupFirewall(runtimeEnv, cmdRunner, rt, st, cwd, out)
+	// Files removed via tfs, committed to real disk before nft cleanup commands run.
+	firewallEnv := network.NewNetworkEnv(tfs, deps.CmdRunner, cwd, platform)
+	if err := cleanupFirewall(firewallEnv, env, tfs, runtimeEnv, rt, st, out); err != nil {
+		util.ProgressStep(out, "Warning: firewall cleanup: %v\n", err)
+	}
 
 	// Stop container
 	util.ProgressStep(out, "Stopping container...\n")
@@ -69,10 +71,9 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	// Network cleanup
-	nh := network.NewNetworkHelper(cfg.Network, rt.Name())
+	nh := network.NewNetworkHelper(cfg.Network, platform)
 	if nh != nil {
-		isOrbStack := runtime.DetectPlatform(runtimeEnv) == runtime.PlatformMacOrbStack
-		networkEnv := network.NewNetworkEnv(env.Fs, env.Cmd, cwd, isOrbStack)
+		networkEnv := network.NewNetworkEnv(env.Fs, env.Cmd, cwd, platform)
 		if err := nh.Teardown(networkEnv, cwd); err != nil {
 			util.ProgressStep(out, "Warning: failed to cleanup network: %v\n", err)
 		}
@@ -88,23 +89,35 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 // cleanupFirewall removes firewall rules for the container.
 // See AGD-027 for design decisions.
-func cleanupFirewall(runtimeEnv *runtime.RuntimeEnv, cmdRunner util.CommandRunner, rt runtime.Runtime, st *state.State, projectDir string, out io.Writer) {
-	// Get firewall implementation using shared command runner
-	isOrbStack := runtime.DetectPlatform(runtimeEnv) == runtime.PlatformMacOrbStack
-	networkEnv := network.NewNetworkEnv(afero.NewOsFs(), cmdRunner, projectDir, isOrbStack)
+func cleanupFirewall(networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime, st *state.State, out io.Writer) error {
 	fw, fwType := network.New(networkEnv)
 	if fwType == network.TypeNone || fw == nil {
-		return
+		return nil
 	}
 
 	// Get container status to find the container ID
 	status, err := rt.Status(runtimeEnv, "", st)
 	if err != nil || status.State == runtime.StateNotFound {
-		return
+		return nil
 	}
 
-	// Cleanup firewall rules
-	if err := fw.Cleanup(status.ID); err != nil {
-		util.ProgressStep(out, "Warning: failed to cleanup firewall rules: %v\n", err)
+	// Cleanup firewall rules (removes files via tfs)
+	action, err := fw.Cleanup(status.ID)
+	if err != nil {
+		return fmt.Errorf("cleanup firewall rules: %w", err)
 	}
+
+	// Commit tfs to remove files from real disk
+	if err := commitIfNeeded(env, tfs, out, "Removing firewall rules"); err != nil {
+		return fmt.Errorf("commit firewall cleanup: %w", err)
+	}
+
+	// Run post-commit action (nft delete table or reload)
+	if action != nil && action.Run != nil {
+		if err := action.Run(nil); err != nil {
+			return fmt.Errorf("execute firewall cleanup: %w", err)
+		}
+	}
+
+	return nil
 }

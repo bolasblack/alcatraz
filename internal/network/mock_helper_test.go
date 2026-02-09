@@ -1,5 +1,8 @@
 package network
 
+// Compile-time interface assertion.
+var _ NetworkHelper = (*MockNetworkHelper)(nil)
+
 // MockNetworkHelper implements NetworkHelper for testing.
 // Provides test configuration fields and call recording.
 type MockNetworkHelper struct {

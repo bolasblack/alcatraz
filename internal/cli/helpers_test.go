@@ -2,9 +2,13 @@ package cli
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
+	"github.com/spf13/afero"
+
 	"github.com/bolasblack/alcatraz/internal/state"
+	"github.com/bolasblack/alcatraz/internal/transact"
 )
 
 func TestDisplayConfigDrift(t *testing.T) {
@@ -131,4 +135,116 @@ func TestDisplayConfigDrift(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewCLIDeps(t *testing.T) {
+	deps := newCLIDeps()
+
+	if deps.Tfs == nil {
+		t.Error("Tfs should not be nil")
+	}
+	if deps.CmdRunner == nil {
+		t.Error("CmdRunner should not be nil")
+	}
+	if deps.Env == nil {
+		t.Error("Env should not be nil")
+	}
+	if deps.RuntimeEnv == nil {
+		t.Error("RuntimeEnv should not be nil")
+	}
+
+	// Env.Fs should be the TransactFs instance
+	if deps.Env.Fs != deps.Tfs {
+		t.Error("Env.Fs should be the same TransactFs instance as deps.Tfs")
+	}
+
+	// Env.Cmd should be the same CommandRunner
+	if deps.Env.Cmd != deps.CmdRunner {
+		t.Error("Env.Cmd should be the same CommandRunner instance as deps.CmdRunner")
+	}
+
+	// RuntimeEnv.Cmd should be the same CommandRunner
+	if deps.RuntimeEnv.Cmd != deps.CmdRunner {
+		t.Error("RuntimeEnv.Cmd should be the same CommandRunner instance as deps.CmdRunner")
+	}
+
+	// Tfs should be a TransactFs (verify by type assertion)
+	if _, ok := deps.Env.Fs.(*transact.TransactFs); !ok {
+		t.Error("Env.Fs should be a *transact.TransactFs")
+	}
+}
+
+func TestNewCLIReadDeps(t *testing.T) {
+	deps := newCLIReadDeps()
+
+	if deps.CmdRunner == nil {
+		t.Error("CmdRunner should not be nil")
+	}
+	if deps.Env == nil {
+		t.Error("Env should not be nil")
+	}
+	if deps.RuntimeEnv == nil {
+		t.Error("RuntimeEnv should not be nil")
+	}
+
+	// Env.Cmd should be the same CommandRunner
+	if deps.Env.Cmd != deps.CmdRunner {
+		t.Error("Env.Cmd should be the same CommandRunner instance as deps.CmdRunner")
+	}
+
+	// RuntimeEnv.Cmd should be the same CommandRunner
+	if deps.RuntimeEnv.Cmd != deps.CmdRunner {
+		t.Error("RuntimeEnv.Cmd should be the same CommandRunner instance as deps.CmdRunner")
+	}
+
+	// Env.Fs should be read-only (wrapped in afero.ReadOnlyFs)
+	if _, ok := deps.Env.Fs.(*afero.ReadOnlyFs); !ok {
+		t.Error("Env.Fs should be a *afero.ReadOnlyFs for read-only commands")
+	}
+}
+
+func TestProgressFunc(t *testing.T) {
+	t.Run("writes formatted output to writer", func(t *testing.T) {
+		var buf bytes.Buffer
+		pf := progressFunc(&buf)
+
+		pf("Installing %s version %d...\n", "package", 2)
+
+		output := buf.String()
+		if !strings.Contains(output, "Installing package version 2...") {
+			t.Errorf("expected formatted progress output, got: %q", output)
+		}
+	})
+
+	t.Run("includes step prefix from ProgressStep", func(t *testing.T) {
+		var buf bytes.Buffer
+		pf := progressFunc(&buf)
+
+		pf("hello")
+
+		output := buf.String()
+		// ProgressStep prepends "→ " prefix
+		if !strings.HasPrefix(output, "→ ") {
+			t.Errorf("expected output to start with '→ ' prefix, got: %q", output)
+		}
+	})
+
+	t.Run("nil writer does not panic", func(t *testing.T) {
+		pf := progressFunc(nil)
+		// Should not panic
+		pf("test %s", "message")
+	})
+
+	t.Run("multiple calls append to writer", func(t *testing.T) {
+		var buf bytes.Buffer
+		pf := progressFunc(&buf)
+
+		pf("first\n")
+		pf("second\n")
+
+		output := buf.String()
+		if !strings.Contains(output, "first") || !strings.Contains(output, "second") {
+			t.Errorf("expected both messages in output, got: %q", output)
+		}
+	})
 }
