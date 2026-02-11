@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -258,7 +259,7 @@ func TestSyncUpdateCache(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		env := NewSyncEnv(fs, nil, mock)
 
-		got, err := SyncUpdateCache(env, "proj1", "/project")
+		got, err := SyncUpdateCache(context.Background(), env, "proj1", "/project")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -290,7 +291,7 @@ func TestSyncUpdateCache(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		env := NewSyncEnv(fs, nil, mock)
 
-		got, err := SyncUpdateCache(env, "proj1", "/project")
+		got, err := SyncUpdateCache(context.Background(), env, "proj1", "/project")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -309,7 +310,7 @@ func TestSyncUpdateCache(t *testing.T) {
 	})
 }
 
-func TestDetectAndUpdateCache(t *testing.T) {
+func TestSyncUpdateCache_Internal(t *testing.T) {
 	t.Run("multiple sessions aggregates conflicts", func(t *testing.T) {
 		session0JSON := `[{"conflicts":[{"root":"","alphaChanges":[{"path":"a.txt","new":{"kind":"file"}}],"betaChanges":[{"path":"a.txt","new":{"kind":"file"}}]}]}]`
 		session1JSON := `[{"conflicts":[{"root":"","alphaChanges":[{"path":"b.txt","old":{"kind":"file"},"new":null}],"betaChanges":[{"path":"b.txt","new":{"kind":"file"}}]}]}]`
@@ -332,7 +333,7 @@ func TestDetectAndUpdateCache(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		env := NewSyncEnv(fs, nil, mock)
 
-		got, err := detectAndUpdateCache(env, "proj1", "/project")
+		got, err := SyncUpdateCache(context.Background(), env, "proj1", "/project")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -354,7 +355,7 @@ func TestDetectAndUpdateCache(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		env := NewSyncEnv(fs, nil, mock)
 
-		_, err := detectAndUpdateCache(env, "proj1", "/project")
+		_, err := SyncUpdateCache(context.Background(), env, "proj1", "/project")
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -370,7 +371,7 @@ func TestDetectAndUpdateCache(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		env := NewSyncEnv(fs, nil, mock)
 
-		_, err := detectAndUpdateCache(env, "proj1", "/project")
+		_, err := SyncUpdateCache(context.Background(), env, "proj1", "/project")
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -391,7 +392,7 @@ func TestDetectAndUpdateCache(t *testing.T) {
 		readOnlyFs := afero.NewReadOnlyFs(memFs)
 		env := NewSyncEnv(readOnlyFs, nil, mock)
 
-		_, err := detectAndUpdateCache(env, "proj1", "/project")
+		_, err := SyncUpdateCache(context.Background(), env, "proj1", "/project")
 		if err == nil {
 			t.Fatal("expected error from read-only fs, got nil")
 		}
@@ -409,7 +410,7 @@ func TestDetectAndUpdateCache(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		env := NewSyncEnv(fs, nil, mock)
 
-		_, _ = detectAndUpdateCache(env, "my-proj", "/project")
+		_, _ = SyncUpdateCache(context.Background(), env, "my-proj", "/project")
 		if capturedPrefix != "alca-my-proj-" {
 			t.Errorf("expected prefix %q, got %q", "alca-my-proj-", capturedPrefix)
 		}

@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"time"
 
 	"github.com/spf13/afero"
+
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 // CacheData represents the cached sync conflict state.
@@ -34,7 +37,7 @@ func ReadCache(fs afero.Fs, projectRoot string) (*CacheData, error) {
 	return &cache, nil
 }
 
-// WriteCache writes cache data atomically, creating .alca/ dir if needed.
+// WriteCache writes cache data to disk, creating .alca/ dir if needed.
 func WriteCache(fs afero.Fs, projectRoot string, data *CacheData) error {
 	dir := filepath.Join(projectRoot, ".alca")
 	if err := fs.MkdirAll(dir, 0o755); err != nil {
@@ -56,18 +59,17 @@ func cacheFilePath(projectRoot string) string {
 	return filepath.Join(projectRoot, ".alca", "sync-conflicts-cache.json")
 }
 
-// detectAndUpdateCache detects conflicts and updates the cache.
+// SyncUpdateCache detects conflicts and updates the cache.
 // projectID is used to derive the session name prefix.
-func detectAndUpdateCache(env *SyncEnv, projectID string, projectRoot string) (*CacheData, error) {
-	prefix := fmt.Sprintf("alca-%s-", projectID)
-	sessions, err := env.Sessions.ListSyncSessions(prefix)
+func SyncUpdateCache(ctx context.Context, env *SyncEnv, projectID string, projectRoot string) (*CacheData, error) {
+	sessions, err := env.Sessions.ListSyncSessions(ctx, util.MutagenSessionPrefix(projectID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sync sessions: %w", err)
 	}
 
 	var allConflicts []ConflictInfo
 	for _, sessionName := range sessions {
-		conflicts, err := env.DetectConflicts(sessionName)
+		conflicts, err := env.DetectConflicts(ctx, sessionName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to detect conflicts for session %s: %w", sessionName, err)
 		}
@@ -83,9 +85,4 @@ func detectAndUpdateCache(env *SyncEnv, projectID string, projectRoot string) (*
 		return nil, err
 	}
 	return cacheData, nil
-}
-
-// SyncUpdateCache updates the cache synchronously and returns fresh data.
-func SyncUpdateCache(env *SyncEnv, projectID string, projectRoot string) (*CacheData, error) {
-	return detectAndUpdateCache(env, projectID, projectRoot)
 }

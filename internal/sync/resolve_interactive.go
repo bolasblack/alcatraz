@@ -1,11 +1,13 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"path/filepath"
 
 	"github.com/bolasblack/alcatraz/internal/state"
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 // ResolveChoice represents the user's resolution choice.
@@ -29,6 +31,7 @@ type ResolveResult struct {
 
 // ResolveParams holds the parameters for an interactive conflict resolution session.
 type ResolveParams struct {
+	Ctx         context.Context
 	Env         *SyncEnv
 	Executor    ContainerExecutor
 	State       *state.State // carries ProjectID, ContainerName, Config.Workdir
@@ -83,8 +86,8 @@ func ResolveAllInteractive(p ResolveParams) (*ResolveResult, error) {
 		}
 
 		// After each resolution, flush syncs and update cache
-		FlushProjectSyncs(p.Env.Sessions, p.State.ProjectID)
-		_, _ = SyncUpdateCache(p.Env, p.State.ProjectID, p.ProjectRoot)
+		FlushProjectSyncs(p.Ctx, p.Env.Sessions, p.State.ProjectID)
+		_, _ = SyncUpdateCache(p.Ctx, p.Env, p.State.ProjectID, p.ProjectRoot)
 
 		_, _ = fmt.Fprintln(w)
 	}
@@ -94,16 +97,15 @@ func ResolveAllInteractive(p ResolveParams) (*ResolveResult, error) {
 }
 
 // FlushProjectSyncs flushes all sync sessions for a project.
-func FlushProjectSyncs(sessions SyncSessionClient, projectID string) {
+func FlushProjectSyncs(ctx context.Context, sessions SyncSessionClient, projectID string) {
 	if sessions == nil {
 		return
 	}
-	prefix := fmt.Sprintf("alca-%s-", projectID)
-	names, err := sessions.ListSyncSessions(prefix)
+	names, err := sessions.ListSyncSessions(ctx, util.MutagenSessionPrefix(projectID))
 	if err != nil {
 		return
 	}
 	for _, name := range names {
-		_ = sessions.FlushSyncSession(name)
+		_ = sessions.FlushSyncSession(ctx, name)
 	}
 }

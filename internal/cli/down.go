@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -137,7 +138,7 @@ func checkSyncConflictsBeforeDown(fs afero.Fs, syncEnv *sync.SyncEnv, projectRoo
 	}
 
 	// Slow path: cache missing, do synchronous poll
-	cache, err = sync.SyncUpdateCache(syncEnv, projectID, projectRoot)
+	cache, err = sync.SyncUpdateCache(context.Background(), syncEnv, projectID, projectRoot)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to check sync conflicts: %v\n", err)
 	}

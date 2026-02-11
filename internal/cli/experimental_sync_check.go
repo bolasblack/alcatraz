@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"text/template"
@@ -47,7 +48,7 @@ func runSyncCheck(cmd *cobra.Command, args []string) error {
 
 	syncEnv := sync.NewSyncEnv(afero.NewOsFs(), deps.CmdRunner, runtime.NewMutagenSyncClient(runtimeEnv))
 
-	cacheData, err := sync.SyncUpdateCache(syncEnv, st.ProjectID, cwd)
+	cacheData, err := sync.SyncUpdateCache(context.Background(), syncEnv, st.ProjectID, cwd)
 	if err != nil {
 		return fmt.Errorf("failed to check sync conflicts: %w", err)
 	}

@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -67,7 +68,7 @@ func TestSyncEnv_InjectedSessionsIsUsable(t *testing.T) {
 	}
 	env := NewSyncEnv(nil, nil, mock)
 
-	_, err := env.DetectConflicts("test-session")
+	_, err := env.DetectConflicts(context.Background(), "test-session")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

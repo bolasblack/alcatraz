@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 // MutagenSync manages a Mutagen sync session.
@@ -143,12 +145,6 @@ func buildListSessionJSONArgs(sessionName string) []string {
 	return []string{"sync", "list", sessionName, "--template={{json .}}"}
 }
 
-// MutagenSessionName generates a unique session name for a project mount.
-// Format: alca-<projectID>-<mountIndex>
-func MutagenSessionName(projectID string, mountIndex int) string {
-	return fmt.Sprintf("alca-%s-%d", projectID, mountIndex)
-}
-
 // MutagenTarget generates a Mutagen target URL for a container path.
 // Format: docker://<containerID>/<path>
 func MutagenTarget(containerID string, path string) string {
@@ -158,8 +154,7 @@ func MutagenTarget(containerID string, path string) string {
 // TerminateProjectSyncs terminates all Mutagen sync sessions for a project.
 // Used during container cleanup (down command).
 func TerminateProjectSyncs(env *RuntimeEnv, projectID string) error {
-	prefix := fmt.Sprintf("alca-%s-", projectID)
-	sessions, err := ListMutagenSyncs(env, prefix)
+	sessions, err := ListMutagenSyncs(env, util.MutagenSessionPrefix(projectID))
 	if err != nil {
 		return err
 	}

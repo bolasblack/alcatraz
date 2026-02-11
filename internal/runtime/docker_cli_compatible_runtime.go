@@ -245,7 +245,7 @@ func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *con
 		util.ProgressStep(progressOut, "Setting up Mutagen sync for %s -> %s\n", source, mount.Target)
 
 		sync := MutagenSync{
-			Name:    MutagenSessionName(st.ProjectID, i),
+			Name:    util.MutagenSessionName(st.ProjectID, i),
 			Source:  source,
 			Target:  MutagenTarget(containerID, mount.Target),
 			Ignores: mount.Exclude,

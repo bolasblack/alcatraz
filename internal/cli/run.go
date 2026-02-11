@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -64,18 +65,15 @@ func runRun(cmd *cobra.Command, args []string) error {
 		return errors.New(ErrMsgNotRunning)
 	}
 
-	// SWR: show stale cache banner immediately, refresh in background.
-	syncEnv := sync.NewSyncEnv(afero.NewOsFs(), cmdRunner, runtime.NewMutagenSyncClient(runtimeEnv))
-	if cache, err := sync.ReadCache(afero.NewOsFs(), cwd); err != nil {
+	// SWR: show stale cache banner immediately, refresh periodically in background.
+	syncFs := afero.NewOsFs()
+	syncEnv := sync.NewSyncEnv(syncFs, cmdRunner, runtime.NewMutagenSyncClient(runtimeEnv))
+	if cache, err := sync.ReadCache(syncFs, cwd); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to read sync conflict cache: %v\n", err)
 	} else if cache != nil && len(cache.Conflicts) > 0 {
 		sync.RenderBanner(cache.Conflicts, os.Stderr)
 	}
-	go func() {
-		if _, err := sync.SyncUpdateCache(syncEnv, st.ProjectID, cwd); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to update sync conflict cache: %v\n", err)
-		}
-	}()
+	stopRefresh := sync.StartPeriodicRefresh(context.Background(), syncEnv, st.ProjectID, cwd)
 
 	// Build command with optional enter prefix
 	// If commands.enter is set, use it as command wrapper/prefix
@@ -95,6 +93,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	err = rt.Exec(runtimeEnv, cfg, cwd, st, execCmd)
+
+	// Show exit banner if conflicts exist
+	if conflicts := stopRefresh(); len(conflicts) > 0 {
+		sync.RenderBanner(conflicts, os.Stderr)
+	}
+
 	if err != nil {
 		// Pass through exit codes instead of reporting as error
 		var exitErr *exec.ExitError

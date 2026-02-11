@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -34,7 +35,7 @@ func (e *dockerContainerExecutor) ExecInContainer(containerID string, cmd []stri
 // an async goroutine would be killed before it finishes writing the cache.
 // Best-effort: errors are logged to w but do not block the command.
 func showSyncBanner(syncEnv *sync.SyncEnv, projectID string, projectRoot string, w io.Writer) {
-	cache, err := sync.SyncUpdateCache(syncEnv, projectID, projectRoot)
+	cache, err := sync.SyncUpdateCache(context.Background(), syncEnv, projectID, projectRoot)
 	if err != nil {
 		_, _ = fmt.Fprintf(w, "Warning: failed to check sync conflicts: %v\n", err)
 		return

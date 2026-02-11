@@ -314,7 +314,7 @@ func TestMutagenSyncSessionName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.expected, func(t *testing.T) {
-			result := MutagenSessionName(tt.projectID, tt.mountIndex)
+			result := util.MutagenSessionName(tt.projectID, tt.mountIndex)
 			if result != tt.expected {
 				t.Errorf("MutagenSessionName(%q, %d) = %q, expected %q",
 					tt.projectID, tt.mountIndex, result, tt.expected)

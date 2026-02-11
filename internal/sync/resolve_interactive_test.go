@@ -2,6 +2,7 @@ package sync
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -137,6 +138,7 @@ func TestResolveAllInteractive(t *testing.T) {
 			}
 
 			result, err := ResolveAllInteractive(ResolveParams{
+				Ctx:         context.Background(),
 				Env:         env,
 				Executor:    executor,
 				State:       mockState,
@@ -191,6 +193,7 @@ func TestResolveAllInteractive_PromptErrorMidWay(t *testing.T) {
 	}
 
 	result, err := ResolveAllInteractive(ResolveParams{
+		Ctx:         context.Background(),
 		Env:         env,
 		Executor:    &mockExecutor{},
 		State:       mockState,
@@ -244,6 +247,7 @@ func TestResolveAllInteractive_FirstSucceedsSecondFails(t *testing.T) {
 	}
 
 	result, err := ResolveAllInteractive(ResolveParams{
+		Ctx:         context.Background(),
 		Env:         env,
 		Executor:    executor,
 		State:       mockState,
@@ -277,6 +281,7 @@ func TestResolveAllInteractive_ZeroConflictsOutput(t *testing.T) {
 	env := &SyncEnv{Fs: fs, Sessions: &mockSyncSessionClient{}}
 
 	result, err := ResolveAllInteractive(ResolveParams{
+		Ctx:         context.Background(),
 		Env:         env,
 		Executor:    &mockExecutor{},
 		State:       mockState,
@@ -302,7 +307,7 @@ func TestResolveAllInteractive_ZeroConflictsOutput(t *testing.T) {
 // TestFlushProjectSyncs tests the FlushProjectSyncs helper.
 func TestFlushProjectSyncs(t *testing.T) {
 	t.Run("nil sessions does not panic", func(t *testing.T) {
-		FlushProjectSyncs(nil, "test-project")
+		FlushProjectSyncs(context.Background(), nil, "test-project")
 	})
 
 	t.Run("list error is silently ignored", func(t *testing.T) {
@@ -311,7 +316,7 @@ func TestFlushProjectSyncs(t *testing.T) {
 				return nil, fmt.Errorf("connection lost")
 			},
 		}
-		FlushProjectSyncs(mock, "test-project")
+		FlushProjectSyncs(context.Background(), mock, "test-project")
 	})
 
 	t.Run("flush error is silently ignored per session", func(t *testing.T) {
@@ -328,7 +333,7 @@ func TestFlushProjectSyncs(t *testing.T) {
 				return nil
 			},
 		}
-		FlushProjectSyncs(mock, "proj")
+		FlushProjectSyncs(context.Background(), mock, "proj")
 		// Both sessions should be attempted even if the first fails
 		if len(flushed) != 2 {
 			t.Errorf("expected 2 flush attempts, got %d", len(flushed))
@@ -346,7 +351,7 @@ func TestFlushProjectSyncs(t *testing.T) {
 				return nil
 			},
 		}
-		FlushProjectSyncs(mock, "proj")
+		FlushProjectSyncs(context.Background(), mock, "proj")
 		if len(flushed) != 2 {
 			t.Errorf("expected 2 flush calls, got %d", len(flushed))
 		}

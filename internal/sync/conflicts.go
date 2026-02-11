@@ -1,14 +1,15 @@
 package sync
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 )
 
 // DetectConflicts detects sync conflicts for a given mutagen session.
-func (e *SyncEnv) DetectConflicts(sessionName string) ([]ConflictInfo, error) {
-	output, err := e.Sessions.ListSessionJSON(sessionName)
+func (e *SyncEnv) DetectConflicts(ctx context.Context, sessionName string) ([]ConflictInfo, error) {
+	output, err := e.Sessions.ListSessionJSON(ctx, sessionName)
 	if err != nil {
 		return nil, err
 	}

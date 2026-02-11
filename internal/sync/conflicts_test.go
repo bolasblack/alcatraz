@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"testing"
@@ -15,21 +16,21 @@ type mockSyncSessionClient struct {
 	flushSyncSessionFn func(name string) error
 }
 
-func (m *mockSyncSessionClient) ListSessionJSON(sessionName string) ([]byte, error) {
+func (m *mockSyncSessionClient) ListSessionJSON(_ context.Context, sessionName string) ([]byte, error) {
 	if m.listSessionJSONFn != nil {
 		return m.listSessionJSONFn(sessionName)
 	}
 	return nil, nil
 }
 
-func (m *mockSyncSessionClient) ListSyncSessions(namePrefix string) ([]string, error) {
+func (m *mockSyncSessionClient) ListSyncSessions(_ context.Context, namePrefix string) ([]string, error) {
 	if m.listSyncSessionsFn != nil {
 		return m.listSyncSessionsFn(namePrefix)
 	}
 	return nil, nil
 }
 
-func (m *mockSyncSessionClient) FlushSyncSession(name string) error {
+func (m *mockSyncSessionClient) FlushSyncSession(_ context.Context, name string) error {
 	if m.flushSyncSessionFn != nil {
 		return m.flushSyncSessionFn(name)
 	}
@@ -301,7 +302,7 @@ func TestDetectConflicts(t *testing.T) {
 			}
 
 			env := newTestSyncEnv(mock)
-			infos, err := env.DetectConflicts("test-session")
+			infos, err := env.DetectConflicts(context.Background(), "test-session")
 
 			if tt.wantErr {
 				if err == nil {

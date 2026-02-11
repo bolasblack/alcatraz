@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"time"
 
 	"github.com/spf13/afero"
@@ -11,9 +12,9 @@ import (
 // SyncSessionClient provides sync session operations.
 // Implemented by the runtime layer; sync module depends only on this interface.
 type SyncSessionClient interface {
-	ListSessionJSON(sessionName string) ([]byte, error)
-	ListSyncSessions(namePrefix string) ([]string, error)
-	FlushSyncSession(name string) error
+	ListSessionJSON(ctx context.Context, sessionName string) ([]byte, error)
+	ListSyncSessions(ctx context.Context, namePrefix string) ([]string, error)
+	FlushSyncSession(ctx context.Context, name string) error
 }
 
 // SyncEnv holds dependencies for the sync module (AGD-029 pattern).

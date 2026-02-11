@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -59,7 +60,7 @@ func runSyncResolve(cmd *cobra.Command, args []string) error {
 	}
 
 	// Fresh conflict check
-	cacheData, err := sync.SyncUpdateCache(syncEnv, st.ProjectID, cwd)
+	cacheData, err := sync.SyncUpdateCache(context.Background(), syncEnv, st.ProjectID, cwd)
 	if err != nil {
 		return fmt.Errorf("failed to check sync conflicts: %w", err)
 	}
@@ -73,6 +74,7 @@ func runSyncResolve(cmd *cobra.Command, args []string) error {
 
 	// Delegate to sync module
 	_, err = sync.ResolveAllInteractive(sync.ResolveParams{
+		Ctx:         context.Background(),
 		Env:         syncEnv,
 		Executor:    executor,
 		State:       st,

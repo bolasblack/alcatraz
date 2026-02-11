@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -27,15 +28,15 @@ type mockSyncSessionClient struct {
 
 var _ sync.SyncSessionClient = (*mockSyncSessionClient)(nil)
 
-func (m *mockSyncSessionClient) ListSessionJSON(_ string) ([]byte, error) {
+func (m *mockSyncSessionClient) ListSessionJSON(_ context.Context, _ string) ([]byte, error) {
 	return []byte("{}"), nil
 }
 
-func (m *mockSyncSessionClient) ListSyncSessions(_ string) ([]string, error) {
+func (m *mockSyncSessionClient) ListSyncSessions(_ context.Context, _ string) ([]string, error) {
 	return m.sessions, m.listErr
 }
 
-func (m *mockSyncSessionClient) FlushSyncSession(_ string) error {
+func (m *mockSyncSessionClient) FlushSyncSession(_ context.Context, _ string) error {
 	return nil
 }
 
