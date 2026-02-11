@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/afero"
@@ -9,13 +10,13 @@ import (
 // ContainerExecutor runs commands inside a container.
 // The CLI layer provides the implementation (e.g. wrapping docker exec).
 type ContainerExecutor interface {
-	ExecInContainer(containerID string, cmd []string) error
+	ExecInContainer(ctx context.Context, containerID string, cmd []string) error
 }
 
 // ResolveLocal resolves a conflict by keeping the local version.
 // Deletes the file on the container side via the provided executor.
-func ResolveLocal(executor ContainerExecutor, containerID string, containerPath string) error {
-	if err := executor.ExecInContainer(containerID, []string{"rm", containerPath}); err != nil {
+func ResolveLocal(ctx context.Context, executor ContainerExecutor, containerID string, containerPath string) error {
+	if err := executor.ExecInContainer(ctx, containerID, []string{"rm", containerPath}); err != nil {
 		return fmt.Errorf("failed to delete container file: %w", err)
 	}
 	return nil

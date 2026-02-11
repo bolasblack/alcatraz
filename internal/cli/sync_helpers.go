@@ -21,9 +21,9 @@ type dockerContainerExecutor struct {
 
 var _ sync.ContainerExecutor = (*dockerContainerExecutor)(nil)
 
-func (e *dockerContainerExecutor) ExecInContainer(containerID string, cmd []string) error {
+func (e *dockerContainerExecutor) ExecInContainer(ctx context.Context, containerID string, cmd []string) error {
 	args := append([]string{"exec", containerID}, cmd...)
-	output, err := e.cmd.RunQuiet(e.command, args...)
+	output, err := e.cmd.RunQuiet(ctx, e.command, args...)
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, string(output))
 	}
@@ -34,8 +34,8 @@ func (e *dockerContainerExecutor) ExecInContainer(containerID string, cmd []stri
 // Uses synchronous update because the process exits immediately after status —
 // an async goroutine would be killed before it finishes writing the cache.
 // Best-effort: errors are logged to w but do not block the command.
-func showSyncBanner(syncEnv *sync.SyncEnv, projectID string, projectRoot string, w io.Writer) {
-	cache, err := sync.SyncUpdateCache(context.Background(), syncEnv, projectID, projectRoot)
+func showSyncBanner(ctx context.Context, syncEnv *sync.SyncEnv, projectID string, projectRoot string, w io.Writer) {
+	cache, err := sync.SyncUpdateCache(ctx, syncEnv, projectID, projectRoot)
 	if err != nil {
 		_, _ = fmt.Fprintf(w, "Warning: failed to check sync conflicts: %v\n", err)
 		return

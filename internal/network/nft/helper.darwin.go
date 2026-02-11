@@ -1,6 +1,7 @@
 package nft
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -50,10 +51,10 @@ func (h *nftDarwinHelper) Teardown(env *shared.NetworkEnv, projectDir string) er
 	return nil
 }
 
-func (h *nftDarwinHelper) HelperStatus(env *shared.NetworkEnv) shared.HelperStatus {
+func (h *nftDarwinHelper) HelperStatus(ctx context.Context, env *shared.NetworkEnv) shared.HelperStatus {
 	vmEnv := h.vmEnv(env)
 
-	installed, err := vmhelper.IsInstalled(vmEnv)
+	installed, err := vmhelper.IsInstalled(ctx, vmEnv)
 	if err != nil {
 		return shared.HelperStatus{Installed: false}
 	}
@@ -118,8 +119,8 @@ func (h *nftDarwinHelper) InstallHelper(env *shared.NetworkEnv, progress shared.
 	}
 
 	return &shared.PostCommitAction{
-		Run: func(progress shared.ProgressFunc) error {
-			return vmhelper.InstallHelper(vmEnv, platform, progress)
+		Run: func(ctx context.Context, progress shared.ProgressFunc) error {
+			return vmhelper.InstallHelper(ctx, vmEnv, platform, progress)
 		},
 	}, nil
 }
@@ -129,8 +130,8 @@ func (h *nftDarwinHelper) UninstallHelper(env *shared.NetworkEnv, _ shared.Progr
 	vmEnv := h.vmEnv(env)
 
 	return &shared.PostCommitAction{
-		Run: func(progress shared.ProgressFunc) error {
-			return vmhelper.UninstallHelper(vmEnv, progress)
+		Run: func(ctx context.Context, progress shared.ProgressFunc) error {
+			return vmhelper.UninstallHelper(ctx, vmEnv, progress)
 		},
 	}, nil
 }

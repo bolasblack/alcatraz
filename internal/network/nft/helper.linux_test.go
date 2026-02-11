@@ -1,6 +1,7 @@
 package nft
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -85,7 +86,7 @@ func TestLinuxHelperStatus_NotInstalledWhenDirMissing(t *testing.T) {
 	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
-	status := h.HelperStatus(env)
+	status := h.HelperStatus(context.Background(), env)
 	assert.False(t, status.Installed, "should not be installed when directory doesn't exist")
 	assert.False(t, status.NeedsUpdate)
 }
@@ -97,7 +98,7 @@ func TestLinuxHelperStatus_NotInstalledWhenDirExistsButNoInclude(t *testing.T) {
 	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
-	status := h.HelperStatus(env)
+	status := h.HelperStatus(context.Background(), env)
 	assert.False(t, status.Installed, "should not be installed when include line is missing")
 }
 
@@ -109,7 +110,7 @@ func TestLinuxHelperStatus_InstalledWhenDirAndIncludeExist(t *testing.T) {
 	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
-	status := h.HelperStatus(env)
+	status := h.HelperStatus(context.Background(), env)
 	assert.True(t, status.Installed, "should be installed when directory and include line both exist")
 	assert.False(t, status.NeedsUpdate, "NeedsUpdate should always be false for Linux helper")
 }
@@ -120,7 +121,7 @@ func TestLinuxHelperStatus_NotInstalledWhenDirExistsButConfMissing(t *testing.T)
 	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
-	status := h.HelperStatus(env)
+	status := h.HelperStatus(context.Background(), env)
 	assert.False(t, status.Installed, "should not be installed when nftables.conf doesn't exist")
 }
 
@@ -260,7 +261,7 @@ func TestLinuxInstallHelper_PostCommitReloadsNftables(t *testing.T) {
 	action, err := h.InstallHelper(env, nil)
 	require.NoError(t, err)
 
-	err = action.Run(nil)
+	err = action.Run(context.Background(), nil)
 	require.NoError(t, err)
 
 	mockCmd.AssertCalled(t, "systemctl enable nftables.service")
@@ -277,7 +278,7 @@ func TestLinuxInstallHelper_PostCommitReturnsErrorOnNftFailure(t *testing.T) {
 	action, err := h.InstallHelper(env, nil)
 	require.NoError(t, err)
 
-	err = action.Run(nil)
+	err = action.Run(context.Background(), nil)
 	assert.Error(t, err, "PostCommitAction should propagate nft reload error")
 	assert.Contains(t, err.Error(), "failed to reload nftables")
 }
@@ -353,7 +354,7 @@ func TestLinuxUninstallHelper_PostCommitDeletesTablesAndDir(t *testing.T) {
 	action, err := h.UninstallHelper(env, nil)
 	require.NoError(t, err)
 
-	err = action.Run(nil)
+	err = action.Run(context.Background(), nil)
 	require.NoError(t, err)
 
 	mockCmd.AssertCalled(t, "nft delete table inet alca-abc123")
@@ -375,7 +376,7 @@ func TestLinuxUninstallHelper_PostCommitHandlesNoTables(t *testing.T) {
 	action, err := h.UninstallHelper(env, nil)
 	require.NoError(t, err)
 
-	err = action.Run(nil)
+	err = action.Run(context.Background(), nil)
 	assert.NoError(t, err, "should handle empty table listing gracefully")
 }
 
@@ -390,7 +391,7 @@ func TestLinuxUninstallHelper_PostCommitHandlesListTablesError(t *testing.T) {
 	action, err := h.UninstallHelper(env, nil)
 	require.NoError(t, err)
 
-	err = action.Run(nil)
+	err = action.Run(context.Background(), nil)
 	assert.NoError(t, err, "should not fail when nft list tables errors")
 
 	exists, _ := afero.DirExists(fs, alcatrazNftDirOnLinux)

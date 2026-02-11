@@ -47,7 +47,7 @@ func TestSyncEnv_InjectedCmdIsUsable(t *testing.T) {
 	env := NewSyncEnv(nil, mockCmd, nil)
 
 	// Run a command through env.Cmd
-	_, _ = env.Cmd.Run("test-command", "arg1", "arg2")
+	_, _ = env.Cmd.Run(context.Background(), "test-command", "arg1", "arg2")
 
 	// Verify the mockCmd recorded the call
 	if !mockCmd.Called("test-command arg1 arg2") {

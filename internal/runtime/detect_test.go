@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -96,7 +97,7 @@ func TestSelectRuntime_DockerExplicit(t *testing.T) {
 	env := &RuntimeEnv{Cmd: mock}
 
 	cfg := &config.Config{Runtime: "docker"}
-	rt, err := SelectRuntime(env, cfg)
+	rt, err := SelectRuntime(context.Background(), env, cfg)
 	if err != nil {
 		t.Fatalf("SelectRuntime failed: %v", err)
 	}
@@ -111,7 +112,7 @@ func TestSelectRuntime_DockerNotAvailable(t *testing.T) {
 	env := &RuntimeEnv{Cmd: mock}
 
 	cfg := &config.Config{Runtime: "docker"}
-	_, err := SelectRuntime(env, cfg)
+	_, err := SelectRuntime(context.Background(), env, cfg)
 	if err == nil {
 		t.Error("expected error when Docker not available")
 	}
@@ -308,7 +309,7 @@ func TestBuildRunArgs(t *testing.T) {
 			// On macOS, DetectPlatform defaults to DockerDesktop which always uses Mutagen.
 			mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 			mockCmd.ExpectSuccess("docker info --format {{.OperatingSystem}}", []byte("OrbStack"))
-			args := rt.buildRunArgs(&RuntimeEnv{Cmd: mockCmd}, tt.cfg, tt.projectDir, tt.state, tt.contName)
+			args := rt.buildRunArgs(context.Background(), &RuntimeEnv{Cmd: mockCmd}, tt.cfg, tt.projectDir, tt.state, tt.contName)
 
 			argsStr := strings.Join(args, " ")
 			for _, want := range tt.wantParts {

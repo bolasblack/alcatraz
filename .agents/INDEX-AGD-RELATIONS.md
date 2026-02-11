@@ -17,3 +17,5 @@ decisions/AGD-027_linux-nftables-primary.md -(u)-> decisions/AGD-008_firewall-cr
 decisions/AGD-028_lan-access-syntax.md -(u)-> decisions/AGD-027_linux-nftables-primary.md
 decisions/AGD-030_orbstack-nftables-network-isolation.md -(o)-> decisions/AGD-023_macos-lan-access-pf-anchor.md
 decisions/AGD-030_orbstack-nftables-network-isolation.md -(u)-> decisions/AGD-005_defer-network-isolation.md
+decisions/AGD-031_mutagen-sync-conflict-notification.md -(u)-> decisions/AGD-025_mount-exclude-with-mutagen.md
+decisions/AGD-032_context-threading-convention.md -(u)-> decisions/AGD-029_env-dependency-injection.md

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -37,6 +38,7 @@ func init() {
 
 // runCleanup finds and removes orphan containers.
 func runCleanup(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	cleanupAll, _ := cmd.Flags().GetBool("all")
 
 	cwd, err := getCwd()
@@ -49,11 +51,11 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	env, runtimeEnv := deps.Env, deps.RuntimeEnv
 
 	// Load config (optional) and select runtime
-	_, rt, err := loadConfigAndRuntimeOptional(env, runtimeEnv, cwd)
+	_, rt, err := loadConfigAndRuntimeOptional(ctx, env, runtimeEnv, cwd)
 	if err != nil {
 		return err
 	}
-	containers, err := rt.ListContainers(runtimeEnv)
+	containers, err := rt.ListContainers(ctx, runtimeEnv)
 	if err != nil {
 		return fmt.Errorf("failed to list containers: %w", err)
 	}
@@ -87,7 +89,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	}
 
 	// Delete containers
-	deleted := deleteContainers(runtimeEnv, rt, toDelete)
+	deleted := deleteContainers(ctx, runtimeEnv, rt, toDelete)
 	fmt.Println("") // spacing after inline progress
 	util.ProgressDone(os.Stdout, "Removed %d container(s).\n", deleted)
 	return nil
@@ -199,11 +201,11 @@ func orphansToContainerInfos(orphans []orphanContainer) []runtime.ContainerInfo 
 }
 
 // deleteContainers removes the given containers and returns the count of successfully deleted.
-func deleteContainers(runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime, containers []runtime.ContainerInfo) int {
+func deleteContainers(ctx context.Context, runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime, containers []runtime.ContainerInfo) int {
 	deleted := 0
 	for _, c := range containers {
 		util.ProgressStep(os.Stdout, "Removing %s... ", c.Name)
-		if err := rt.RemoveContainer(runtimeEnv, c.Name); err != nil {
+		if err := rt.RemoveContainer(ctx, runtimeEnv, c.Name); err != nil {
 			util.Progress(os.Stdout, "failed: %v\n", err)
 		} else {
 			util.Progress(os.Stdout, "done\n")

@@ -367,7 +367,7 @@ type callCountExecutor struct {
 
 var _ ContainerExecutor = (*callCountExecutor)(nil)
 
-func (e *callCountExecutor) ExecInContainer(containerID string, cmd []string) error {
+func (e *callCountExecutor) ExecInContainer(_ context.Context, containerID string, cmd []string) error {
 	e.callCount++
 	if e.callCount == e.errOnCall {
 		return e.err

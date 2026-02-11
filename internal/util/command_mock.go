@@ -1,10 +1,13 @@
 package util
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 )
+
+var _ CommandRunner = (*MockCommandRunner)(nil)
 
 // MockCommandRunner implements CommandRunner for testing.
 // Records all command invocations and returns pre-configured results.
@@ -78,7 +81,7 @@ func (m *MockCommandRunner) AllowUnexpected() *MockCommandRunner {
 }
 
 // Run implements CommandRunner.
-func (m *MockCommandRunner) Run(name string, args ...string) ([]byte, error) {
+func (m *MockCommandRunner) Run(_ context.Context, name string, args ...string) ([]byte, error) {
 	key := name
 	if len(args) > 0 {
 		key = name + " " + strings.Join(args, " ")
@@ -109,13 +112,13 @@ func (m *MockCommandRunner) Run(name string, args ...string) ([]byte, error) {
 }
 
 // RunQuiet implements CommandRunner.
-func (m *MockCommandRunner) RunQuiet(name string, args ...string) ([]byte, error) {
-	return m.Run(name, args...)
+func (m *MockCommandRunner) RunQuiet(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return m.Run(ctx, name, args...)
 }
 
 // SudoRun implements CommandRunner.
 // Records with key "sudo name arg1 arg2 ...".
-func (m *MockCommandRunner) SudoRun(name string, args ...string) error {
+func (m *MockCommandRunner) SudoRun(_ context.Context, name string, args ...string) error {
 	key := "sudo " + name
 	if len(args) > 0 {
 		key = "sudo " + name + " " + strings.Join(args, " ")
@@ -139,7 +142,7 @@ func (m *MockCommandRunner) SudoRun(name string, args ...string) error {
 
 // SudoRunQuiet implements CommandRunner.
 // Records with key "sudo name arg1 arg2 ...".
-func (m *MockCommandRunner) SudoRunQuiet(name string, args ...string) ([]byte, error) {
+func (m *MockCommandRunner) SudoRunQuiet(_ context.Context, name string, args ...string) ([]byte, error) {
 	key := "sudo " + name
 	if len(args) > 0 {
 		key = "sudo " + name + " " + strings.Join(args, " ")
@@ -163,7 +166,7 @@ func (m *MockCommandRunner) SudoRunQuiet(name string, args ...string) ([]byte, e
 
 // SudoRunScriptQuiet implements CommandRunner.
 // Records with key "sudo sh -c <script>" (truncated to first line for readability).
-func (m *MockCommandRunner) SudoRunScriptQuiet(script string) error {
+func (m *MockCommandRunner) SudoRunScriptQuiet(_ context.Context, script string) error {
 	key := "sudo sh script"
 
 	m.Calls = append(m.Calls, CommandCall{

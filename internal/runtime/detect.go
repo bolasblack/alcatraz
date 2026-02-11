@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"runtime"
@@ -35,7 +36,7 @@ const (
 // Used for deciding mount strategy (bind mount vs Mutagen sync).
 // See AGD-025 for platform detection rationale.
 // Results are cached per RuntimeEnv instance to avoid repeated shell calls.
-func DetectPlatform(env *RuntimeEnv) RuntimePlatform {
+func DetectPlatform(ctx context.Context, env *RuntimeEnv) RuntimePlatform {
 	// Fast path for Linux - no shell calls needed
 	if runtime.GOOS == "linux" {
 		return PlatformLinux
@@ -51,7 +52,7 @@ func DetectPlatform(env *RuntimeEnv) RuntimePlatform {
 
 	// Detect platform (requires shell call)
 	var platform RuntimePlatform
-	isOrb, err := IsOrbStack(env)
+	isOrb, err := IsOrbStack(ctx, env)
 	if err == nil && isOrb {
 		platform = PlatformMacOrbStack
 	} else {
@@ -111,18 +112,18 @@ func ShouldUseMutagen(platform RuntimePlatform, hasExcludes bool) bool {
 // Returns error if:
 //   - runtime="docker" but Docker not available
 //   - No runtime available
-func SelectRuntime(env *RuntimeEnv, cfg *config.Config) (Runtime, error) {
-	return SelectRuntimeWithOutput(env, cfg, nil)
+func SelectRuntime(ctx context.Context, env *RuntimeEnv, cfg *config.Config) (Runtime, error) {
+	return SelectRuntimeWithOutput(ctx, env, cfg, nil)
 }
 
 // SelectRuntimeWithOutput returns a runtime with optional progress output.
-func SelectRuntimeWithOutput(env *RuntimeEnv, cfg *config.Config, progressOut io.Writer) (Runtime, error) {
+func SelectRuntimeWithOutput(ctx context.Context, env *RuntimeEnv, cfg *config.Config, progressOut io.Writer) (Runtime, error) {
 	runtimeType := cfg.NormalizeRuntime()
 
 	// Handle explicit runtime configuration
 	if runtimeType == config.RuntimeDocker {
 		docker := NewDocker()
-		if !docker.Available(env) {
+		if !docker.Available(ctx, env) {
 			return nil, fmt.Errorf("Docker not available (configured runtime=docker)")
 		}
 		return docker, nil
@@ -131,23 +132,23 @@ func SelectRuntimeWithOutput(env *RuntimeEnv, cfg *config.Config, progressOut io
 	// Auto-detect mode
 	switch runtime.GOOS {
 	case "linux":
-		return selectLinuxRuntime(env, progressOut)
+		return selectLinuxRuntime(ctx, env, progressOut)
 	default:
-		return selectDefaultRuntime(env, progressOut)
+		return selectDefaultRuntime(ctx, env, progressOut)
 	}
 }
 
 // selectLinuxRuntime detects runtime for Linux (Podman > Docker).
-func selectLinuxRuntime(env *RuntimeEnv, progressOut io.Writer) (Runtime, error) {
+func selectLinuxRuntime(ctx context.Context, env *RuntimeEnv, progressOut io.Writer) (Runtime, error) {
 	// Try Podman first (preferred on Linux)
 	podman := NewPodman()
-	if podman.Available(env) {
+	if podman.Available(ctx, env) {
 		return podman, nil
 	}
 
 	// Fall back to Docker
 	docker := NewDocker()
-	if docker.Available(env) {
+	if docker.Available(ctx, env) {
 		util.ProgressStep(progressOut, "Using Docker (Podman not available)\n")
 		return docker, nil
 	}
@@ -156,9 +157,9 @@ func selectLinuxRuntime(env *RuntimeEnv, progressOut io.Writer) (Runtime, error)
 }
 
 // selectDefaultRuntime tries Docker as fallback for unsupported platforms.
-func selectDefaultRuntime(env *RuntimeEnv, progressOut io.Writer) (Runtime, error) {
+func selectDefaultRuntime(ctx context.Context, env *RuntimeEnv, progressOut io.Writer) (Runtime, error) {
 	docker := NewDocker()
-	if docker.Available(env) {
+	if docker.Available(ctx, env) {
 		return docker, nil
 	}
 	return nil, fmt.Errorf("no container runtime available: Docker not found")
@@ -186,8 +187,8 @@ func ByName(name string) Runtime {
 
 // IsOrbStack returns true if Docker is running on OrbStack.
 // It checks the Docker info output for "OrbStack" in the OperatingSystem field.
-func IsOrbStack(env *RuntimeEnv) (bool, error) {
-	output, err := env.Cmd.RunQuiet("docker", "info", "--format", "{{.OperatingSystem}}")
+func IsOrbStack(ctx context.Context, env *RuntimeEnv) (bool, error) {
+	output, err := env.Cmd.RunQuiet(ctx, "docker", "info", "--format", "{{.OperatingSystem}}")
 	if err != nil {
 		return false, fmt.Errorf("failed to get docker info: %w", err)
 	}
@@ -196,8 +197,8 @@ func IsOrbStack(env *RuntimeEnv) (bool, error) {
 
 // IsRootlessPodman returns true if Podman is running in rootless mode.
 // See AGD-025 for why rootless Podman blocks mount excludes.
-func IsRootlessPodman(env *RuntimeEnv) (bool, error) {
-	output, err := env.Cmd.RunQuiet("podman", "info", "--format", "{{.Host.Security.Rootless}}")
+func IsRootlessPodman(ctx context.Context, env *RuntimeEnv) (bool, error) {
+	output, err := env.Cmd.RunQuiet(ctx, "podman", "info", "--format", "{{.Host.Security.Rootless}}")
 	if err != nil {
 		return false, fmt.Errorf("failed to get podman info: %w", err)
 	}
@@ -216,8 +217,8 @@ var minMutagenMacOS = [3]int{0, 18, 1}
 // ValidateMutagenAvailable checks if Mutagen is needed and available.
 // Returns ErrMutagenNotFound if not installed, or an error if the version is
 // too old on macOS (v0.18.0 has a known handshake bug).
-func ValidateMutagenAvailable(env *RuntimeEnv, cfg *config.Config) error {
-	platform := DetectPlatform(env)
+func ValidateMutagenAvailable(ctx context.Context, env *RuntimeEnv, cfg *config.Config) error {
+	platform := DetectPlatform(ctx, env)
 
 	needsMutagen := false
 	for _, mount := range cfg.Mounts {
@@ -230,7 +231,7 @@ func ValidateMutagenAvailable(env *RuntimeEnv, cfg *config.Config) error {
 		return nil
 	}
 
-	output, err := env.Cmd.RunQuiet("mutagen", "version")
+	output, err := env.Cmd.RunQuiet(ctx, "mutagen", "version")
 	if err != nil {
 		return ErrMutagenNotFound
 	}
@@ -276,7 +277,7 @@ var ErrRootlessPodmanExcludes = fmt.Errorf("mount excludes not supported on root
 // ValidateMountExcludes checks if mount excludes can be used with the current runtime.
 // Returns ErrRootlessPodmanExcludes if excludes are configured on rootless Podman.
 // See AGD-025 for Mutagen + rootless Podman compatibility issues.
-func ValidateMountExcludes(env *RuntimeEnv, rt Runtime, cfg *config.Config) error {
+func ValidateMountExcludes(ctx context.Context, env *RuntimeEnv, rt Runtime, cfg *config.Config) error {
 	// Only check for Podman
 	if rt.Name() != "Podman" {
 		return nil
@@ -295,7 +296,7 @@ func ValidateMountExcludes(env *RuntimeEnv, rt Runtime, cfg *config.Config) erro
 	}
 
 	// Check if rootless
-	isRootless, err := IsRootlessPodman(env)
+	isRootless, err := IsRootlessPodman(ctx, env)
 	if err != nil {
 		// If we can't determine, assume it's OK (fail open)
 		return nil

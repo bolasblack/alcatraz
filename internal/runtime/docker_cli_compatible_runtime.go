@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -38,7 +39,7 @@ func (r *dockerCLICompatibleRuntime) Name() string {
 }
 
 // Available checks if the CLI is installed and accessible.
-func (r *dockerCLICompatibleRuntime) Available(env *RuntimeEnv) bool {
+func (r *dockerCLICompatibleRuntime) Available(ctx context.Context, env *RuntimeEnv) bool {
 	var versionFormat string
 	if r.command == "docker" {
 		versionFormat = "{{.Server.Version}}"
@@ -46,22 +47,22 @@ func (r *dockerCLICompatibleRuntime) Available(env *RuntimeEnv) bool {
 		versionFormat = "{{.Version}}"
 	}
 
-	_, err := env.Cmd.RunQuiet(r.command, "version", "--format", versionFormat)
+	_, err := env.Cmd.RunQuiet(ctx, r.command, "version", "--format", versionFormat)
 	return err == nil
 }
 
 // Up creates and starts a container.
-func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, progressOut io.Writer) error {
+func (r *dockerCLICompatibleRuntime) Up(ctx context.Context, env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, progressOut io.Writer) error {
 	// Validate mount excludes compatibility (blocks rootless Podman + excludes)
 	// See AGD-025 for rationale
-	if err := ValidateMountExcludes(env, r, cfg); err != nil {
+	if err := ValidateMountExcludes(ctx, env, r, cfg); err != nil {
 		return fmt.Errorf("%w: remove exclude config, use rootful Podman, or use Docker", err)
 	}
 
 	name := st.ContainerName
 
 	// Check if container already exists
-	status, err := r.Status(env, projectDir, st)
+	status, err := r.Status(ctx, env, projectDir, st)
 	if err == nil && status.State == StateRunning {
 		util.ProgressStep(progressOut, "Container already running: %s\n", name)
 		return nil
@@ -72,14 +73,14 @@ func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, pro
 	// the container before calling Up(), so StateStopped means no drift.
 	if status.State == StateStopped {
 		util.ProgressStep(progressOut, "Starting stopped container: %s\n", status.Name)
-		if err := r.startContainer(env, status.Name); err != nil {
+		if err := r.startContainer(ctx, env, status.Name); err != nil {
 			return fmt.Errorf("failed to start container: %w", err)
 		}
 		util.ProgressStep(progressOut, "Container started\n")
 
 		// Re-setup Mutagen syncs for stopped container restart
 		// Container ID may have changed, need to refresh syncs
-		if _, err := r.setupMutagenSyncs(env, cfg, st, name, projectDir, progressOut); err != nil {
+		if _, err := r.setupMutagenSyncs(ctx, env, cfg, st, name, projectDir, progressOut); err != nil {
 			return fmt.Errorf("failed to setup Mutagen syncs: %w", err)
 		}
 
@@ -88,10 +89,10 @@ func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, pro
 
 	util.ProgressStep(progressOut, "Pulling image: %s\n", cfg.Image)
 
-	args := r.buildRunArgs(env, cfg, projectDir, st, name)
+	args := r.buildRunArgs(ctx, env, cfg, projectDir, st, name)
 
 	util.ProgressStep(progressOut, "Creating container: %s\n", name)
-	output, err := env.Cmd.RunQuiet(r.command, args...)
+	output, err := env.Cmd.RunQuiet(ctx, r.command, args...)
 	if err != nil {
 		return fmt.Errorf("%s run failed: %w: %s", r.command, err, string(output))
 	}
@@ -99,7 +100,7 @@ func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, pro
 
 	// Setup Mutagen syncs for mounts that require it
 	// See AGD-025 for platform-specific mount optimization
-	syncs, err := r.setupMutagenSyncs(env, cfg, st, name, projectDir, progressOut)
+	syncs, err := r.setupMutagenSyncs(ctx, env, cfg, st, name, projectDir, progressOut)
 	if err != nil {
 		return fmt.Errorf("failed to setup Mutagen syncs: %w", err)
 	}
@@ -108,11 +109,11 @@ func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, pro
 	if cfg.Commands.Up != "" {
 		// Wait for Mutagen syncs to complete before running setup command,
 		// otherwise the command may see incomplete or missing files.
-		if err := r.flushMutagenSyncs(env, syncs, progressOut); err != nil {
+		if err := r.flushMutagenSyncs(ctx, env, syncs, progressOut); err != nil {
 			return fmt.Errorf("failed to flush Mutagen syncs: %w", err)
 		}
 
-		if err := r.executeUpCommand(env, cfg, name, progressOut); err != nil {
+		if err := r.executeUpCommand(ctx, env, cfg, name, progressOut); err != nil {
 			return err
 		}
 	}
@@ -121,7 +122,7 @@ func (r *dockerCLICompatibleRuntime) Up(env *RuntimeEnv, cfg *config.Config, pro
 }
 
 // buildRunArgs constructs the arguments for the container run command.
-func (r *dockerCLICompatibleRuntime) buildRunArgs(env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, name string) []string {
+func (r *dockerCLICompatibleRuntime) buildRunArgs(ctx context.Context, env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, name string) []string {
 	args := []string{
 		"run", "-d",
 		"--name", name,
@@ -137,7 +138,7 @@ func (r *dockerCLICompatibleRuntime) buildRunArgs(env *RuntimeEnv, cfg *config.C
 	// Mounts with excludes are handled separately via Mutagen.
 	// See AGD-025 for mount strategy decisions.
 	// Note: cfg.Mounts[0] is the workdir mount (Source="."), resolved to projectDir here.
-	platform := DetectPlatform(env)
+	platform := DetectPlatform(ctx, env)
 	for _, mount := range cfg.Mounts {
 		if ShouldUseMutagen(platform, mount.HasExcludes()) {
 			// Skip - will be handled by Mutagen sync in setupMutagenSyncs()
@@ -187,14 +188,14 @@ func (r *dockerCLICompatibleRuntime) buildRunArgs(env *RuntimeEnv, cfg *config.C
 
 // flushMutagenSyncs waits for all Mutagen sync sessions to complete their initial sync.
 // This must be called before any command that depends on synced files.
-func (r *dockerCLICompatibleRuntime) flushMutagenSyncs(env *RuntimeEnv, syncs []MutagenSync, progressOut io.Writer) error {
+func (r *dockerCLICompatibleRuntime) flushMutagenSyncs(ctx context.Context, env *RuntimeEnv, syncs []MutagenSync, progressOut io.Writer) error {
 	if len(syncs) == 0 {
 		return nil
 	}
 
 	util.ProgressStep(progressOut, "Waiting for Mutagen sync to complete...\n")
 	for i := range syncs {
-		if err := syncs[i].Flush(env); err != nil {
+		if err := syncs[i].Flush(ctx, env); err != nil {
 			return err
 		}
 	}
@@ -202,10 +203,10 @@ func (r *dockerCLICompatibleRuntime) flushMutagenSyncs(env *RuntimeEnv, syncs []
 }
 
 // executeUpCommand runs the post-creation setup command.
-func (r *dockerCLICompatibleRuntime) executeUpCommand(env *RuntimeEnv, cfg *config.Config, containerName string, progressOut io.Writer) error {
+func (r *dockerCLICompatibleRuntime) executeUpCommand(ctx context.Context, env *RuntimeEnv, cfg *config.Config, containerName string, progressOut io.Writer) error {
 	util.ProgressStep(progressOut, "Running setup command...\n")
 	execArgs := []string{"exec", containerName, "sh", "-c", cfg.Commands.Up}
-	output, err := env.Cmd.Run(r.command, execArgs...)
+	output, err := env.Cmd.Run(ctx, r.command, execArgs...)
 	if err != nil {
 		return fmt.Errorf("up command failed: %w: %s", err, string(output))
 	}
@@ -214,17 +215,17 @@ func (r *dockerCLICompatibleRuntime) executeUpCommand(env *RuntimeEnv, cfg *conf
 
 // setupMutagenSyncs creates Mutagen sync sessions for mounts that require it.
 // See AGD-025 for platform-specific mount optimization decisions.
-func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *config.Config, st *state.State, containerName, projectDir string, progressOut io.Writer) ([]MutagenSync, error) {
-	platform := DetectPlatform(env)
+func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(ctx context.Context, env *RuntimeEnv, cfg *config.Config, st *state.State, containerName, projectDir string, progressOut io.Writer) ([]MutagenSync, error) {
+	platform := DetectPlatform(ctx, env)
 
 	// First, terminate any existing syncs for this project to avoid duplicates
-	if err := TerminateProjectSyncs(env, st.ProjectID); err != nil {
+	if err := TerminateProjectSyncs(ctx, env, st.ProjectID); err != nil {
 		// Log warning but continue - old syncs may not exist
 		util.ProgressStep(progressOut, "Warning: failed to clean up old Mutagen syncs: %v\n", err)
 	}
 
 	// Get container ID for Mutagen target URL
-	containerID, err := r.getContainerID(env, containerName)
+	containerID, err := r.getContainerID(ctx, env, containerName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get container ID: %w", err)
 	}
@@ -254,9 +255,9 @@ func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *con
 		// Terminate any existing session with this exact name before creating.
 		// TerminateProjectSyncs above uses prefix matching which may miss edge cases;
 		// this ensures the name slot is clean so flush resolves to the new session.
-		_ = sync.Terminate(env)
+		_ = sync.Terminate(ctx, env)
 
-		if err := sync.Create(env); err != nil {
+		if err := sync.Create(ctx, env); err != nil {
 			return nil, fmt.Errorf("failed to create Mutagen sync for %s: %w", source, err)
 		}
 
@@ -267,8 +268,8 @@ func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(env *RuntimeEnv, cfg *con
 }
 
 // getContainerID returns the container ID for a given container name.
-func (r *dockerCLICompatibleRuntime) getContainerID(env *RuntimeEnv, containerName string) (string, error) {
-	output, err := env.Cmd.RunQuiet(r.command, "inspect", "--format", "{{.Id}}", containerName)
+func (r *dockerCLICompatibleRuntime) getContainerID(ctx context.Context, env *RuntimeEnv, containerName string) (string, error) {
+	output, err := env.Cmd.RunQuiet(ctx, r.command, "inspect", "--format", "{{.Id}}", containerName)
 	if err != nil {
 		return "", fmt.Errorf("failed to inspect container: %w", err)
 	}
@@ -276,8 +277,8 @@ func (r *dockerCLICompatibleRuntime) getContainerID(env *RuntimeEnv, containerNa
 }
 
 // Down stops and removes the container.
-func (r *dockerCLICompatibleRuntime) Down(env *RuntimeEnv, projectDir string, st *state.State) error {
-	status, err := r.Status(env, projectDir, st)
+func (r *dockerCLICompatibleRuntime) Down(ctx context.Context, env *RuntimeEnv, projectDir string, st *state.State) error {
+	status, err := r.Status(ctx, env, projectDir, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -285,7 +286,7 @@ func (r *dockerCLICompatibleRuntime) Down(env *RuntimeEnv, projectDir string, st
 	if status.State == StateNotFound {
 		// Still try to clean up any orphaned Mutagen syncs
 		if st != nil {
-			_ = TerminateProjectSyncs(env, st.ProjectID)
+			_ = TerminateProjectSyncs(ctx, env, st.ProjectID)
 		}
 		return nil
 	}
@@ -295,7 +296,7 @@ func (r *dockerCLICompatibleRuntime) Down(env *RuntimeEnv, projectDir string, st
 	// Terminate Mutagen syncs before stopping container
 	// See AGD-025 for Mutagen integration design
 	if st != nil {
-		if err := TerminateProjectSyncs(env, st.ProjectID); err != nil {
+		if err := TerminateProjectSyncs(ctx, env, st.ProjectID); err != nil {
 			// Log warning but continue with container removal
 			// Mutagen sessions will be orphaned but can be cleaned up manually
 			util.ProgressStep(nil, "Warning: failed to terminate Mutagen syncs: %v\n", err)
@@ -303,21 +304,21 @@ func (r *dockerCLICompatibleRuntime) Down(env *RuntimeEnv, projectDir string, st
 	}
 
 	// Stop the container
-	output, err := env.Cmd.RunQuiet(r.command, "stop", containerName)
+	output, err := env.Cmd.RunQuiet(ctx, r.command, "stop", containerName)
 	if err != nil {
 		if !containsNoSuchContainer(string(output)) {
 			return fmt.Errorf("%s stop failed: %w: %s", r.command, err, string(output))
 		}
 	}
 
-	return r.removeContainer(env, containerName)
+	return r.removeContainer(ctx, env, containerName)
 }
 
 // Exec runs a command inside the container.
 // For interactive commands, this uses syscall.Exec to replace the current process.
 // See AGD-017 for environment variable design.
-func (r *dockerCLICompatibleRuntime) Exec(env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, command []string) error {
-	status, err := r.Status(env, projectDir, st)
+func (r *dockerCLICompatibleRuntime) Exec(ctx context.Context, env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, command []string) error {
+	status, err := r.Status(ctx, env, projectDir, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -375,24 +376,24 @@ func (r *dockerCLICompatibleRuntime) buildExecArgs(cfg *config.Config, container
 //
 // This dual approach ensures backward compatibility while preferring the more robust
 // label-based identification for newer containers.
-func (r *dockerCLICompatibleRuntime) Status(env *RuntimeEnv, projectDir string, st *state.State) (ContainerStatus, error) {
+func (r *dockerCLICompatibleRuntime) Status(ctx context.Context, env *RuntimeEnv, projectDir string, st *state.State) (ContainerStatus, error) {
 	if st == nil {
 		return ContainerStatus{State: StateNotFound}, nil
 	}
 
 	// Primary: find by label (authoritative for labeled containers)
-	status, err := r.findContainerByLabel(env, st.ProjectID)
+	status, err := r.findContainerByLabel(ctx, env, st.ProjectID)
 	if err == nil && status.State != StateNotFound {
 		return status, nil
 	}
 
 	// Fallback: inspect by name (backward compatibility)
-	return r.inspectContainer(env, st.ContainerName)
+	return r.inspectContainer(ctx, env, st.ContainerName)
 }
 
 // inspectContainer gets container status by name.
-func (r *dockerCLICompatibleRuntime) inspectContainer(env *RuntimeEnv, containerName string) (ContainerStatus, error) {
-	output, err := env.Cmd.RunQuiet(r.command, "inspect",
+func (r *dockerCLICompatibleRuntime) inspectContainer(ctx context.Context, env *RuntimeEnv, containerName string) (ContainerStatus, error) {
+	output, err := env.Cmd.RunQuiet(ctx, r.command, "inspect",
 		"--format", "{{.State.Status}}|{{.Id}}|{{.Name}}|{{.Config.Image}}|{{.State.StartedAt}}",
 		containerName)
 	if err != nil {
@@ -414,9 +415,9 @@ func (r *dockerCLICompatibleRuntime) inspectContainer(env *RuntimeEnv, container
 }
 
 // findContainerByLabel finds a container by its project label.
-func (r *dockerCLICompatibleRuntime) findContainerByLabel(env *RuntimeEnv, projectID string) (ContainerStatus, error) {
+func (r *dockerCLICompatibleRuntime) findContainerByLabel(ctx context.Context, env *RuntimeEnv, projectID string) (ContainerStatus, error) {
 	labelFilter := state.LabelFilter(projectID)
-	output, err := env.Cmd.RunQuiet(r.command, "ps", "-a",
+	output, err := env.Cmd.RunQuiet(ctx, r.command, "ps", "-a",
 		"--filter", labelFilter,
 		"--format", "{{.Names}}")
 	if err != nil {
@@ -428,12 +429,12 @@ func (r *dockerCLICompatibleRuntime) findContainerByLabel(env *RuntimeEnv, proje
 		return ContainerStatus{State: StateNotFound}, nil
 	}
 
-	return r.inspectContainer(env, name)
+	return r.inspectContainer(ctx, env, name)
 }
 
 // Reload re-applies configuration by recreating the container.
-func (r *dockerCLICompatibleRuntime) Reload(env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State) error {
-	status, err := r.Status(env, projectDir, st)
+func (r *dockerCLICompatibleRuntime) Reload(ctx context.Context, env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State) error {
+	status, err := r.Status(ctx, env, projectDir, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -442,11 +443,11 @@ func (r *dockerCLICompatibleRuntime) Reload(env *RuntimeEnv, cfg *config.Config,
 		return ErrNotRunning
 	}
 
-	if err := r.Down(env, projectDir, st); err != nil {
+	if err := r.Down(ctx, env, projectDir, st); err != nil {
 		return fmt.Errorf("failed to stop container for reload: %w", err)
 	}
 
-	if err := r.Up(env, cfg, projectDir, st, nil); err != nil {
+	if err := r.Up(ctx, env, cfg, projectDir, st, nil); err != nil {
 		return fmt.Errorf("failed to restart container: %w", err)
 	}
 
@@ -455,9 +456,9 @@ func (r *dockerCLICompatibleRuntime) Reload(env *RuntimeEnv, cfg *config.Config,
 
 // ListContainers returns all containers managed by alca.
 // Uses batch inspect to avoid N+1 query pattern (single docker inspect call for all containers).
-func (r *dockerCLICompatibleRuntime) ListContainers(env *RuntimeEnv) ([]ContainerInfo, error) {
+func (r *dockerCLICompatibleRuntime) ListContainers(ctx context.Context, env *RuntimeEnv) ([]ContainerInfo, error) {
 	// Get names of all alca-managed containers
-	output, err := env.Cmd.RunQuiet(r.command, "ps", "-a",
+	output, err := env.Cmd.RunQuiet(ctx, r.command, "ps", "-a",
 		"--filter", "label="+state.LabelProjectID,
 		"--format", "{{.Names}}")
 	if err != nil {
@@ -482,12 +483,12 @@ func (r *dockerCLICompatibleRuntime) ListContainers(env *RuntimeEnv) ([]Containe
 	}
 
 	// Batch inspect all containers in a single call
-	return r.batchInspectContainers(env, validNames)
+	return r.batchInspectContainers(ctx, env, validNames)
 }
 
 // batchInspectContainers inspects multiple containers in a single docker/podman call.
 // This avoids the N+1 query pattern where we'd call inspect separately for each container.
-func (r *dockerCLICompatibleRuntime) batchInspectContainers(env *RuntimeEnv, names []string) ([]ContainerInfo, error) {
+func (r *dockerCLICompatibleRuntime) batchInspectContainers(ctx context.Context, env *RuntimeEnv, names []string) ([]ContainerInfo, error) {
 	// Build format string for inspect output
 	// Using a unique separator (|||) to avoid conflicts with data values
 	format := fmt.Sprintf("{{.Name}}|||{{.State.Status}}|||{{.Created}}|||{{.Config.Image}}|||{{index .Config.Labels \"%s\"}}|||{{index .Config.Labels \"%s\"}}",
@@ -497,7 +498,7 @@ func (r *dockerCLICompatibleRuntime) batchInspectContainers(env *RuntimeEnv, nam
 	args := []string{"inspect", "--format", format}
 	args = append(args, names...)
 
-	output, err := env.Cmd.RunQuiet(r.command, args...)
+	output, err := env.Cmd.RunQuiet(ctx, r.command, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect containers: %w", err)
 	}
@@ -531,13 +532,13 @@ func (r *dockerCLICompatibleRuntime) batchInspectContainers(env *RuntimeEnv, nam
 }
 
 // RemoveContainer removes a container by name.
-func (r *dockerCLICompatibleRuntime) RemoveContainer(env *RuntimeEnv, name string) error {
-	return r.removeContainer(env, name)
+func (r *dockerCLICompatibleRuntime) RemoveContainer(ctx context.Context, env *RuntimeEnv, name string) error {
+	return r.removeContainer(ctx, env, name)
 }
 
 // removeContainer removes a container by name (internal).
-func (r *dockerCLICompatibleRuntime) removeContainer(env *RuntimeEnv, name string) error {
-	output, err := env.Cmd.RunQuiet(r.command, "rm", "-f", name)
+func (r *dockerCLICompatibleRuntime) removeContainer(ctx context.Context, env *RuntimeEnv, name string) error {
+	output, err := env.Cmd.RunQuiet(ctx, r.command, "rm", "-f", name)
 	if err != nil {
 		if containsNoSuchContainer(string(output)) {
 			return nil
@@ -548,8 +549,8 @@ func (r *dockerCLICompatibleRuntime) removeContainer(env *RuntimeEnv, name strin
 }
 
 // startContainer starts a stopped container by name.
-func (r *dockerCLICompatibleRuntime) startContainer(env *RuntimeEnv, name string) error {
-	output, err := env.Cmd.RunQuiet(r.command, "start", name)
+func (r *dockerCLICompatibleRuntime) startContainer(ctx context.Context, env *RuntimeEnv, name string) error {
+	output, err := env.Cmd.RunQuiet(ctx, r.command, "start", name)
 	if err != nil {
 		return fmt.Errorf("%s start failed: %w: %s", r.command, err, string(output))
 	}
@@ -577,9 +578,9 @@ func containsNoSuchContainer(output string) bool {
 
 // GetContainerIP returns the IP address of a container.
 // Used by firewall rules to restrict container network access.
-func (r *dockerCLICompatibleRuntime) GetContainerIP(env *RuntimeEnv, containerName string) (string, error) {
+func (r *dockerCLICompatibleRuntime) GetContainerIP(ctx context.Context, env *RuntimeEnv, containerName string) (string, error) {
 	// Get the IP from the first network (usually bridge)
-	output, err := env.Cmd.RunQuiet(r.command, "inspect",
+	output, err := env.Cmd.RunQuiet(ctx, r.command, "inspect",
 		"--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
 		containerName)
 	if err != nil {

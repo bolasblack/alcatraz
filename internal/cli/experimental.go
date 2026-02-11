@@ -51,6 +51,7 @@ func init() {
 
 // runReload re-applies the configuration to the running container.
 func runReload(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	// Show experimental warning
 	_, _ = fmt.Fprint(cmd.OutOrStderr(), experimentalWarning)
 	_, _ = fmt.Fprintln(cmd.OutOrStderr())
@@ -65,7 +66,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 	tfs, env, runtimeEnv := deps.Tfs, deps.Env, deps.RuntimeEnv
 
 	// Load configuration and runtime
-	cfg, rt, err := loadConfigAndRuntime(env, runtimeEnv, cwd)
+	cfg, rt, err := loadConfigAndRuntime(ctx, env, runtimeEnv, cwd)
 	if err != nil {
 		return err
 	}
@@ -79,7 +80,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check current status
-	status, err := rt.Status(runtimeEnv, cwd, st)
+	status, err := rt.Status(ctx, runtimeEnv, cwd, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -91,7 +92,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 	util.ProgressStep(os.Stdout, "Reloading configuration...\n")
 
 	// Reload the container
-	if err := rt.Reload(runtimeEnv, cfg, cwd, st); err != nil {
+	if err := rt.Reload(ctx, runtimeEnv, cfg, cwd, st); err != nil {
 		if errors.Is(err, runtime.ErrNotRunning) {
 			return errors.New(ErrMsgNotRunning)
 		}
@@ -105,7 +106,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 	}
 
 	// Commit file operations (project dir, normally no sudo needed)
-	if err := commitWithSudo(env, tfs, os.Stdout, ""); err != nil {
+	if err := commitWithSudo(ctx, env, tfs, os.Stdout, ""); err != nil {
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 

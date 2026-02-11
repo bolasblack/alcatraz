@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -34,6 +35,7 @@ func init() {
 // runUp starts the container environment.
 // See AGD-009 for CLI workflow design.
 func runUp(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	quiet, _ := cmd.Flags().GetBool("quiet")
 	force, _ := cmd.Flags().GetBool("force")
 
@@ -60,7 +62,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// Select runtime based on config
 	util.ProgressStep(out, "Detecting runtime...\n")
-	rt, err := runtime.SelectRuntimeWithOutput(runtimeEnv, cfg, out)
+	rt, err := runtime.SelectRuntimeWithOutput(ctx, runtimeEnv, cfg, out)
 	if err != nil {
 		return fmt.Errorf("failed to select runtime: %w", err)
 	}
@@ -68,13 +70,13 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// TODO: extract to validateMounts(runtimeEnv, rt, cfg) — mount-related validations
 	// Validate Mutagen is available if any mount requires it
-	if err := runtime.ValidateMutagenAvailable(runtimeEnv, cfg); err != nil {
+	if err := runtime.ValidateMutagenAvailable(ctx, runtimeEnv, cfg); err != nil {
 		return err
 	}
 
 	// Validate mount excludes compatibility with runtime
 	// See AGD-025 for rootless Podman + Mutagen limitations
-	if err := runtime.ValidateMountExcludes(runtimeEnv, rt, cfg); err != nil {
+	if err := runtime.ValidateMountExcludes(ctx, runtimeEnv, rt, cfg); err != nil {
 		return fmt.Errorf("%w\n\nAlternatives:\n"+
 			"  1. Remove 'exclude' from mount configuration\n"+
 			"  2. Use rootful Podman (sudo podman)\n"+
@@ -82,12 +84,12 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	// Detect platform once for all network operations
-	platform := runtime.DetectPlatform(runtimeEnv)
+	platform := runtime.DetectPlatform(ctx, runtimeEnv)
 
 	// Network helper (handles all platform-specific logic)
 	nh := network.NewNetworkHelper(cfg.Network, platform)
 	if nh != nil {
-		if err := setupNetwork(nh, env, tfs, cwd, platform, out); err != nil {
+		if err := setupNetwork(ctx, nh, env, tfs, cwd, platform, out); err != nil {
 			return err
 		}
 	}
@@ -110,7 +112,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// If rebuild needed, remove existing container first
 	if needsRebuild {
-		if err := rebuildContainerIfNeeded(runtimeEnv, cfg, st, rt, cwd, out); err != nil {
+		if err := rebuildContainerIfNeeded(ctx, runtimeEnv, cfg, st, rt, cwd, out); err != nil {
 			return err
 		}
 	}
@@ -123,13 +125,13 @@ func runUp(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to save state: %w", err)
 		}
 		// Commit state changes (project dir, normally no sudo needed)
-		if err := commitWithSudo(env, tfs, out, ""); err != nil {
+		if err := commitWithSudo(ctx, env, tfs, out, ""); err != nil {
 			return fmt.Errorf("failed to save state: %w", err)
 		}
 	}
 
 	// Start container
-	if err := rt.Up(runtimeEnv, cfg, cwd, st, out); err != nil {
+	if err := rt.Up(ctx, runtimeEnv, cfg, cwd, st, out); err != nil {
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
@@ -137,7 +139,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// See AGD-027 for design decisions
 	// Files written via tfs, committed to real disk before nft loads them.
 	firewallEnv := network.NewNetworkEnv(tfs, deps.CmdRunner, cwd, platform)
-	if err := setupFirewall(firewallEnv, env, tfs, runtimeEnv, cfg.Network, rt, st, out); err != nil {
+	if err := setupFirewall(ctx, firewallEnv, env, tfs, runtimeEnv, cfg.Network, rt, st, out); err != nil {
 		if errors.Is(err, errSkipFirewall) {
 			// User declined helper install — already messaged, not an error
 		} else {
@@ -148,7 +150,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// Show sync conflict banner if any (best-effort, errors ignored).
 	syncEnv := sync.NewSyncEnv(afero.NewOsFs(), deps.CmdRunner, runtime.NewMutagenSyncClient(runtimeEnv))
-	showSyncBanner(syncEnv, st.ProjectID, cwd, os.Stderr)
+	showSyncBanner(ctx, syncEnv, st.ProjectID, cwd, os.Stderr)
 
 	util.ProgressDone(out, "Environment ready\n")
 	return nil
@@ -181,7 +183,7 @@ func handleConfigDrift(cfg *config.Config, st *state.State, rt runtime.Runtime, 
 }
 
 // rebuildContainerIfNeeded removes the existing container for rebuild.
-func rebuildContainerIfNeeded(runtimeEnv *runtime.RuntimeEnv, cfg *config.Config, st *state.State, rt runtime.Runtime, cwd string, out io.Writer) error {
+func rebuildContainerIfNeeded(ctx context.Context, runtimeEnv *runtime.RuntimeEnv, cfg *config.Config, st *state.State, rt runtime.Runtime, cwd string, out io.Writer) error {
 	// Determine which runtime to use for cleanup
 	cleanupRt := rt
 	runtimeChanged := st.Runtime != rt.Name()
@@ -193,10 +195,10 @@ func rebuildContainerIfNeeded(runtimeEnv *runtime.RuntimeEnv, cfg *config.Config
 			util.ProgressStep(out, "Runtime changed: %s → %s\n", st.Runtime, rt.Name())
 		}
 	}
-	status, _ := cleanupRt.Status(runtimeEnv, cwd, st)
+	status, _ := cleanupRt.Status(ctx, runtimeEnv, cwd, st)
 	if status.State != runtime.StateNotFound {
 		util.ProgressStep(out, "Removing existing container for rebuild...\n")
-		if err := cleanupRt.Down(runtimeEnv, cwd, st); err != nil {
+		if err := cleanupRt.Down(ctx, runtimeEnv, cwd, st); err != nil {
 			return fmt.Errorf("failed to remove container for rebuild: %w", err)
 		}
 	}
@@ -206,13 +208,13 @@ func rebuildContainerIfNeeded(runtimeEnv *runtime.RuntimeEnv, cfg *config.Config
 
 // setupNetwork configures network helper for LAN access.
 // See AGD-030 for design decisions.
-func setupNetwork(nh network.NetworkHelper, env *util.Env, tfs *transact.TransactFs, projectDir string, platform runtime.RuntimePlatform, out io.Writer) error {
+func setupNetwork(ctx context.Context, nh network.NetworkHelper, env *util.Env, tfs *transact.TransactFs, projectDir string, platform runtime.RuntimePlatform, out io.Writer) error {
 	progress := progressFunc(out)
 
 	networkEnv := network.NewNetworkEnv(env.Fs, env.Cmd, projectDir, platform)
 
 	// Check and install helper if needed
-	status := nh.HelperStatus(networkEnv)
+	status := nh.HelperStatus(ctx, networkEnv)
 	if !status.Installed {
 		util.ProgressStep(out, "Network helper required for LAN access.\n")
 		if !promptConfirm("Install now?") {
@@ -226,12 +228,12 @@ func setupNetwork(nh network.NetworkHelper, env *util.Env, tfs *transact.Transac
 			return fmt.Errorf("failed to install network helper: %w", err)
 		}
 
-		if err := commitIfNeeded(env, tfs, out, "Writing network helper to system directories"); err != nil {
+		if err := commitIfNeeded(ctx, env, tfs, out, "Writing network helper to system directories"); err != nil {
 			return fmt.Errorf("failed to commit: %w", err)
 		}
 
 		if action.Run != nil {
-			if err := action.Run(progress); err != nil {
+			if err := action.Run(ctx, progress); err != nil {
 				return fmt.Errorf("post-install failed: %w", err)
 			}
 		}
@@ -243,12 +245,12 @@ func setupNetwork(nh network.NetworkHelper, env *util.Env, tfs *transact.Transac
 		return fmt.Errorf("failed to setup network: %w", err)
 	}
 
-	if err := commitIfNeeded(env, tfs, out, "Writing firewall rules to system directories"); err != nil {
+	if err := commitIfNeeded(ctx, env, tfs, out, "Writing firewall rules to system directories"); err != nil {
 		return fmt.Errorf("failed to commit: %w", err)
 	}
 
 	if action.Run != nil {
-		if err := action.Run(progress); err != nil {
+		if err := action.Run(ctx, progress); err != nil {
 			return fmt.Errorf("post-setup failed: %w", err)
 		}
 	}
@@ -262,7 +264,7 @@ func setupNetwork(nh network.NetworkHelper, env *util.Env, tfs *transact.Transac
 // - A firewall backend is available (nftables on Linux, nftables via VM on macOS)
 // - lan-access is NOT ["*"] (user wants network isolation)
 // See AGD-027 for design decisions.
-func setupFirewall(networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, netCfg config.Network, rt runtime.Runtime, st *state.State, out io.Writer) error {
+func setupFirewall(ctx context.Context, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, netCfg config.Network, rt runtime.Runtime, st *state.State, out io.Writer) error {
 	// Parse lan-access rules
 	rules, err := network.ParseLANAccessRules(netCfg.LANAccess)
 	if err != nil {
@@ -277,13 +279,13 @@ func setupFirewall(networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.
 	// On darwin, the VM helper must be installed for nft reload.
 	// If setupNetwork didn't run (e.g. lan-access is empty), the helper may not be installed.
 	if runtime.IsDarwin(networkEnv.Runtime) {
-		if err := ensureVMHelper(networkEnv, env, tfs, out); err != nil {
+		if err := ensureVMHelper(ctx, networkEnv, env, tfs, out); err != nil {
 			return err
 		}
 	}
 
 	// Detect firewall availability
-	fw, fwType := network.New(networkEnv)
+	fw, fwType := network.New(ctx, networkEnv)
 
 	if fwType == network.TypeNone {
 		// No firewall available - emit warning per AGD-027
@@ -307,13 +309,13 @@ On Linux, install nftables:
 	}
 
 	// Get container status to find the container name
-	status, err := rt.Status(runtimeEnv, "", st)
+	status, err := rt.Status(ctx, runtimeEnv, "", st)
 	if err != nil || status.State != runtime.StateRunning {
 		return fmt.Errorf("container not running, cannot apply firewall rules")
 	}
 
 	// Get container IP
-	containerIP, err := rt.GetContainerIP(runtimeEnv, status.Name)
+	containerIP, err := rt.GetContainerIP(ctx, runtimeEnv, status.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get container IP: %w", err)
 	}
@@ -327,13 +329,13 @@ On Linux, install nftables:
 	}
 
 	// Commit tfs to write files to real disk
-	if err := commitIfNeeded(env, tfs, out, "Writing firewall rules"); err != nil {
+	if err := commitIfNeeded(ctx, env, tfs, out, "Writing firewall rules"); err != nil {
 		return fmt.Errorf("commit firewall files: %w", err)
 	}
 
 	// Run post-commit action (nft -f or reload)
 	if action != nil && action.Run != nil {
-		if err := action.Run(nil); err != nil {
+		if err := action.Run(ctx, nil); err != nil {
 			return fmt.Errorf("load firewall rules: %w", err)
 		}
 	}
@@ -345,10 +347,10 @@ On Linux, install nftables:
 // ensureVMHelper checks if the VM helper is installed on darwin and prompts to install if needed.
 // Returns nil if the helper is already installed or was successfully installed.
 // Returns a non-nil error sentinel to signal the caller to skip firewall setup (not a real error).
-func ensureVMHelper(networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, out io.Writer) error {
+func ensureVMHelper(ctx context.Context, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, out io.Writer) error {
 	vmEnv := vmhelper.NewVMHelperEnv(networkEnv.Fs, networkEnv.Cmd)
 
-	installed, err := vmhelper.IsInstalled(vmEnv)
+	installed, err := vmhelper.IsInstalled(ctx, vmEnv)
 	if err != nil {
 		return fmt.Errorf("failed to check VM helper status: %w", err)
 	}
@@ -377,12 +379,12 @@ func ensureVMHelper(networkEnv *network.NetworkEnv, env *util.Env, tfs *transact
 		return fmt.Errorf("failed to install network helper: %w", err)
 	}
 
-	if err := commitIfNeeded(env, tfs, out, "Writing network helper to system directories"); err != nil {
+	if err := commitIfNeeded(ctx, env, tfs, out, "Writing network helper to system directories"); err != nil {
 		return fmt.Errorf("failed to commit: %w", err)
 	}
 
 	if action.Run != nil {
-		if err := action.Run(progress); err != nil {
+		if err := action.Run(ctx, progress); err != nil {
 			return fmt.Errorf("post-install failed: %w", err)
 		}
 	}

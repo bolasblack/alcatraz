@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"strings"
@@ -135,7 +136,7 @@ func TestMutagenSyncFlush_Success(t *testing.T) {
 	env := newMockEnv(mock)
 
 	sync := MutagenSync{Name: "alca-project-workspace"}
-	err := sync.flushWithRetry(env, 1, 0)
+	err := sync.flushWithRetry(context.Background(), env, 1, 0)
 	if err != nil {
 		t.Fatalf("Flush() unexpected error: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestMutagenSyncFlush_NonRetryableError(t *testing.T) {
 	env := newMockEnv(mock)
 
 	sync := MutagenSync{Name: "test-session"}
-	err := sync.flushWithRetry(env, 3, 0)
+	err := sync.flushWithRetry(context.Background(), env, 3, 0)
 	if err == nil {
 		t.Fatal("Flush() should return error when mutagen fails")
 	}
@@ -176,7 +177,7 @@ func TestMutagenSyncFlush_RetriesOnNotReady(t *testing.T) {
 	env := newMockEnv(mock)
 
 	sync := MutagenSync{Name: "test-session"}
-	err := sync.flushWithRetry(env, 5, 0)
+	err := sync.flushWithRetry(context.Background(), env, 5, 0)
 	if err != nil {
 		t.Fatalf("Flush() should succeed after retries, got: %v", err)
 	}
@@ -197,7 +198,7 @@ func TestMutagenSyncFlush_ExhaustsRetries(t *testing.T) {
 	env := newMockEnv(mock)
 
 	sync := MutagenSync{Name: "test-session"}
-	err := sync.flushWithRetry(env, 3, 0)
+	err := sync.flushWithRetry(context.Background(), env, 3, 0)
 	if err == nil {
 		t.Fatal("Flush() should fail after exhausting retries")
 	}
@@ -357,7 +358,7 @@ func TestMutagenSyncCreate_Success(t *testing.T) {
 		Target:  "docker://cid/workspace",
 		Ignores: []string{".git/"},
 	}
-	err := sync.Create(env)
+	err := sync.Create(context.Background(), env)
 	if err != nil {
 		t.Fatalf("Create() unexpected error: %v", err)
 	}
@@ -376,7 +377,7 @@ func TestMutagenSyncCreate_Failure(t *testing.T) {
 		Source: "/src",
 		Target: "docker://cid/workspace",
 	}
-	err := sync.Create(env)
+	err := sync.Create(context.Background(), env)
 	if err == nil {
 		t.Fatal("Create() should return error")
 	}
@@ -392,7 +393,7 @@ func TestMutagenSyncTerminate_Success(t *testing.T) {
 	env := newMockEnv(mock)
 
 	sync := MutagenSync{Name: "test-session"}
-	err := sync.Terminate(env)
+	err := sync.Terminate(context.Background(), env)
 	if err != nil {
 		t.Fatalf("Terminate() unexpected error: %v", err)
 	}
@@ -407,7 +408,7 @@ func TestMutagenSyncTerminate_NoMatchingSessions(t *testing.T) {
 	env := newMockEnv(mock)
 
 	sync := MutagenSync{Name: "test-session"}
-	err := sync.Terminate(env)
+	err := sync.Terminate(context.Background(), env)
 	if err != nil {
 		t.Fatalf("Terminate() should not error for 'no matching sessions', got: %v", err)
 	}
@@ -421,7 +422,7 @@ func TestMutagenSyncTerminate_RealError(t *testing.T) {
 	env := newMockEnv(mock)
 
 	sync := MutagenSync{Name: "test-session"}
-	err := sync.Terminate(env)
+	err := sync.Terminate(context.Background(), env)
 	if err == nil {
 		t.Fatal("Terminate() should return error for non-matching-sessions failure")
 	}
@@ -437,7 +438,7 @@ func TestListMutagenSyncs_Success(t *testing.T) {
 		[]byte("alca-proj-0\nalca-proj-1\nother-session\n"))
 	env := newMockEnv(mock)
 
-	result, err := ListMutagenSyncs(env, "alca-proj-")
+	result, err := ListMutagenSyncs(context.Background(), env, "alca-proj-")
 	if err != nil {
 		t.Fatalf("ListMutagenSyncs() unexpected error: %v", err)
 	}
@@ -452,7 +453,7 @@ func TestListMutagenSyncs_CommandError(t *testing.T) {
 	mock.ExpectFailure(`mutagen sync list --template={{range .}}{{.Name}}{{"\n"}}{{end}}`, errCommandNotFound)
 	env := newMockEnv(mock)
 
-	result, err := ListMutagenSyncs(env, "alca-")
+	result, err := ListMutagenSyncs(context.Background(), env, "alca-")
 	if err != nil {
 		t.Fatalf("ListMutagenSyncs() should not return error, got: %v", err)
 	}
@@ -468,7 +469,7 @@ func TestListSessionJSON_Success(t *testing.T) {
 	mock.ExpectSuccess("mutagen sync list alca-proj-0 --template={{json .}}", jsonOutput)
 	env := newMockEnv(mock)
 
-	result, err := ListSessionJSON(env, "alca-proj-0")
+	result, err := ListSessionJSON(context.Background(), env, "alca-proj-0")
 	if err != nil {
 		t.Fatalf("ListSessionJSON() unexpected error: %v", err)
 	}
@@ -484,7 +485,7 @@ func TestListSessionJSON_Error(t *testing.T) {
 		[]byte("no matching sessions"), errors.New("exit status 1"))
 	env := newMockEnv(mock)
 
-	_, err := ListSessionJSON(env, "bad-session")
+	_, err := ListSessionJSON(context.Background(), env, "bad-session")
 	if err == nil {
 		t.Fatal("ListSessionJSON() should return error")
 	}
@@ -502,7 +503,7 @@ func TestTerminateProjectSyncs_AllSucceed(t *testing.T) {
 	mock.ExpectSuccess("mutagen sync terminate alca-proj-1", []byte(""))
 	env := newMockEnv(mock)
 
-	err := TerminateProjectSyncs(env, "proj")
+	err := TerminateProjectSyncs(context.Background(), env, "proj")
 	if err != nil {
 		t.Fatalf("TerminateProjectSyncs() unexpected error: %v", err)
 	}
@@ -521,7 +522,7 @@ func TestTerminateProjectSyncs_PartialFailure(t *testing.T) {
 	mock.ExpectSuccess("mutagen sync terminate alca-proj-1", []byte(""))
 	env := newMockEnv(mock)
 
-	err := TerminateProjectSyncs(env, "proj")
+	err := TerminateProjectSyncs(context.Background(), env, "proj")
 	// Should return the error from proj-0 (the last error encountered)
 	if err == nil {
 		t.Fatal("TerminateProjectSyncs() should return error on partial failure")
@@ -537,7 +538,7 @@ func TestTerminateProjectSyncs_NoSessions(t *testing.T) {
 	mock.ExpectSuccess(`mutagen sync list --template={{range .}}{{.Name}}{{"\n"}}{{end}}`, []byte("other-session\n"))
 	env := newMockEnv(mock)
 
-	err := TerminateProjectSyncs(env, "proj")
+	err := TerminateProjectSyncs(context.Background(), env, "proj")
 	if err != nil {
 		t.Fatalf("TerminateProjectSyncs() with no sessions should not error, got: %v", err)
 	}
@@ -570,13 +571,13 @@ func TestMutagenSyncCreateIntegration(t *testing.T) {
 	}
 
 	runtimeEnv := NewRuntimeEnv(util.NewCommandRunner())
-	err := sync.Create(runtimeEnv)
+	err := sync.Create(context.Background(), runtimeEnv)
 	if err != nil {
 		t.Fatalf("Create() failed: %v", err)
 	}
 
 	// Cleanup
 	defer func() {
-		_ = sync.Terminate(runtimeEnv)
+		_ = sync.Terminate(context.Background(), runtimeEnv)
 	}()
 }

@@ -24,6 +24,7 @@ var statusCmd = &cobra.Command{
 // runStatus displays container status.
 // See AGD-009 for CLI workflow design.
 func runStatus(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	cwd, err := getCwd()
 	if err != nil {
 		return err
@@ -54,7 +55,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Select runtime
-	rt, err := runtime.SelectRuntime(runtimeEnv, &cfg)
+	rt, err := runtime.SelectRuntime(ctx, runtimeEnv, &cfg)
 	if err != nil {
 		fmt.Println("Runtime: None available")
 		fmt.Println("")
@@ -83,7 +84,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println("")
 
 	// Get container status
-	status, err := rt.Status(runtimeEnv, cwd, st)
+	status, err := rt.Status(ctx, runtimeEnv, cwd, st)
 	if err != nil {
 		fmt.Println("Container: Error getting status")
 		return nil
@@ -94,7 +95,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// Show sync conflict banner if container is running (AGD-031).
 	if status.State == runtime.StateRunning {
 		syncEnv := sync.NewSyncEnv(afero.NewOsFs(), deps.CmdRunner, runtime.NewMutagenSyncClient(runtimeEnv))
-		showSyncBanner(syncEnv, st.ProjectID, cwd, os.Stderr)
+		showSyncBanner(ctx, syncEnv, st.ProjectID, cwd, os.Stderr)
 	}
 
 	return nil

@@ -8,12 +8,11 @@ import (
 
 func TestRun_StreamsToStdoutAndCaptures(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	runner := &ContextCommandRunner{
-		ctx:    context.Background(),
+	runner := &DefaultCommandRunner{
 		stdout: &stdout,
 		stderr: &stderr,
 	}
-	output, err := runner.Run("echo", "hello")
+	output, err := runner.Run(context.Background(), "echo", "hello")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -27,12 +26,11 @@ func TestRun_StreamsToStdoutAndCaptures(t *testing.T) {
 
 func TestRun_ErrorPropagation(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	runner := &ContextCommandRunner{
-		ctx:    context.Background(),
+	runner := &DefaultCommandRunner{
 		stdout: &stdout,
 		stderr: &stderr,
 	}
-	_, err := runner.Run("false")
+	_, err := runner.Run(context.Background(), "false")
 	if err == nil {
 		t.Fatal("expected error from 'false' command, got nil")
 	}
@@ -40,7 +38,7 @@ func TestRun_ErrorPropagation(t *testing.T) {
 
 func TestRunQuiet_ReturnsFullOutputOnSuccess(t *testing.T) {
 	runner := NewCommandRunner()
-	output, err := runner.RunQuiet("echo", "hello")
+	output, err := runner.RunQuiet(context.Background(), "echo", "hello")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -51,7 +49,7 @@ func TestRunQuiet_ReturnsFullOutputOnSuccess(t *testing.T) {
 
 func TestRunQuiet_ReturnsOutputOnError(t *testing.T) {
 	runner := NewCommandRunner()
-	output, err := runner.RunQuiet("sh", "-c", "echo failure-output && exit 1")
+	output, err := runner.RunQuiet(context.Background(), "sh", "-c", "echo failure-output && exit 1")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

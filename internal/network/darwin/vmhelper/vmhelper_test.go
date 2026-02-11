@@ -1,6 +1,7 @@
 package vmhelper
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -77,7 +78,7 @@ func TestInstallHelper_RunsDockerCommands(t *testing.T) {
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+ContainerName, []byte("true\n"))
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	err := InstallHelper(env, runtime.PlatformMacOrbStack, nil)
+	err := InstallHelper(context.Background(), env, runtime.PlatformMacOrbStack, nil)
 	require.NoError(t, err)
 
 	// Should remove existing container
@@ -113,7 +114,7 @@ func TestInstallHelper_SetsPlatformEnv(t *testing.T) {
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+ContainerName, []byte("true\n"))
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	err := InstallHelper(env, runtime.PlatformMacDockerDesktop, nil)
+	err := InstallHelper(context.Background(), env, runtime.PlatformMacDockerDesktop, nil)
 	require.NoError(t, err)
 
 	found := false
@@ -134,7 +135,7 @@ func TestInstallHelper_DetectsECI_DockerDesktop(t *testing.T) {
 	mockCmd.ExpectFailure("docker run --rm --privileged --pid=host alpine:latest true", assert.AnError)
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	err := InstallHelper(env, runtime.PlatformMacDockerDesktop, nil)
+	err := InstallHelper(context.Background(), env, runtime.PlatformMacDockerDesktop, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Enhanced Container Isolation (ECI)")
 	assert.Contains(t, err.Error(), "Disable ECI")
@@ -146,7 +147,7 @@ func TestInstallHelper_SkipsECICheck_OrbStack(t *testing.T) {
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+ContainerName, []byte("true\n"))
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	err := InstallHelper(env, runtime.PlatformMacOrbStack, nil)
+	err := InstallHelper(context.Background(), env, runtime.PlatformMacOrbStack, nil)
 	require.NoError(t, err)
 
 	// ECI probe should NOT have been called
@@ -161,7 +162,7 @@ func TestInstallHelper_ECIPassesOnDockerDesktop(t *testing.T) {
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+ContainerName, []byte("true\n"))
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	err := InstallHelper(env, runtime.PlatformMacDockerDesktop, nil)
+	err := InstallHelper(context.Background(), env, runtime.PlatformMacDockerDesktop, nil)
 	require.NoError(t, err)
 }
 
@@ -172,7 +173,7 @@ func TestInstallHelper_FailsWhenContainerNotRunning(t *testing.T) {
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+ContainerName, []byte("false\n"))
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	err := InstallHelper(env, runtime.PlatformMacOrbStack, nil)
+	err := InstallHelper(context.Background(), env, runtime.PlatformMacOrbStack, nil)
 	assert.Error(t, err, "InstallHelper should fail when container is not running after start")
 	assert.Contains(t, err.Error(), "not running")
 }
@@ -186,7 +187,7 @@ func TestUninstallHelper_RemovesContainer(t *testing.T) {
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	err := UninstallHelper(env, nil)
+	err := UninstallHelper(context.Background(), env, nil)
 	require.NoError(t, err)
 
 	mockCmd.AssertCalled(t, "docker rm -f "+ContainerName)
@@ -198,7 +199,7 @@ func TestUninstallHelper_PropagatesError(t *testing.T) {
 	mockCmd.ExpectFailure("docker rm -f "+ContainerName, assert.AnError)
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	err := UninstallHelper(env, nil)
+	err := UninstallHelper(context.Background(), env, nil)
 	assert.Error(t, err)
 }
 
@@ -211,7 +212,7 @@ func TestReload_SendsSIGHUP(t *testing.T) {
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	err := Reload(env)
+	err := Reload(context.Background(), env)
 	require.NoError(t, err)
 
 	mockCmd.AssertCalled(t, "docker exec "+ContainerName+" sh -c kill -HUP 1")
@@ -223,7 +224,7 @@ func TestReload_PropagatesError(t *testing.T) {
 	mockCmd.ExpectFailure("docker exec "+ContainerName+" sh -c kill -HUP 1", assert.AnError)
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	err := Reload(env)
+	err := Reload(context.Background(), env)
 	assert.Error(t, err)
 }
 
@@ -237,7 +238,7 @@ func TestIsInstalled_ReturnsTrueWhenRunning(t *testing.T) {
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+ContainerName, []byte("true\n"))
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	installed, err := IsInstalled(env)
+	installed, err := IsInstalled(context.Background(), env)
 	require.NoError(t, err)
 	assert.True(t, installed)
 }
@@ -248,7 +249,7 @@ func TestIsInstalled_ReturnsFalseWhenStopped(t *testing.T) {
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+ContainerName, []byte("false\n"))
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	installed, err := IsInstalled(env)
+	installed, err := IsInstalled(context.Background(), env)
 	require.NoError(t, err)
 	assert.False(t, installed)
 }
@@ -259,7 +260,7 @@ func TestIsInstalled_ReturnsFalseWhenNotFound(t *testing.T) {
 	mockCmd.ExpectFailure("docker inspect --format {{.State.Running}} "+ContainerName, assert.AnError)
 	env := NewVMHelperEnv(mockFs, mockCmd)
 
-	installed, err := IsInstalled(env)
+	installed, err := IsInstalled(context.Background(), env)
 	require.NoError(t, err)
 	assert.False(t, installed, "IsInstalled should return false when container doesn't exist")
 }

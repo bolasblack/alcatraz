@@ -3,6 +3,7 @@
 package runtime
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -64,38 +65,38 @@ type Runtime interface {
 	Name() string
 
 	// Available checks if this runtime is installed and accessible.
-	Available(env *RuntimeEnv) bool
+	Available(ctx context.Context, env *RuntimeEnv) bool
 
 	// Up creates and starts a container based on the given configuration.
 	// The projectDir is used to generate a unique container name.
 	// The progressOut writer receives progress messages; may be nil to suppress output.
 	// The state provides container identity (name, labels) that survives directory moves.
-	Up(env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, progressOut io.Writer) error
+	Up(ctx context.Context, env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, progressOut io.Writer) error
 
 	// Down stops and removes the container for the given project directory.
 	// The state provides container identity for lookup.
-	Down(env *RuntimeEnv, projectDir string, st *state.State) error
+	Down(ctx context.Context, env *RuntimeEnv, projectDir string, st *state.State) error
 
 	// Exec runs a command inside the container for the given project directory.
 	// The state provides container identity for lookup.
 	// The config provides environment variables with override_on_enter support.
-	Exec(env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, command []string) error
+	Exec(ctx context.Context, env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State, command []string) error
 
 	// Status returns the current status of the container for the given project directory.
 	// The state provides container identity for lookup. If state is nil, uses legacy name lookup.
-	Status(env *RuntimeEnv, projectDir string, st *state.State) (ContainerStatus, error)
+	Status(ctx context.Context, env *RuntimeEnv, projectDir string, st *state.State) (ContainerStatus, error)
 
 	// Reload re-applies mounts without rebuilding the container.
 	// This is an experimental feature - see AGD-009 for design rationale.
-	Reload(env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State) error
+	Reload(ctx context.Context, env *RuntimeEnv, cfg *config.Config, projectDir string, st *state.State) error
 
 	// ListContainers returns all containers managed by alca (those with alca.project.id label).
-	ListContainers(env *RuntimeEnv) ([]ContainerInfo, error)
+	ListContainers(ctx context.Context, env *RuntimeEnv) ([]ContainerInfo, error)
 
 	// RemoveContainer removes a container by name.
-	RemoveContainer(env *RuntimeEnv, name string) error
+	RemoveContainer(ctx context.Context, env *RuntimeEnv, name string) error
 
 	// GetContainerIP returns the IP address of a running container.
 	// Used by firewall rules to restrict container network access.
-	GetContainerIP(env *RuntimeEnv, containerName string) (string, error)
+	GetContainerIP(ctx context.Context, env *RuntimeEnv, containerName string) (string, error)
 }

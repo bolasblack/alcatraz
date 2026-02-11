@@ -1,6 +1,7 @@
 package nft
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -37,7 +38,7 @@ func (h *nftLinuxHelper) Teardown(env *shared.NetworkEnv, projectDir string) err
 	return nil
 }
 
-func (h *nftLinuxHelper) HelperStatus(env *shared.NetworkEnv) shared.HelperStatus {
+func (h *nftLinuxHelper) HelperStatus(_ context.Context, env *shared.NetworkEnv) shared.HelperStatus {
 	fs := env.Fs
 
 	// Check if directory exists
@@ -108,17 +109,17 @@ func (h *nftLinuxHelper) InstallHelper(env *shared.NetworkEnv, progress shared.P
 
 	// 3. Return post-commit action to reload nftables
 	return &shared.PostCommitAction{
-		Run: func(progress shared.ProgressFunc) error {
+		Run: func(ctx context.Context, progress shared.ProgressFunc) error {
 			progress = shared.SafeProgress(progress)
 			cmd := env.Cmd
 
 			// Enable nftables service
 			progress("Enabling nftables.service...\n")
-			_, _ = cmd.RunQuiet("systemctl", "enable", "nftables.service")
+			_, _ = cmd.RunQuiet(ctx, "systemctl", "enable", "nftables.service")
 
 			// Reload nftables configuration
 			progress("Reloading nftables configuration...\n")
-			output, err := cmd.RunQuiet("nft", "-f", nftablesConfPathOnLinux)
+			output, err := cmd.RunQuiet(ctx, "nft", "-f", nftablesConfPathOnLinux)
 			if err != nil {
 				return fmt.Errorf("failed to reload nftables: %w: %s", err, strings.TrimSpace(string(output)))
 			}
@@ -149,20 +150,20 @@ func (h *nftLinuxHelper) UninstallHelper(env *shared.NetworkEnv, progress shared
 
 	// 3. Return post-commit action to delete tables and remove directory
 	return &shared.PostCommitAction{
-		Run: func(progress shared.ProgressFunc) error {
+		Run: func(ctx context.Context, progress shared.ProgressFunc) error {
 			progress = shared.SafeProgress(progress)
 
 			cmd := env.Cmd
 
 			// Delete all alca-* tables
 			progress("Deleting alcatraz nftables tables...\n")
-			output, err := cmd.RunQuiet("nft", "list", "tables")
+			output, err := cmd.RunQuiet(ctx, "nft", "list", "tables")
 			if err == nil {
 				for _, line := range strings.Split(string(output), "\n") {
 					// Line format: "table inet alca-abc123"
 					parts := strings.Fields(line)
 					if len(parts) >= 3 && strings.HasPrefix(parts[2], "alca-") {
-						_, _ = cmd.RunQuiet("nft", "delete", "table", parts[1], parts[2])
+						_, _ = cmd.RunQuiet(ctx, "nft", "delete", "table", parts[1], parts[2])
 					}
 				}
 			}

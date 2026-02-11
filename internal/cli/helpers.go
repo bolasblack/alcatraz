@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -49,13 +50,13 @@ func loadConfigOptional(env *util.Env, cwd string) (*config.Config, string) {
 
 // loadConfigAndRuntime loads config and selects the appropriate runtime.
 // This is the most common pattern for commands that need both.
-func loadConfigAndRuntime(env *util.Env, runtimeEnv *runtime.RuntimeEnv, cwd string) (*config.Config, runtime.Runtime, error) {
+func loadConfigAndRuntime(ctx context.Context, env *util.Env, runtimeEnv *runtime.RuntimeEnv, cwd string) (*config.Config, runtime.Runtime, error) {
 	cfg, _, err := loadConfigFromCwd(env, cwd)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	rt, err := runtime.SelectRuntime(runtimeEnv, cfg)
+	rt, err := runtime.SelectRuntime(ctx, runtimeEnv, cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to select runtime: %w", err)
 	}
@@ -65,10 +66,10 @@ func loadConfigAndRuntime(env *util.Env, runtimeEnv *runtime.RuntimeEnv, cwd str
 
 // loadConfigAndRuntimeOptional loads config (optional) and selects runtime.
 // Use for commands like 'list' and 'cleanup' that work without config.
-func loadConfigAndRuntimeOptional(env *util.Env, runtimeEnv *runtime.RuntimeEnv, cwd string) (*config.Config, runtime.Runtime, error) {
+func loadConfigAndRuntimeOptional(ctx context.Context, env *util.Env, runtimeEnv *runtime.RuntimeEnv, cwd string) (*config.Config, runtime.Runtime, error) {
 	cfg, _ := loadConfigOptional(env, cwd)
 
-	rt, err := runtime.SelectRuntime(runtimeEnv, cfg)
+	rt, err := runtime.SelectRuntime(ctx, runtimeEnv, cfg)
 	if err != nil {
 		return cfg, nil, fmt.Errorf("failed to select runtime: %w", err)
 	}
@@ -166,15 +167,15 @@ func promptConfirm(prompt string) bool {
 // commitWithSudo commits TransactFs changes, intelligently grouping operations
 // by sudo requirement and executing each group with the appropriate method.
 // If any operation requires sudo, the msg is printed first to explain why.
-func commitWithSudo(env *util.Env, tfs *transact.TransactFs, out io.Writer, msg string) error {
-	_, err := tfs.Commit(func(ctx transact.CommitContext) (*transact.CommitOpsResult, error) {
-		if len(ctx.Ops) == 0 {
+func commitWithSudo(ctx context.Context, env *util.Env, tfs *transact.TransactFs, out io.Writer, msg string) error {
+	_, err := tfs.Commit(func(commitCtx transact.CommitContext) (*transact.CommitOpsResult, error) {
+		if len(commitCtx.Ops) == 0 {
 			return nil, nil
 		}
 
 		// Check if any op needs sudo and output explanation
 		if out != nil {
-			for _, op := range ctx.Ops {
+			for _, op := range commitCtx.Ops {
 				if op.NeedSudo {
 					if msg != "" {
 						util.ProgressStep(out, "%s (sudo required)...\n", msg)
@@ -188,10 +189,12 @@ func commitWithSudo(env *util.Env, tfs *transact.TransactFs, out io.Writer, msg 
 		}
 
 		// Group operations by NeedSudo while preserving order
-		groups := transact.GroupOpsBySudo(ctx.Ops)
+		groups := transact.GroupOpsBySudo(commitCtx.Ops)
 
 		// Execute each group with the appropriate method
-		if err := transact.ExecuteGroupedOps(ctx.BaseFs, groups, env.Cmd.SudoRunScriptQuiet); err != nil {
+		if err := transact.ExecuteGroupedOps(commitCtx.BaseFs, groups, func(script string) error {
+			return env.Cmd.SudoRunScriptQuiet(ctx, script)
+		}); err != nil {
 			return nil, err
 		}
 
@@ -202,11 +205,11 @@ func commitWithSudo(env *util.Env, tfs *transact.TransactFs, out io.Writer, msg 
 
 // commitIfNeeded checks if there are pending changes and commits them with sudo support.
 // The msg is only printed if sudo is actually required.
-func commitIfNeeded(env *util.Env, tfs *transact.TransactFs, out io.Writer, msg string) error {
+func commitIfNeeded(ctx context.Context, env *util.Env, tfs *transact.TransactFs, out io.Writer, msg string) error {
 	if !tfs.NeedsCommit() {
 		return nil
 	}
-	return commitWithSudo(env, tfs, out, msg)
+	return commitWithSudo(ctx, env, tfs, out, msg)
 }
 
 // cliDeps holds shared CLI dependencies for commands that perform writes.

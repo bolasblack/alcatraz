@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -18,7 +19,7 @@ type mockExecutor struct {
 
 var _ ContainerExecutor = (*mockExecutor)(nil)
 
-func (m *mockExecutor) ExecInContainer(containerID string, cmd []string) error {
+func (m *mockExecutor) ExecInContainer(_ context.Context, containerID string, cmd []string) error {
 	m.gotID = containerID
 	m.gotCmd = cmd
 	m.callCount++
@@ -51,7 +52,7 @@ func TestResolveLocal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			executor := &mockExecutor{err: tt.execErr}
 
-			err := ResolveLocal(executor, "test-container", tt.containerPath)
+			err := ResolveLocal(context.Background(), executor, "test-container", tt.containerPath)
 
 			if tt.wantErr {
 				if err == nil {
@@ -119,7 +120,7 @@ func TestResolveLocal_PassesCorrectCommandArgs(t *testing.T) {
 	containerID := "my-container-123"
 	containerPath := "/workspace/src/deep/nested/file.yaml"
 
-	err := ResolveLocal(executor, containerID, containerPath)
+	err := ResolveLocal(context.Background(), executor, containerID, containerPath)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -139,7 +140,7 @@ func TestResolveLocal_ErrorWrapping(t *testing.T) {
 	underlying := fmt.Errorf("permission denied")
 	executor := &mockExecutor{err: underlying}
 
-	err := ResolveLocal(executor, "ctr", "/path")
+	err := ResolveLocal(context.Background(), executor, "ctr", "/path")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

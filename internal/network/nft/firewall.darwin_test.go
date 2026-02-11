@@ -1,6 +1,7 @@
 package nft
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -115,7 +116,7 @@ func TestApplyRulesOnDarwin_TriggersReload(t *testing.T) {
 
 	// Run post-commit action to trigger reload
 	if action != nil && action.Run != nil {
-		_ = action.Run(nil)
+		_ = action.Run(context.Background(), nil)
 	}
 
 	// Verify docker exec was called for reload
@@ -137,7 +138,7 @@ func TestApplyRulesOnDarwin_ReloadFailsWhenHelperNotInstalled(t *testing.T) {
 
 	// Post-commit reload should fail with descriptive error
 	if action != nil && action.Run != nil {
-		err = action.Run(nil)
+		err = action.Run(context.Background(), nil)
 		if err == nil {
 			t.Fatal("reloadVMHelper should fail when helper is not installed")
 		}
@@ -209,7 +210,7 @@ func TestCleanupOnDarwin_RemovesPerContainerFile(t *testing.T) {
 
 	// Run post-commit action to trigger reload
 	if action != nil && action.Run != nil {
-		_ = action.Run(nil)
+		_ = action.Run(context.Background(), nil)
 	}
 
 	// Verify reload was triggered

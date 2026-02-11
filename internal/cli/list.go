@@ -21,6 +21,7 @@ var listCmd = &cobra.Command{
 
 // runList displays all alca-managed containers.
 func runList(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	cwd, err := getCwd()
 	if err != nil {
 		return err
@@ -33,13 +34,13 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	// Load config (optional) and select runtime
 	// Log warning if config has issues but continue
-	cfg, rt, err := loadConfigAndRuntimeOptional(env, runtimeEnv, cwd)
+	cfg, rt, err := loadConfigAndRuntimeOptional(ctx, env, runtimeEnv, cwd)
 	if err != nil {
 		return err
 	}
 	_ = cfg // Config loaded for runtime selection only
 
-	containers, err := rt.ListContainers(runtimeEnv)
+	containers, err := rt.ListContainers(ctx, runtimeEnv)
 	if err != nil {
 		return fmt.Errorf("failed to list containers: %w", err)
 	}

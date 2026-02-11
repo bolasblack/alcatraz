@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"context"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -105,7 +106,7 @@ func TestNetworkEnv_InjectedCmdIsUsable(t *testing.T) {
 	env := NewNetworkEnv(nil, mockCmd, "", "")
 
 	// Run a command through env.Cmd
-	_, _ = env.Cmd.Run("test-command", "arg1", "arg2")
+	_, _ = env.Cmd.Run(context.Background(), "test-command", "arg1", "arg2")
 
 	// Verify the mockCmd recorded the call
 	if !mockCmd.Called("test-command arg1 arg2") {

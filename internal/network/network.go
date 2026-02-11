@@ -7,6 +7,7 @@
 package network
 
 import (
+	"context"
 	"runtime"
 
 	"github.com/bolasblack/alcatraz/internal/config"
@@ -61,12 +62,12 @@ var (
 )
 
 // Detect returns the available firewall type for the current platform.
-func Detect(cmd util.CommandRunner) Type {
+func Detect(ctx context.Context, cmd util.CommandRunner) Type {
 	switch runtime.GOOS {
 	case "darwin":
 		return TypeNFTables
 	case "linux":
-		if commandExists(cmd, "nft") && nftablesWorking(cmd) {
+		if commandExists(ctx, cmd, "nft") && nftablesWorking(ctx, cmd) {
 			return TypeNFTables
 		}
 		return TypeNone
@@ -77,8 +78,8 @@ func Detect(cmd util.CommandRunner) Type {
 
 // New creates a Firewall implementation based on the detected type.
 // Returns nil if no firewall is available.
-func New(env *NetworkEnv) (Firewall, Type) {
-	t := Detect(env.Cmd)
+func New(ctx context.Context, env *NetworkEnv) (Firewall, Type) {
+	t := Detect(ctx, env.Cmd)
 	return newFirewallForType(t, env), t
 }
 
@@ -89,14 +90,14 @@ func NewNetworkHelper(cfg config.Network, platform alcaruntime.RuntimePlatform) 
 }
 
 // commandExists checks if a command is available in PATH.
-func commandExists(cmd util.CommandRunner, name string) bool {
-	_, err := cmd.Run("which", name)
+func commandExists(ctx context.Context, cmd util.CommandRunner, name string) bool {
+	_, err := cmd.Run(ctx, "which", name)
 	return err == nil
 }
 
 // nftablesWorking checks if nftables kernel support is available.
-func nftablesWorking(cmd util.CommandRunner) bool {
-	_, err := cmd.Run("nft", "list", "tables")
+func nftablesWorking(ctx context.Context, cmd util.CommandRunner) bool {
+	_, err := cmd.Run(ctx, "nft", "list", "tables")
 	return err == nil
 }
 

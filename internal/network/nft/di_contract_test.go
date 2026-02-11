@@ -1,6 +1,7 @@
 package nft
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -84,7 +85,7 @@ func TestApplyRules_UsesInjectedCmd(t *testing.T) {
 
 	// Run post-commit action to trigger the nft command
 	if action != nil && action.Run != nil {
-		_ = action.Run(nil)
+		_ = action.Run(context.Background(), nil)
 	}
 
 	// Verify mockCmd was called with nft (not a new CommandRunner)
@@ -112,7 +113,7 @@ func TestApplyRules_CmdReceivesCorrectArgs(t *testing.T) {
 
 	// Run post-commit action to trigger the nft command
 	if action != nil && action.Run != nil {
-		_ = action.Run(nil)
+		_ = action.Run(context.Background(), nil)
 	}
 
 	// Find the nft call
@@ -220,7 +221,7 @@ func TestCleanup_UsesInjectedCmd(t *testing.T) {
 
 	// Run post-commit action to trigger the nft command
 	if action != nil && action.Run != nil {
-		_ = action.Run(nil)
+		_ = action.Run(context.Background(), nil)
 	}
 
 	// Verify mockCmd was called with nft (not a new CommandRunner)
@@ -244,7 +245,7 @@ func TestCleanup_CmdReceivesDeleteArgs(t *testing.T) {
 
 	// Run post-commit action to trigger the nft command
 	if action != nil && action.Run != nil {
-		_ = action.Run(nil)
+		_ = action.Run(context.Background(), nil)
 	}
 
 	// Find the nft call
@@ -295,7 +296,7 @@ func TestApplyRules_ReturnsErrorFromInjectedCmd(t *testing.T) {
 
 	// Error should come from the post-commit action
 	if action != nil && action.Run != nil {
-		err = action.Run(nil)
+		err = action.Run(context.Background(), nil)
 	}
 	if err == nil {
 		t.Error("ApplyRules PostCommitAction should propagate errors from the injected Cmd")

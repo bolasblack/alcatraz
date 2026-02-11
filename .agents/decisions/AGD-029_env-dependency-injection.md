@@ -1,8 +1,10 @@
 ---
-title: "Env Dependency Injection Pattern"
-description: "All internal business modules receive Fs and CommandRunner from external callers via Env structs, never creating them internally"
+title: Env Dependency Injection Pattern
+description: All internal business modules receive Fs and CommandRunner from external callers via Env structs, never creating them internally
 tags: patterns
+updated_by: AGD-032
 ---
+
 
 ## Context
 

@@ -70,7 +70,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Commit the changes (project dir, normally no sudo needed)
-	if err := commitWithSudo(env, tfs, os.Stdout, ""); err != nil {
+	if err := commitWithSudo(cmd.Context(), env, tfs, os.Stdout, ""); err != nil {
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 

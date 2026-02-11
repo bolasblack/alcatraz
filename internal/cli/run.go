@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -33,6 +32,7 @@ func init() {
 // runRun executes a command inside the container.
 // See AGD-009 for CLI workflow design.
 func runRun(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	cwd, err := getCwd()
 	if err != nil {
 		return err
@@ -44,7 +44,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	runtimeEnv := runtime.NewRuntimeEnv(cmdRunner)
 
 	// Load configuration and runtime
-	cfg, rt, err := loadConfigAndRuntime(env, runtimeEnv, cwd)
+	cfg, rt, err := loadConfigAndRuntime(ctx, env, runtimeEnv, cwd)
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check if container is running
-	status, err := rt.Status(runtimeEnv, cwd, st)
+	status, err := rt.Status(ctx, runtimeEnv, cwd, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -73,7 +73,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	} else if cache != nil && len(cache.Conflicts) > 0 {
 		sync.RenderBanner(cache.Conflicts, os.Stderr)
 	}
-	stopRefresh := sync.StartPeriodicRefresh(context.Background(), syncEnv, st.ProjectID, cwd)
+	stopRefresh := sync.StartPeriodicRefresh(ctx, syncEnv, st.ProjectID, cwd)
 
 	// Build command with optional enter prefix
 	// If commands.enter is set, use it as command wrapper/prefix
@@ -92,7 +92,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		execCmd = args
 	}
 
-	err = rt.Exec(runtimeEnv, cfg, cwd, st, execCmd)
+	err = rt.Exec(ctx, runtimeEnv, cfg, cwd, st, execCmd)
 
 	// Show exit banner if conflicts exist
 	if conflicts := stopRefresh(); len(conflicts) > 0 {

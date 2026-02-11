@@ -1,6 +1,7 @@
 package nft
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -103,7 +104,7 @@ func TestDarwinHelperStatus_InstalledWhenContainerRunning(t *testing.T) {
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
-	status := helper.HelperStatus(env)
+	status := helper.HelperStatus(context.Background(), env)
 
 	assert.True(t, status.Installed, "HelperStatus should report Installed when container is running")
 }
@@ -115,7 +116,7 @@ func TestDarwinHelperStatus_NotInstalledWhenContainerNotRunning(t *testing.T) {
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
-	status := helper.HelperStatus(env)
+	status := helper.HelperStatus(context.Background(), env)
 
 	assert.False(t, status.Installed, "HelperStatus should report not Installed when container is stopped")
 }
@@ -127,7 +128,7 @@ func TestDarwinHelperStatus_NotInstalledWhenDockerFails(t *testing.T) {
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
-	status := helper.HelperStatus(env)
+	status := helper.HelperStatus(context.Background(), env)
 
 	assert.False(t, status.Installed, "HelperStatus should report not Installed when docker inspect fails")
 }
@@ -145,7 +146,7 @@ func TestDarwinHelperStatus_NeedsUpdateWhenScriptDiffers(t *testing.T) {
 	_ = afero.WriteFile(mockFs, scriptPath, []byte("old script content"), 0755)
 
 	helper := newTestDarwinHelper(t)
-	status := helper.HelperStatus(env)
+	status := helper.HelperStatus(context.Background(), env)
 
 	assert.True(t, status.Installed, "HelperStatus should report Installed")
 	assert.True(t, status.NeedsUpdate, "HelperStatus should report NeedsUpdate when entry script differs")
@@ -158,7 +159,7 @@ func TestDarwinHelperStatus_NoUpdateNeededWhenNotInstalled(t *testing.T) {
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
-	status := helper.HelperStatus(env)
+	status := helper.HelperStatus(context.Background(), env)
 
 	assert.False(t, status.NeedsUpdate, "HelperStatus should not report NeedsUpdate when not installed")
 }
@@ -284,7 +285,7 @@ func TestDarwinInstallHelper_PostCommitCallsVMHelperInstall(t *testing.T) {
 	action, err := helper.InstallHelper(env, nil)
 	require.NoError(t, err)
 
-	err = action.Run(nil)
+	err = action.Run(context.Background(), nil)
 	require.NoError(t, err)
 
 	mockCmd.AssertCalled(t, "docker rm -f "+vmhelper.ContainerName)
@@ -341,7 +342,7 @@ func TestDarwinUninstallHelper_PostCommitCallsVMHelperUninstall(t *testing.T) {
 	action, err := helper.UninstallHelper(env, nil)
 	require.NoError(t, err)
 
-	err = action.Run(nil)
+	err = action.Run(context.Background(), nil)
 	require.NoError(t, err)
 
 	mockCmd.AssertCalled(t, "docker rm -f "+vmhelper.ContainerName)

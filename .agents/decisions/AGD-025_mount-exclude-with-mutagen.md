@@ -1,9 +1,11 @@
 ---
-title: "Mount Exclude Implementation with Mutagen"
-description: "Use Mutagen file sync for mount filtering instead of FUSE, with platform-specific optimization"
+title: Mount Exclude Implementation with Mutagen
+description: Use Mutagen file sync for mount filtering instead of FUSE, with platform-specific optimization
 tags: file-isolation, config, macos, linux, runtime
 updates: AGD-009
+updated_by: AGD-031
 ---
+
 
 ## Context
 

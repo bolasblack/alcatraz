@@ -2,6 +2,8 @@
 package shared
 
 import (
+	"context"
+
 	"github.com/spf13/afero"
 
 	"github.com/bolasblack/alcatraz/internal/runtime"
@@ -89,7 +91,7 @@ type NetworkHelper interface {
 	Teardown(env *NetworkEnv, projectDir string) error
 
 	// HelperStatus checks if helper needs install/update.
-	HelperStatus(env *NetworkEnv) HelperStatus
+	HelperStatus(ctx context.Context, env *NetworkEnv) HelperStatus
 
 	// DetailedStatus returns detailed status for display purposes.
 	DetailedStatus(env *NetworkEnv) DetailedStatusInfo
@@ -105,7 +107,7 @@ type NetworkHelper interface {
 
 // PostCommitAction encapsulates actions that must run after TransactFs.Commit().
 type PostCommitAction struct {
-	Run func(progress ProgressFunc) error
+	Run func(ctx context.Context, progress ProgressFunc) error
 }
 
 // HelperStatus reports current state of the network helper.

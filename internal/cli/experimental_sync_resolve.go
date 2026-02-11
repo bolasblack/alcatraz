@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,6 +21,7 @@ var syncResolveCmd = &cobra.Command{
 }
 
 func runSyncResolve(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	_, _ = fmt.Fprint(cmd.OutOrStderr(), experimentalWarning)
 	_, _ = fmt.Fprintln(cmd.OutOrStderr())
 
@@ -33,7 +33,7 @@ func runSyncResolve(cmd *cobra.Command, args []string) error {
 	deps := newCLIReadDeps()
 	env, runtimeEnv := deps.Env, deps.RuntimeEnv
 
-	_, rt, err := loadConfigAndRuntime(env, runtimeEnv, cwd)
+	_, rt, err := loadConfigAndRuntime(ctx, env, runtimeEnv, cwd)
 	if err != nil {
 		return err
 	}
@@ -44,7 +44,7 @@ func runSyncResolve(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check container is running
-	status, err := rt.Status(runtimeEnv, cwd, st)
+	status, err := rt.Status(ctx, runtimeEnv, cwd, st)
 	if err != nil {
 		return fmt.Errorf("failed to get container status: %w", err)
 	}
@@ -60,7 +60,7 @@ func runSyncResolve(cmd *cobra.Command, args []string) error {
 	}
 
 	// Fresh conflict check
-	cacheData, err := sync.SyncUpdateCache(context.Background(), syncEnv, st.ProjectID, cwd)
+	cacheData, err := sync.SyncUpdateCache(ctx, syncEnv, st.ProjectID, cwd)
 	if err != nil {
 		return fmt.Errorf("failed to check sync conflicts: %w", err)
 	}
@@ -74,7 +74,7 @@ func runSyncResolve(cmd *cobra.Command, args []string) error {
 
 	// Delegate to sync module
 	_, err = sync.ResolveAllInteractive(sync.ResolveParams{
-		Ctx:         context.Background(),
+		Ctx:         ctx,
 		Env:         syncEnv,
 		Executor:    executor,
 		State:       st,

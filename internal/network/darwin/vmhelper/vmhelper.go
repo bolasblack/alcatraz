@@ -5,6 +5,7 @@
 package vmhelper
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
@@ -82,14 +83,14 @@ func WriteEntryScript(env *VMHelperEnv) error {
 
 // InstallHelper creates and starts the alcatraz-network-helper container.
 // entry.sh must already be on disk (via WriteEntryScript + commit) before calling this.
-func InstallHelper(env *VMHelperEnv, platform runtime.RuntimePlatform, progress shared.ProgressFunc) error {
+func InstallHelper(ctx context.Context, env *VMHelperEnv, platform runtime.RuntimePlatform, progress shared.ProgressFunc) error {
 	progress = shared.SafeProgress(progress)
 
 	// Detect Enhanced Container Isolation (ECI) on Docker Desktop.
 	// ECI blocks --pid=host and --net=host, causing silent failures.
 	if platform == runtime.PlatformMacDockerDesktop {
 		progress("Checking for Enhanced Container Isolation (ECI)...\n")
-		_, eciErr := env.Cmd.RunQuiet("docker", "run", "--rm", "--privileged", "--pid=host", "alpine:latest", "true")
+		_, eciErr := env.Cmd.RunQuiet(ctx, "docker", "run", "--rm", "--privileged", "--pid=host", "alpine:latest", "true")
 		if eciErr != nil {
 			return fmt.Errorf("vmhelper: Enhanced Container Isolation (ECI) is enabled in Docker Desktop. ECI blocks --pid=host and --net=host which are required for the network helper. Disable ECI in Docker Desktop settings, or use OrbStack instead")
 		}
@@ -102,14 +103,14 @@ func InstallHelper(env *VMHelperEnv, platform runtime.RuntimePlatform, progress 
 
 	// Remove existing container (ignore errors if it doesn't exist)
 	progress("Removing existing helper container...\n")
-	_, _ = env.Cmd.RunQuiet("docker", "rm", "-f", ContainerName)
+	_, _ = env.Cmd.RunQuiet(ctx, "docker", "rm", "-f", ContainerName)
 
 	// Start container
 	progress("Starting helper container...\n")
 	filesMount := filepath.Join(home, util.FilesDir) + ":/files"
 	platformEnv := "ALCA_PLATFORM=" + string(platform)
 
-	_, err = env.Cmd.Run("docker", "run", "-d",
+	_, err = env.Cmd.Run(ctx, "docker", "run", "-d",
 		"--restart=always",
 		"--privileged",
 		"--pid=host",
@@ -126,7 +127,7 @@ func InstallHelper(env *VMHelperEnv, platform runtime.RuntimePlatform, progress 
 
 	// Verify container is running
 	progress("Verifying helper container...\n")
-	running, err := IsInstalled(env)
+	running, err := IsInstalled(ctx, env)
 	if err != nil {
 		return fmt.Errorf("vmhelper: failed to verify container status: %w", err)
 	}
@@ -139,11 +140,11 @@ func InstallHelper(env *VMHelperEnv, platform runtime.RuntimePlatform, progress 
 }
 
 // UninstallHelper stops and removes the helper container.
-func UninstallHelper(env *VMHelperEnv, progress shared.ProgressFunc) error {
+func UninstallHelper(ctx context.Context, env *VMHelperEnv, progress shared.ProgressFunc) error {
 	progress = shared.SafeProgress(progress)
 
 	progress("Stopping helper container...\n")
-	_, err := env.Cmd.RunQuiet("docker", "rm", "-f", ContainerName)
+	_, err := env.Cmd.RunQuiet(ctx, "docker", "rm", "-f", ContainerName)
 	if err != nil {
 		return fmt.Errorf("vmhelper: failed to remove helper container: %w", err)
 	}
@@ -153,8 +154,8 @@ func UninstallHelper(env *VMHelperEnv, progress shared.ProgressFunc) error {
 }
 
 // Reload triggers a rule reload in the helper container via SIGHUP.
-func Reload(env *VMHelperEnv) error {
-	_, err := env.Cmd.RunQuiet("docker", "exec", ContainerName, "sh", "-c", "kill -HUP 1")
+func Reload(ctx context.Context, env *VMHelperEnv) error {
+	_, err := env.Cmd.RunQuiet(ctx, "docker", "exec", ContainerName, "sh", "-c", "kill -HUP 1")
 	if err != nil {
 		return fmt.Errorf("vmhelper: failed to reload helper: %w", err)
 	}
@@ -162,8 +163,8 @@ func Reload(env *VMHelperEnv) error {
 }
 
 // IsInstalled checks if the helper container exists and is running.
-func IsInstalled(env *VMHelperEnv) (bool, error) {
-	output, err := env.Cmd.RunQuiet("docker", "inspect",
+func IsInstalled(ctx context.Context, env *VMHelperEnv) (bool, error) {
+	output, err := env.Cmd.RunQuiet(ctx, "docker", "inspect",
 		"--format", "{{.State.Running}}", ContainerName)
 	if err != nil {
 		// Container doesn't exist

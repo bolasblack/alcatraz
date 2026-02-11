@@ -31,6 +31,7 @@ var downCmd = &cobra.Command{
 // runDown stops and removes the container.
 // See AGD-009 for CLI workflow design.
 func runDown(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	var out io.Writer = os.Stdout
 
 	force, err := cmd.Flags().GetBool("force")
@@ -48,7 +49,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 	tfs, env, runtimeEnv := deps.Tfs, deps.Env, deps.RuntimeEnv
 
 	// Load config (optional) and select runtime
-	cfg, rt, err := loadConfigAndRuntimeOptional(env, runtimeEnv, cwd)
+	cfg, rt, err := loadConfigAndRuntimeOptional(ctx, env, runtimeEnv, cwd)
 	if err != nil {
 		return err
 	}
@@ -70,23 +71,23 @@ func runDown(cmd *cobra.Command, args []string) error {
 	// Once the container is gone, conflicts become unresolvable.
 	syncFs := afero.NewOsFs()
 	syncEnv := sync.NewSyncEnv(syncFs, deps.CmdRunner, runtime.NewMutagenSyncClient(runtimeEnv))
-	if err := guardSyncConflicts(syncFs, syncEnv, cwd, st.ProjectID, force, os.Stderr); err != nil {
+	if err := guardSyncConflicts(ctx, syncFs, syncEnv, cwd, st.ProjectID, force, os.Stderr); err != nil {
 		return err
 	}
 
-	platform := runtime.DetectPlatform(runtimeEnv)
+	platform := runtime.DetectPlatform(ctx, runtimeEnv)
 
 	// Cleanup firewall rules before stopping container (need container ID)
 	// See AGD-027 for design decisions
 	// Files removed via tfs, committed to real disk before nft cleanup commands run.
 	firewallEnv := network.NewNetworkEnv(tfs, deps.CmdRunner, cwd, platform)
-	if err := cleanupFirewall(firewallEnv, env, tfs, runtimeEnv, rt, st, out); err != nil {
+	if err := cleanupFirewall(ctx, firewallEnv, env, tfs, runtimeEnv, rt, st, out); err != nil {
 		util.ProgressStep(out, "Warning: firewall cleanup: %v\n", err)
 	}
 
 	// Stop container
 	util.ProgressStep(out, "Stopping container...\n")
-	if err := rt.Down(runtimeEnv, cwd, st); err != nil {
+	if err := rt.Down(ctx, runtimeEnv, cwd, st); err != nil {
 		return fmt.Errorf("failed to stop container: %w", err)
 	}
 
@@ -98,7 +99,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 			util.ProgressStep(out, "Warning: failed to cleanup network: %v\n", err)
 		}
 
-		if err := commitIfNeeded(env, tfs, out, "Removing firewall rules"); err != nil {
+		if err := commitIfNeeded(ctx, env, tfs, out, "Removing firewall rules"); err != nil {
 			util.ProgressStep(out, "Warning: failed to commit: %v\n", err)
 		}
 	}
@@ -110,13 +111,13 @@ func runDown(cmd *cobra.Command, args []string) error {
 // guardSyncConflicts checks for unresolved sync conflicts and blocks if found.
 // When force is true, prints a warning and allows the operation to proceed.
 // Best-effort: detection errors are logged to stderr to avoid blocking 'down'.
-func guardSyncConflicts(fs afero.Fs, syncEnv *sync.SyncEnv, projectRoot string, projectID string, force bool, w io.Writer) error {
+func guardSyncConflicts(ctx context.Context, fs afero.Fs, syncEnv *sync.SyncEnv, projectRoot string, projectID string, force bool, w io.Writer) error {
 	if force {
 		_, _ = fmt.Fprintln(w, "Warning: --force used, skipping sync conflict check. Conflicts may become unresolvable after container is destroyed.")
 		return nil
 	}
 
-	conflicts := checkSyncConflictsBeforeDown(fs, syncEnv, projectRoot, projectID)
+	conflicts := checkSyncConflictsBeforeDown(ctx, fs, syncEnv, projectRoot, projectID)
 	if len(conflicts) > 0 {
 		sync.RenderBanner(conflicts, w)
 		return fmt.Errorf("resolve sync conflicts before stopping the container, or use --force to skip this check")
@@ -127,7 +128,7 @@ func guardSyncConflicts(fs afero.Fs, syncEnv *sync.SyncEnv, projectRoot string, 
 // checkSyncConflictsBeforeDown reads cached conflicts (fast path) or polls
 // mutagen synchronously (slow path) when no cache exists.
 // Best-effort: detection errors are logged to stderr to avoid blocking 'down'.
-func checkSyncConflictsBeforeDown(fs afero.Fs, syncEnv *sync.SyncEnv, projectRoot string, projectID string) []sync.ConflictInfo {
+func checkSyncConflictsBeforeDown(ctx context.Context, fs afero.Fs, syncEnv *sync.SyncEnv, projectRoot string, projectID string) []sync.ConflictInfo {
 	// Fast path: read from cache
 	cache, err := sync.ReadCache(fs, projectRoot)
 	if err != nil {
@@ -138,7 +139,7 @@ func checkSyncConflictsBeforeDown(fs afero.Fs, syncEnv *sync.SyncEnv, projectRoo
 	}
 
 	// Slow path: cache missing, do synchronous poll
-	cache, err = sync.SyncUpdateCache(context.Background(), syncEnv, projectID, projectRoot)
+	cache, err = sync.SyncUpdateCache(ctx, syncEnv, projectID, projectRoot)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to check sync conflicts: %v\n", err)
 	}
@@ -150,14 +151,14 @@ func checkSyncConflictsBeforeDown(fs afero.Fs, syncEnv *sync.SyncEnv, projectRoo
 
 // cleanupFirewall removes firewall rules for the container.
 // See AGD-027 for design decisions.
-func cleanupFirewall(networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime, st *state.State, out io.Writer) error {
-	fw, fwType := network.New(networkEnv)
+func cleanupFirewall(ctx context.Context, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime, st *state.State, out io.Writer) error {
+	fw, fwType := network.New(ctx, networkEnv)
 	if fwType == network.TypeNone || fw == nil {
 		return nil
 	}
 
 	// Get container status to find the container ID
-	status, err := rt.Status(runtimeEnv, "", st)
+	status, err := rt.Status(ctx, runtimeEnv, "", st)
 	if err != nil || status.State == runtime.StateNotFound {
 		return nil
 	}
@@ -169,13 +170,13 @@ func cleanupFirewall(networkEnv *network.NetworkEnv, env *util.Env, tfs *transac
 	}
 
 	// Commit tfs to remove files from real disk
-	if err := commitIfNeeded(env, tfs, out, "Removing firewall rules"); err != nil {
+	if err := commitIfNeeded(ctx, env, tfs, out, "Removing firewall rules"); err != nil {
 		return fmt.Errorf("commit firewall cleanup: %w", err)
 	}
 
 	// Run post-commit action (nft delete table or reload)
 	if action != nil && action.Run != nil {
-		if err := action.Run(nil); err != nil {
+		if err := action.Run(ctx, nil); err != nil {
 			return fmt.Errorf("execute firewall cleanup: %w", err)
 		}
 	}

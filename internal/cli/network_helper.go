@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -83,9 +84,9 @@ type networkHelperSetup struct {
 
 // newNetworkHelperSetup creates shared deps for network-helper install/uninstall.
 // Returns nil if the network helper is not applicable on this platform.
-func newNetworkHelperSetup() *networkHelperSetup {
+func newNetworkHelperSetup(ctx context.Context) *networkHelperSetup {
 	deps := newCLIDeps()
-	platform := runtime.DetectPlatform(deps.RuntimeEnv)
+	platform := runtime.DetectPlatform(ctx, deps.RuntimeEnv)
 	nh := network.NewNetworkHelper(config.Network{LANAccess: []string{"*"}}, platform)
 	if nh == nil {
 		return nil
@@ -102,7 +103,8 @@ func newNetworkHelperSetup() *networkHelperSetup {
 // runNetworkHelperInstall installs the LaunchDaemon.
 // See AGD-030 for lifecycle details.
 func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
-	setup := newNetworkHelperSetup()
+	ctx := cmd.Context()
+	setup := newNetworkHelperSetup(ctx)
 	if setup == nil {
 		fmt.Println("Network helper not needed on this platform/runtime.")
 		return nil
@@ -110,7 +112,7 @@ func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
 
 	nh, networkEnv := setup.nh, setup.networkEnv
 
-	status := nh.HelperStatus(networkEnv)
+	status := nh.HelperStatus(ctx, networkEnv)
 	if status.Installed && !status.NeedsUpdate {
 		fmt.Println("Network helper already installed and up to date.")
 		return nil
@@ -128,12 +130,12 @@ func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := commitIfNeeded(setup.deps.Env, setup.deps.Tfs, os.Stdout, "Writing system files"); err != nil {
+	if err := commitIfNeeded(ctx, setup.deps.Env, setup.deps.Tfs, os.Stdout, "Writing system files"); err != nil {
 		return err
 	}
 
 	if action.Run != nil {
-		if err := action.Run(progress); err != nil {
+		if err := action.Run(ctx, progress); err != nil {
 			return err
 		}
 	}
@@ -145,7 +147,8 @@ func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
 // runNetworkHelperUninstall removes the LaunchDaemon and cleans up.
 // See AGD-030 for lifecycle details.
 func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
-	setup := newNetworkHelperSetup()
+	ctx := cmd.Context()
+	setup := newNetworkHelperSetup(ctx)
 	if setup == nil {
 		fmt.Println("Network helper not installed.")
 		return nil
@@ -153,7 +156,7 @@ func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
 
 	nh, networkEnv := setup.nh, setup.networkEnv
 
-	status := nh.HelperStatus(networkEnv)
+	status := nh.HelperStatus(ctx, networkEnv)
 	if !status.Installed {
 		fmt.Println("Network helper not installed.")
 		return nil
@@ -171,12 +174,12 @@ func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := commitIfNeeded(setup.deps.Env, setup.deps.Tfs, os.Stdout, "Removing system files"); err != nil {
+	if err := commitIfNeeded(ctx, setup.deps.Env, setup.deps.Tfs, os.Stdout, "Removing system files"); err != nil {
 		return err
 	}
 
 	if action.Run != nil {
-		if err := action.Run(progress); err != nil {
+		if err := action.Run(ctx, progress); err != nil {
 			return err
 		}
 	}
@@ -187,8 +190,9 @@ func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
 
 // runNetworkHelperStatus shows the current status.
 func runNetworkHelperStatus(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	deps := newCLIReadDeps()
-	platform := runtime.DetectPlatform(deps.RuntimeEnv)
+	platform := runtime.DetectPlatform(ctx, deps.RuntimeEnv)
 	nh := network.NewNetworkHelper(config.Network{LANAccess: []string{"*"}}, platform)
 	if nh == nil {
 		fmt.Println("Network helper not applicable on this platform/runtime.")
@@ -197,7 +201,7 @@ func runNetworkHelperStatus(cmd *cobra.Command, args []string) error {
 
 	networkEnv := network.NewNetworkEnv(deps.Env.Fs, deps.Env.Cmd, "", platform)
 
-	status := nh.HelperStatus(networkEnv)
+	status := nh.HelperStatus(ctx, networkEnv)
 
 	fmt.Println("Network Helper Status")
 	fmt.Println("=====================")

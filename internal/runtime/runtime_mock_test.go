@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"errors"
 	"runtime"
 	"testing"
@@ -31,7 +32,7 @@ func TestDockerAvailable_Success(t *testing.T) {
 	env := newMockEnv(mock)
 
 	docker := NewDocker()
-	if !docker.Available(env) {
+	if !docker.Available(context.Background(), env) {
 		t.Error("Docker.Available() should return true when docker version succeeds")
 	}
 
@@ -44,7 +45,7 @@ func TestDockerAvailable_NotInstalled(t *testing.T) {
 	env := newMockEnv(mock)
 
 	docker := NewDocker()
-	if docker.Available(env) {
+	if docker.Available(context.Background(), env) {
 		t.Error("Docker.Available() should return false when docker not found")
 	}
 }
@@ -55,7 +56,7 @@ func TestDockerAvailable_DaemonNotRunning(t *testing.T) {
 	env := newMockEnv(mock)
 
 	docker := NewDocker()
-	if docker.Available(env) {
+	if docker.Available(context.Background(), env) {
 		t.Error("Docker.Available() should return false when daemon not running")
 	}
 }
@@ -66,7 +67,7 @@ func TestPodmanAvailable_Success(t *testing.T) {
 	env := newMockEnv(mock)
 
 	podman := NewPodman()
-	if !podman.Available(env) {
+	if !podman.Available(context.Background(), env) {
 		t.Error("Podman.Available() should return true when podman version succeeds")
 	}
 
@@ -79,7 +80,7 @@ func TestPodmanAvailable_NotInstalled(t *testing.T) {
 	env := newMockEnv(mock)
 
 	podman := NewPodman()
-	if podman.Available(env) {
+	if podman.Available(context.Background(), env) {
 		t.Error("Podman.Available() should return false when podman not found")
 	}
 }
@@ -93,7 +94,7 @@ func TestIsOrbStack_True(t *testing.T) {
 	mock.ExpectSuccess("docker info --format {{.OperatingSystem}}", []byte("OrbStack"))
 	env := newMockEnv(mock)
 
-	result, err := IsOrbStack(env)
+	result, err := IsOrbStack(context.Background(), env)
 	if err != nil {
 		t.Fatalf("IsOrbStack() unexpected error: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestIsOrbStack_DockerDesktop(t *testing.T) {
 	mock.ExpectSuccess("docker info --format {{.OperatingSystem}}", []byte("Docker Desktop"))
 	env := newMockEnv(mock)
 
-	result, err := IsOrbStack(env)
+	result, err := IsOrbStack(context.Background(), env)
 	if err != nil {
 		t.Fatalf("IsOrbStack() unexpected error: %v", err)
 	}
@@ -121,7 +122,7 @@ func TestIsOrbStack_LinuxNative(t *testing.T) {
 	mock.ExpectSuccess("docker info --format {{.OperatingSystem}}", []byte("Ubuntu 22.04.3 LTS"))
 	env := newMockEnv(mock)
 
-	result, err := IsOrbStack(env)
+	result, err := IsOrbStack(context.Background(), env)
 	if err != nil {
 		t.Fatalf("IsOrbStack() unexpected error: %v", err)
 	}
@@ -135,7 +136,7 @@ func TestIsOrbStack_DockerNotAvailable(t *testing.T) {
 	mock.ExpectFailure("docker info --format {{.OperatingSystem}}", errCommandNotFound)
 	env := newMockEnv(mock)
 
-	_, err := IsOrbStack(env)
+	_, err := IsOrbStack(context.Background(), env)
 	if err == nil {
 		t.Error("IsOrbStack() should return error when docker not available")
 	}
@@ -150,7 +151,7 @@ func TestIsRootlessPodman_True(t *testing.T) {
 	mock.ExpectSuccess("podman info --format {{.Host.Security.Rootless}}", []byte("true"))
 	env := newMockEnv(mock)
 
-	result, err := IsRootlessPodman(env)
+	result, err := IsRootlessPodman(context.Background(), env)
 	if err != nil {
 		t.Fatalf("IsRootlessPodman() unexpected error: %v", err)
 	}
@@ -164,7 +165,7 @@ func TestIsRootlessPodman_False(t *testing.T) {
 	mock.ExpectSuccess("podman info --format {{.Host.Security.Rootless}}", []byte("false"))
 	env := newMockEnv(mock)
 
-	result, err := IsRootlessPodman(env)
+	result, err := IsRootlessPodman(context.Background(), env)
 	if err != nil {
 		t.Fatalf("IsRootlessPodman() unexpected error: %v", err)
 	}
@@ -178,7 +179,7 @@ func TestIsRootlessPodman_WithWhitespace(t *testing.T) {
 	mock.ExpectSuccess("podman info --format {{.Host.Security.Rootless}}", []byte("  true\n"))
 	env := newMockEnv(mock)
 
-	result, err := IsRootlessPodman(env)
+	result, err := IsRootlessPodman(context.Background(), env)
 	if err != nil {
 		t.Fatalf("IsRootlessPodman() unexpected error: %v", err)
 	}
@@ -192,7 +193,7 @@ func TestIsRootlessPodman_NotAvailable(t *testing.T) {
 	mock.ExpectFailure("podman info --format {{.Host.Security.Rootless}}", errCommandNotFound)
 	env := newMockEnv(mock)
 
-	_, err := IsRootlessPodman(env)
+	_, err := IsRootlessPodman(context.Background(), env)
 	if err == nil {
 		t.Error("IsRootlessPodman() should return error when podman not available")
 	}
@@ -210,7 +211,7 @@ func TestDetectPlatform_Linux(t *testing.T) {
 	mock := util.NewMockCommandRunner().AllowUnexpected()
 	env := newMockEnv(mock)
 
-	result := DetectPlatform(env)
+	result := DetectPlatform(context.Background(), env)
 	if result != PlatformLinux {
 		t.Errorf("DetectPlatform() on Linux should return PlatformLinux, got %v", result)
 	}
@@ -225,7 +226,7 @@ func TestDetectPlatform_MacOrbStack(t *testing.T) {
 	mock.ExpectSuccess("docker info --format {{.OperatingSystem}}", []byte("OrbStack"))
 	env := newMockEnv(mock)
 
-	result := DetectPlatform(env)
+	result := DetectPlatform(context.Background(), env)
 	if result != PlatformMacOrbStack {
 		t.Errorf("DetectPlatform() with OrbStack should return PlatformMacOrbStack, got %v", result)
 	}
@@ -240,7 +241,7 @@ func TestDetectPlatform_MacDockerDesktop(t *testing.T) {
 	mock.ExpectSuccess("docker info --format {{.OperatingSystem}}", []byte("Docker Desktop"))
 	env := newMockEnv(mock)
 
-	result := DetectPlatform(env)
+	result := DetectPlatform(context.Background(), env)
 	if result != PlatformMacDockerDesktop {
 		t.Errorf("DetectPlatform() with Docker Desktop should return PlatformMacDockerDesktop, got %v", result)
 	}
@@ -261,7 +262,7 @@ func TestValidateMountExcludes_DockerAlwaysAllowed(t *testing.T) {
 		},
 	}
 
-	err := ValidateMountExcludes(env, docker, cfg)
+	err := ValidateMountExcludes(context.Background(), env, docker, cfg)
 	if err != nil {
 		t.Errorf("ValidateMountExcludes() should allow excludes with Docker, got: %v", err)
 	}
@@ -279,7 +280,7 @@ func TestValidateMountExcludes_PodmanRootful(t *testing.T) {
 		},
 	}
 
-	err := ValidateMountExcludes(env, podman, cfg)
+	err := ValidateMountExcludes(context.Background(), env, podman, cfg)
 	if err != nil {
 		t.Errorf("ValidateMountExcludes() should allow excludes with rootful Podman, got: %v", err)
 	}
@@ -297,7 +298,7 @@ func TestValidateMountExcludes_PodmanRootlessWithExcludes(t *testing.T) {
 		},
 	}
 
-	err := ValidateMountExcludes(env, podman, cfg)
+	err := ValidateMountExcludes(context.Background(), env, podman, cfg)
 	if err != ErrRootlessPodmanExcludes {
 		t.Errorf("ValidateMountExcludes() should return ErrRootlessPodmanExcludes, got: %v", err)
 	}
@@ -314,7 +315,7 @@ func TestValidateMountExcludes_PodmanRootlessNoExcludes(t *testing.T) {
 		},
 	}
 
-	err := ValidateMountExcludes(env, podman, cfg)
+	err := ValidateMountExcludes(context.Background(), env, podman, cfg)
 	if err != nil {
 		t.Errorf("ValidateMountExcludes() should allow rootless Podman without excludes, got: %v", err)
 	}
@@ -333,7 +334,7 @@ func TestValidateMountExcludes_PodmanInfoError(t *testing.T) {
 	}
 
 	// Should fail open when we can't determine rootless status
-	err := ValidateMountExcludes(env, podman, cfg)
+	err := ValidateMountExcludes(context.Background(), env, podman, cfg)
 	if err != nil {
 		t.Errorf("ValidateMountExcludes() should fail open on podman info error, got: %v", err)
 	}
@@ -397,7 +398,7 @@ func TestDockerStatus_Running(t *testing.T) {
 		ContainerName: "alca-test",
 	}
 
-	status, err := docker.Status(env, "/project", st)
+	status, err := docker.Status(context.Background(), env, "/project", st)
 	if err != nil {
 		t.Fatalf("Status() unexpected error: %v", err)
 	}
@@ -428,7 +429,7 @@ func TestDockerStatus_Stopped(t *testing.T) {
 		ContainerName: "alca-test",
 	}
 
-	status, err := docker.Status(env, "/project", st)
+	status, err := docker.Status(context.Background(), env, "/project", st)
 	if err != nil {
 		t.Fatalf("Status() unexpected error: %v", err)
 	}
@@ -459,7 +460,7 @@ func TestDockerStatus_NotFound(t *testing.T) {
 		ContainerName: "alca-test",
 	}
 
-	status, err := docker.Status(env, "/project", st)
+	status, err := docker.Status(context.Background(), env, "/project", st)
 	if err != nil {
 		t.Fatalf("Status() unexpected error: %v", err)
 	}
@@ -474,7 +475,7 @@ func TestDockerStatus_NilState(t *testing.T) {
 	env := newMockEnv(mock)
 
 	docker := NewDocker()
-	status, err := docker.Status(env, "/project", nil)
+	status, err := docker.Status(context.Background(), env, "/project", nil)
 	if err != nil {
 		t.Fatalf("Status() with nil state unexpected error: %v", err)
 	}
@@ -493,7 +494,7 @@ func TestFlushMutagenSyncs_NoSyncs(t *testing.T) {
 	env := newMockEnv(mock)
 
 	docker := NewDocker()
-	err := docker.flushMutagenSyncs(env, nil, nil)
+	err := docker.flushMutagenSyncs(context.Background(), env, nil, nil)
 	if err != nil {
 		t.Fatalf("flushMutagenSyncs() with no syncs should not error, got: %v", err)
 	}
@@ -511,7 +512,7 @@ func TestFlushMutagenSyncs_FlushesAllSessions(t *testing.T) {
 	}
 
 	docker := NewDocker()
-	err := docker.flushMutagenSyncs(env, syncs, nil)
+	err := docker.flushMutagenSyncs(context.Background(), env, syncs, nil)
 	if err != nil {
 		t.Fatalf("flushMutagenSyncs() unexpected error: %v", err)
 	}
@@ -531,7 +532,7 @@ func TestFlushMutagenSyncs_StopsOnError(t *testing.T) {
 	}
 
 	docker := NewDocker()
-	err := docker.flushMutagenSyncs(env, syncs, nil)
+	err := docker.flushMutagenSyncs(context.Background(), env, syncs, nil)
 	if err == nil {
 		t.Fatal("flushMutagenSyncs() should return error when flush fails")
 	}

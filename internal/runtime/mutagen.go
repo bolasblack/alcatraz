@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -23,9 +24,9 @@ type MutagenSync struct {
 
 // Create creates a new Mutagen sync session.
 // CLI command: mutagen sync create --name=<name> [--ignore=<pattern>]... <source> <target>
-func (m *MutagenSync) Create(env *RuntimeEnv) error {
+func (m *MutagenSync) Create(ctx context.Context, env *RuntimeEnv) error {
 	args := m.buildCreateArgs()
-	output, err := env.Cmd.RunQuiet("mutagen", args...)
+	output, err := env.Cmd.RunQuiet(ctx, "mutagen", args...)
 	if err != nil {
 		return fmt.Errorf("mutagen sync create failed: %w: %s", err, string(output))
 	}
@@ -35,8 +36,8 @@ func (m *MutagenSync) Create(env *RuntimeEnv) error {
 // Flush waits for a Mutagen sync session to complete its current sync cycle.
 // Retries if the session is not yet connected (e.g. just created).
 // CLI command: mutagen sync flush <name>
-func (m *MutagenSync) Flush(env *RuntimeEnv) error {
-	return m.flushWithRetry(env, flushMaxRetries, flushRetryInterval)
+func (m *MutagenSync) Flush(ctx context.Context, env *RuntimeEnv) error {
+	return m.flushWithRetry(ctx, env, flushMaxRetries, flushRetryInterval)
 }
 
 const (
@@ -44,10 +45,10 @@ const (
 	flushRetryInterval = time.Second
 )
 
-func (m *MutagenSync) flushWithRetry(env *RuntimeEnv, maxRetries int, interval time.Duration) error {
+func (m *MutagenSync) flushWithRetry(ctx context.Context, env *RuntimeEnv, maxRetries int, interval time.Duration) error {
 	args := []string{"sync", "flush", m.Name}
 	for attempt := range maxRetries {
-		output, err := env.Cmd.RunQuiet("mutagen", args...)
+		output, err := env.Cmd.RunQuiet(ctx, "mutagen", args...)
 		if err == nil {
 			return nil
 		}
@@ -67,9 +68,9 @@ func isFlushRetryable(output string) bool {
 
 // Terminate terminates a Mutagen sync session.
 // CLI command: mutagen sync terminate <name>
-func (m *MutagenSync) Terminate(env *RuntimeEnv) error {
+func (m *MutagenSync) Terminate(ctx context.Context, env *RuntimeEnv) error {
 	args := m.buildTerminateArgs()
-	output, err := env.Cmd.RunQuiet("mutagen", args...)
+	output, err := env.Cmd.RunQuiet(ctx, "mutagen", args...)
 	if err != nil {
 		if strings.Contains(string(output), "no matching sessions") {
 			return nil
@@ -101,9 +102,9 @@ func (m *MutagenSync) buildTerminateArgs() []string {
 
 // ListMutagenSyncs lists all Mutagen sync sessions matching a name prefix.
 // CLI command: mutagen sync list --template='{{.Name}}'
-func ListMutagenSyncs(env *RuntimeEnv, namePrefix string) ([]string, error) {
+func ListMutagenSyncs(ctx context.Context, env *RuntimeEnv, namePrefix string) ([]string, error) {
 	args := buildListSyncsArgs()
-	output, err := env.Cmd.RunQuiet("mutagen", args...)
+	output, err := env.Cmd.RunQuiet(ctx, "mutagen", args...)
 	if err != nil {
 		return []string{}, nil
 	}
@@ -131,9 +132,9 @@ func parseMutagenListOutput(output string, namePrefix string) []string {
 
 // ListSessionJSON returns raw JSON output for a Mutagen sync session.
 // CLI command: mutagen sync list <sessionName> --template='{{json .}}'
-func ListSessionJSON(env *RuntimeEnv, sessionName string) ([]byte, error) {
+func ListSessionJSON(ctx context.Context, env *RuntimeEnv, sessionName string) ([]byte, error) {
 	args := buildListSessionJSONArgs(sessionName)
-	output, err := env.Cmd.RunQuiet("mutagen", args...)
+	output, err := env.Cmd.RunQuiet(ctx, "mutagen", args...)
 	if err != nil {
 		return nil, fmt.Errorf("mutagen sync list failed: %w: %s", err, string(output))
 	}
@@ -153,8 +154,8 @@ func MutagenTarget(containerID string, path string) string {
 
 // TerminateProjectSyncs terminates all Mutagen sync sessions for a project.
 // Used during container cleanup (down command).
-func TerminateProjectSyncs(env *RuntimeEnv, projectID string) error {
-	sessions, err := ListMutagenSyncs(env, util.MutagenSessionPrefix(projectID))
+func TerminateProjectSyncs(ctx context.Context, env *RuntimeEnv, projectID string) error {
+	sessions, err := ListMutagenSyncs(ctx, env, util.MutagenSessionPrefix(projectID))
 	if err != nil {
 		return err
 	}
@@ -162,7 +163,7 @@ func TerminateProjectSyncs(env *RuntimeEnv, projectID string) error {
 	var lastErr error
 	for _, name := range sessions {
 		sync := MutagenSync{Name: name}
-		if err := sync.Terminate(env); err != nil {
+		if err := sync.Terminate(ctx, env); err != nil {
 			lastErr = err
 		}
 	}

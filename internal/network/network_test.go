@@ -1,6 +1,7 @@
 package network
 
 import (
+	"context"
 	"runtime"
 	"testing"
 
@@ -15,7 +16,7 @@ func TestDetect(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test: depends on host platform and installed tools")
 	}
-	fwType := Detect(util.NewCommandRunner())
+	fwType := Detect(context.Background(), util.NewCommandRunner())
 
 	switch runtime.GOOS {
 	case "darwin":
@@ -40,7 +41,7 @@ func TestNew(t *testing.T) {
 		t.Skip("integration test: depends on host platform and installed tools")
 	}
 	env := NewNetworkEnv(afero.NewOsFs(), util.NewCommandRunner(), "", "")
-	fw, fwType := New(env)
+	fw, fwType := New(context.Background(), env)
 
 	switch runtime.GOOS {
 	case "darwin":

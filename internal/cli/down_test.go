@@ -48,30 +48,30 @@ type mockRuntime struct {
 
 var _ runtime.Runtime = (*mockRuntime)(nil)
 
-func (m *mockRuntime) Name() string                         { return "MockRuntime" }
-func (m *mockRuntime) Available(_ *runtime.RuntimeEnv) bool { return true }
-func (m *mockRuntime) Down(_ *runtime.RuntimeEnv, _ string, _ *state.State) error {
+func (m *mockRuntime) Name() string                                            { return "MockRuntime" }
+func (m *mockRuntime) Available(_ context.Context, _ *runtime.RuntimeEnv) bool { return true }
+func (m *mockRuntime) Down(_ context.Context, _ *runtime.RuntimeEnv, _ string, _ *state.State) error {
 	return nil
 }
-func (m *mockRuntime) Up(_ *runtime.RuntimeEnv, _ *config.Config, _ string, _ *state.State, _ io.Writer) error {
+func (m *mockRuntime) Up(_ context.Context, _ *runtime.RuntimeEnv, _ *config.Config, _ string, _ *state.State, _ io.Writer) error {
 	return nil
 }
-func (m *mockRuntime) Exec(_ *runtime.RuntimeEnv, _ *config.Config, _ string, _ *state.State, _ []string) error {
+func (m *mockRuntime) Exec(_ context.Context, _ *runtime.RuntimeEnv, _ *config.Config, _ string, _ *state.State, _ []string) error {
 	return nil
 }
-func (m *mockRuntime) Reload(_ *runtime.RuntimeEnv, _ *config.Config, _ string, _ *state.State) error {
+func (m *mockRuntime) Reload(_ context.Context, _ *runtime.RuntimeEnv, _ *config.Config, _ string, _ *state.State) error {
 	return nil
 }
-func (m *mockRuntime) ListContainers(_ *runtime.RuntimeEnv) ([]runtime.ContainerInfo, error) {
+func (m *mockRuntime) ListContainers(_ context.Context, _ *runtime.RuntimeEnv) ([]runtime.ContainerInfo, error) {
 	return nil, nil
 }
-func (m *mockRuntime) RemoveContainer(_ *runtime.RuntimeEnv, _ string) error {
+func (m *mockRuntime) RemoveContainer(_ context.Context, _ *runtime.RuntimeEnv, _ string) error {
 	return nil
 }
-func (m *mockRuntime) GetContainerIP(_ *runtime.RuntimeEnv, _ string) (string, error) {
+func (m *mockRuntime) GetContainerIP(_ context.Context, _ *runtime.RuntimeEnv, _ string) (string, error) {
 	return "", nil
 }
-func (m *mockRuntime) Status(_ *runtime.RuntimeEnv, _ string, _ *state.State) (runtime.ContainerStatus, error) {
+func (m *mockRuntime) Status(_ context.Context, _ *runtime.RuntimeEnv, _ string, _ *state.State) (runtime.ContainerStatus, error) {
 	return m.statusResult, m.statusError
 }
 
@@ -87,7 +87,7 @@ func TestCleanupFirewall_NoFirewallAvailable(t *testing.T) {
 	networkEnv := network.NewNetworkEnv(tfs, cmd, "/tmp/test", runtime.PlatformLinux)
 
 	var buf bytes.Buffer
-	err := cleanupFirewall(networkEnv, env, tfs, runtimeEnv, rt, st, &buf)
+	err := cleanupFirewall(context.Background(), networkEnv, env, tfs, runtimeEnv, rt, st, &buf)
 
 	if err != nil {
 		t.Errorf("expected nil error when no firewall available, got: %v", err)
@@ -111,7 +111,7 @@ func TestCleanupFirewall_StatusError(t *testing.T) {
 	networkEnv := network.NewNetworkEnv(tfs, cmd, "/tmp/test", runtime.PlatformLinux)
 
 	var buf bytes.Buffer
-	err := cleanupFirewall(networkEnv, env, tfs, runtimeEnv, rt, st, &buf)
+	err := cleanupFirewall(context.Background(), networkEnv, env, tfs, runtimeEnv, rt, st, &buf)
 
 	// Status error causes early return nil (not propagated)
 	if err != nil {
@@ -137,7 +137,7 @@ func TestCleanupFirewall_ContainerNotFound(t *testing.T) {
 	networkEnv := network.NewNetworkEnv(tfs, cmd, "/tmp/test", runtime.PlatformLinux)
 
 	var buf bytes.Buffer
-	err := cleanupFirewall(networkEnv, env, tfs, runtimeEnv, rt, st, &buf)
+	err := cleanupFirewall(context.Background(), networkEnv, env, tfs, runtimeEnv, rt, st, &buf)
 
 	// StateNotFound causes early return nil
 	if err != nil {
@@ -161,7 +161,7 @@ func TestGuardSyncConflicts_BlocksWhenConflictsExist(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := guardSyncConflicts(fs, nil, projectRoot, "test-id", false, &buf)
+	err := guardSyncConflicts(context.Background(), fs, nil, projectRoot, "test-id", false, &buf)
 
 	if err == nil {
 		t.Fatal("expected error when conflicts exist, got nil")
@@ -190,7 +190,7 @@ func TestGuardSyncConflicts_ForceBypassesCheck(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := guardSyncConflicts(fs, nil, projectRoot, "test-id", true, &buf)
+	err := guardSyncConflicts(context.Background(), fs, nil, projectRoot, "test-id", true, &buf)
 
 	if err != nil {
 		t.Errorf("expected no error with --force, got: %v", err)
@@ -214,7 +214,7 @@ func TestGuardSyncConflicts_ProceedsWhenNoConflicts(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := guardSyncConflicts(fs, nil, projectRoot, "test-id", false, &buf)
+	err := guardSyncConflicts(context.Background(), fs, nil, projectRoot, "test-id", false, &buf)
 
 	if err != nil {
 		t.Errorf("expected no error when no conflicts, got: %v", err)
@@ -232,7 +232,7 @@ func TestCheckSyncConflictsBeforeDown_FallsBackToPoll(t *testing.T) {
 	mockClient := &mockSyncSessionClient{} // returns empty sessions
 	syncEnv := sync.NewSyncEnv(fs, util.NewMockCommandRunner(), mockClient)
 
-	conflicts := checkSyncConflictsBeforeDown(fs, syncEnv, projectRoot, "test-id")
+	conflicts := checkSyncConflictsBeforeDown(context.Background(), fs, syncEnv, projectRoot, "test-id")
 
 	if len(conflicts) != 0 {
 		t.Errorf("expected 0 conflicts from empty poll, got %d", len(conflicts))

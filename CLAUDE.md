@@ -79,6 +79,10 @@ All `internal/` business modules receive `Fs` and `CommandRunner` from external 
 - **Complex modules** (network, runtime, etc.): define own `XxxEnv` with `NewXxxEnv(fs, cmd)` constructor
 - **CLI pattern**: create `cmdRunner`, `fs` once, pass the same instance to all Env constructors
 
+### Context Threading Convention (AGD-032)
+
+`context.Context` is per-call metadata (cancellation, timeout), not a component dependency. Pass it as the first parameter of functions that call external commands or network operations — never store it in structs or Env types. `context.Background()` should only appear at entry points (CLI handlers, main, tests). Internal modules always receive ctx from callers.
+
 ### Cross-Platform Testability via DI
 
 Platform-specific code should avoid platform-specific imports when possible. Inject platform behavior via DI so code compiles and tests on all platforms.

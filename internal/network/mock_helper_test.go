@@ -1,5 +1,7 @@
 package network
 
+import "context"
+
 // Compile-time interface assertion.
 var _ NetworkHelper = (*MockNetworkHelper)(nil)
 
@@ -63,7 +65,7 @@ type TeardownCall struct {
 	ProjectDir string
 }
 
-func (m *MockNetworkHelper) HelperStatus(env *NetworkEnv) HelperStatus {
+func (m *MockNetworkHelper) HelperStatus(_ context.Context, env *NetworkEnv) HelperStatus {
 	m.HelperStatusCalled = true
 	return m.ReturnStatus
 }

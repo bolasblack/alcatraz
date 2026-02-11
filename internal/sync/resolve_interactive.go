@@ -63,7 +63,7 @@ func ResolveAllInteractive(p ResolveParams) (*ResolveResult, error) {
 		switch choice {
 		case ResolveChoiceLocal:
 			containerPath := filepath.Join(p.State.Config.Workdir, conflict.Path)
-			if err := ResolveLocal(p.Executor, p.State.ContainerName, containerPath); err != nil {
+			if err := ResolveLocal(p.Ctx, p.Executor, p.State.ContainerName, containerPath); err != nil {
 				_, _ = fmt.Fprintf(w, "  Error: %v\n", err)
 				continue
 			}

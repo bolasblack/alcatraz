@@ -33,3 +33,5 @@ decisions/AGD-027_linux-nftables-primary.md: #linux, #network-isolation, #securi
 decisions/AGD-028_lan-access-syntax.md: #config, #network-isolation, #security
 decisions/AGD-029_env-dependency-injection.md: #patterns
 decisions/AGD-030_orbstack-nftables-network-isolation.md: #macos, #network-isolation, #security, #runtime
+decisions/AGD-031_mutagen-sync-conflict-notification.md: #cli, #file-isolation, #runtime
+decisions/AGD-032_context-threading-convention.md: #patterns

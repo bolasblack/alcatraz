@@ -1,6 +1,7 @@
 package nft
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -190,8 +191,8 @@ func (n *NFTables) applyRulesOnLinux(containerID string, containerIP string, rul
 
 	// Post-commit: load ruleset atomically (idempotent format handles existing table)
 	return &shared.PostCommitAction{
-		Run: func(_ shared.ProgressFunc) error {
-			output, err := n.env.Cmd.SudoRunQuiet("nft", "-f", rulePath)
+		Run: func(ctx context.Context, _ shared.ProgressFunc) error {
+			output, err := n.env.Cmd.SudoRunQuiet(ctx, "nft", "-f", rulePath)
 			if err != nil {
 				return fmt.Errorf("failed to load nftables rules from %s for table %s: %w: %s", rulePath, table, err, strings.TrimSpace(string(output)))
 			}
@@ -219,8 +220,8 @@ func (n *NFTables) applyRulesOnDarwin(containerID string, containerIP string, ru
 
 	// Post-commit: trigger reload via network helper container
 	return &shared.PostCommitAction{
-		Run: func(_ shared.ProgressFunc) error {
-			if err := n.reloadVMHelper(); err != nil {
+		Run: func(ctx context.Context, _ shared.ProgressFunc) error {
+			if err := n.reloadVMHelper(ctx); err != nil {
 				return fmt.Errorf("failed to trigger nft reload on darwin for %s: %w", rulePath, err)
 			}
 			return nil
@@ -249,8 +250,8 @@ func (n *NFTables) cleanupOnLinux(containerID string) (*shared.PostCommitAction,
 	// Post-commit: delete nftables table
 	table := tableName(containerID)
 	return &shared.PostCommitAction{
-		Run: func(_ shared.ProgressFunc) error {
-			return n.deleteTable(table)
+		Run: func(ctx context.Context, _ shared.ProgressFunc) error {
+			return n.deleteTable(ctx, table)
 		},
 	}, nil
 }
@@ -269,8 +270,8 @@ func (n *NFTables) cleanupOnDarwin(containerID string) (*shared.PostCommitAction
 
 	// Post-commit: trigger reload via network helper container
 	return &shared.PostCommitAction{
-		Run: func(_ shared.ProgressFunc) error {
-			if err := n.reloadVMHelper(); err != nil {
+		Run: func(ctx context.Context, _ shared.ProgressFunc) error {
+			if err := n.reloadVMHelper(ctx); err != nil {
 				return fmt.Errorf("failed to trigger nft reload on darwin after cleanup of %s: %w", rulePath, err)
 			}
 			return nil
@@ -279,9 +280,9 @@ func (n *NFTables) cleanupOnDarwin(containerID string) (*shared.PostCommitAction
 }
 
 // deleteTable removes an nftables table. Returns nil if table doesn't exist.
-func (n *NFTables) deleteTable(table string) error {
+func (n *NFTables) deleteTable(ctx context.Context, table string) error {
 	// Requires sudo for nftables access
-	output, err := n.env.Cmd.SudoRunQuiet("nft", "delete", "table", "inet", table)
+	output, err := n.env.Cmd.SudoRunQuiet(ctx, "nft", "delete", "table", "inet", table)
 	if err != nil {
 		// Table doesn't exist — not an error during cleanup.
 		// Check both command output and error message for the kernel error string.
