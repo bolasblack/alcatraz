@@ -15,6 +15,7 @@ type NetworkEnv struct {
 	Fs         afero.Fs                // Filesystem abstraction
 	Cmd        util.CommandRunner      // Command execution abstraction
 	ProjectDir string                  // Project directory path
+	ProjectID  string                  // Project UUID for staleness verification (AGD-014)
 	Runtime    runtime.RuntimePlatform // Container runtime platform (injected by CLI)
 }
 
@@ -75,6 +76,10 @@ type Firewall interface {
 	// Cleanup removes all firewall rules for a container.
 	// Returns PostCommitAction that MUST be called after TransactFs.Commit().
 	Cleanup(containerID string) (*PostCommitAction, error)
+
+	// CleanupStaleFiles removes rule files for projects whose directory no longer exists.
+	// Returns the count of cleaned-up files.
+	CleanupStaleFiles() (int, error)
 }
 
 // =============================================================================

@@ -52,3 +52,7 @@ func (m *MockFirewall) Cleanup(containerID string) (*PostCommitAction, error) {
 	})
 	return &PostCommitAction{}, m.ReturnCleanupError
 }
+
+func (m *MockFirewall) CleanupStaleFiles() (int, error) {
+	return 0, nil
+}

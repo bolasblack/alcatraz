@@ -52,7 +52,7 @@ func TestNewDarwinHelper_UsesPlatformForRuleset(t *testing.T) {
 	require.NoError(t, err)
 
 	dir, _ := nftDirOnDarwin()
-	content, err := afero.ReadFile(mockFs, dir+"/"+tableName("container1")+".nft")
+	content, err := afero.ReadFile(mockFs, dir+"/"+nftFileName("/project"))
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "priority filter - 1",
 		"Docker Desktop platform should use priority filter - 1")

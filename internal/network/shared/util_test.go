@@ -62,6 +62,54 @@ func TestShortContainerID(t *testing.T) {
 	}
 }
 
+func TestEncodePathForFilename(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "absolute path",
+			path: "/Users/c4605/path/to/project",
+			want: "-Users-c4605-path-to-project",
+		},
+		{
+			name: "root path",
+			path: "/",
+			want: "-",
+		},
+		{
+			name: "empty string",
+			path: "",
+			want: "",
+		},
+		{
+			name: "no leading slash",
+			path: "relative/path",
+			want: "relative-path",
+		},
+		{
+			name: "single component",
+			path: "/project",
+			want: "-project",
+		},
+		{
+			name: "multiple leading slashes",
+			path: "///a/b",
+			want: "---a-b",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := EncodePathForFilename(tt.path)
+			if got != tt.want {
+				t.Errorf("EncodePathForFilename(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsIPv6(t *testing.T) {
 	tests := []struct {
 		name string

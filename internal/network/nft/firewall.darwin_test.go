@@ -66,7 +66,7 @@ func TestGenerateRulesetWithPriority(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ruleset := generateRuleset("alca-test", "172.17.0.2", nil, tt.priority)
+			ruleset := generateRuleset("alca-test", "172.17.0.2", nil, tt.priority, "/test/project", "")
 			if !strings.Contains(ruleset, tt.expected) {
 				t.Errorf("ruleset should contain %q\nGot:\n%s", tt.expected, ruleset)
 			}
@@ -93,9 +93,9 @@ func TestApplyRulesOnDarwin_WritesPerContainerFile(t *testing.T) {
 		t.Fatalf("ApplyRules failed: %v", err)
 	}
 
-	// Verify the rule file uses per-container naming (tableName + ".nft")
+	// Verify the rule file uses project-path-based naming
 	dir, _ := nftDirOnDarwin()
-	expectedFile := dir + "/" + tableName("container123") + ".nft"
+	expectedFile := dir + "/" + nftFileName("/Users/alice/myproject")
 	exists, err := afero.Exists(mockFs, expectedFile)
 	if err != nil {
 		t.Fatalf("Error checking file existence: %v", err)
@@ -164,7 +164,7 @@ func TestApplyRulesOnDarwin_WritesPerContainerRuleset(t *testing.T) {
 	}
 
 	dir, _ := nftDirOnDarwin()
-	content, err := afero.ReadFile(mockFs, dir+"/"+tableName("container123")+".nft")
+	content, err := afero.ReadFile(mockFs, dir+"/"+nftFileName("/Users/alice/myproject"))
 	if err != nil {
 		t.Fatalf("Failed to read rule file: %v", err)
 	}
@@ -191,10 +191,10 @@ func TestCleanupOnDarwin_RemovesPerContainerFile(t *testing.T) {
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", runtime.PlatformMacOrbStack)
 	firewall := New(env)
 
-	// Create the per-container rule file
+	// Create the per-project rule file
 	dir, _ := nftDirOnDarwin()
 	_ = mockFs.MkdirAll(dir, 0755)
-	rulePath := dir + "/" + tableName("container123") + ".nft"
+	rulePath := dir + "/" + nftFileName("/Users/alice/myproject")
 	_ = afero.WriteFile(mockFs, rulePath, []byte("test"), 0644)
 
 	action, err := firewall.Cleanup("container123")

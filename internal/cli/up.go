@@ -139,6 +139,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// See AGD-027 for design decisions
 	// Files written via tfs, committed to real disk before nft loads them.
 	firewallEnv := network.NewNetworkEnv(tfs, deps.CmdRunner, cwd, platform)
+	firewallEnv.ProjectID = st.ProjectID
 	if err := setupFirewall(ctx, firewallEnv, env, tfs, runtimeEnv, cfg.Network, rt, st, out); err != nil {
 		if errors.Is(err, errSkipFirewall) {
 			// User declined helper install — already messaged, not an error
@@ -306,6 +307,13 @@ On Linux, install nftables:
 
 	if fw == nil {
 		return nil
+	}
+
+	// Clean up stale rule files from moved/deleted projects
+	if staleCount, err := fw.CleanupStaleFiles(); err != nil {
+		util.ProgressStep(out, "Warning: stale rule cleanup: %v\n", err)
+	} else if staleCount > 0 {
+		util.ProgressStep(out, "Cleaned up %d stale firewall rule file(s)\n", staleCount)
 	}
 
 	// Get container status to find the container name

@@ -34,6 +34,13 @@ var PrivateIPv6Ranges = []string{
 	"::1/128",   // Loopback
 }
 
+// EncodePathForFilename encodes a filesystem path into a safe filename component.
+// Replaces path separators with dashes.
+// Example: "/Users/c4605/path/to/project" -> "-Users-c4605-path-to-project"
+func EncodePathForFilename(path string) string {
+	return strings.ReplaceAll(path, "/", "-")
+}
+
 // SafeProgress returns a no-op ProgressFunc if the given one is nil.
 func SafeProgress(progress ProgressFunc) ProgressFunc {
 	if progress == nil {

@@ -55,11 +55,49 @@ func TestTableName(t *testing.T) {
 	}
 }
 
+func TestNftFileName(t *testing.T) {
+	tests := []struct {
+		name       string
+		projectDir string
+		want       string
+	}{
+		{
+			name:       "typical absolute path",
+			projectDir: "/Users/alice/myproject",
+			want:       "-Users-alice-myproject.nft",
+		},
+		{
+			name:       "deep path",
+			projectDir: "/home/user/code/org/repo",
+			want:       "-home-user-code-org-repo.nft",
+		},
+		{
+			name:       "root path",
+			projectDir: "/",
+			want:       "-.nft",
+		},
+		{
+			name:       "empty path",
+			projectDir: "",
+			want:       ".nft",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := nftFileName(tt.projectDir)
+			if got != tt.want {
+				t.Errorf("nftFileName(%q) = %q, want %q", tt.projectDir, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGenerateRulesetNoRules(t *testing.T) {
 	table := "alca-abc123def456"
 	containerIP := "172.17.0.2"
 
-	ruleset := generateRuleset(table, containerIP, nil, "filter - 1")
+	ruleset := generateRuleset(table, containerIP, nil, "filter - 1", "/test/project", "")
 
 	// Verify idempotent header (shebang and delete pattern)
 	if !strings.Contains(ruleset, "#!/usr/sbin/nft -f") {
@@ -116,7 +154,7 @@ func TestGenerateRulesetWithAllowRules(t *testing.T) {
 		{IP: "10.0.0.0/8", Port: 0, Protocol: shared.ProtoAll, IsIPv6: false},
 	}
 
-	ruleset := generateRuleset(table, containerIP, rules, "filter - 1")
+	ruleset := generateRuleset(table, containerIP, rules, "filter - 1", "/test/project", "")
 
 	// Verify allow rules are present
 	if !strings.Contains(ruleset, "ip saddr 172.17.0.2 ip daddr 192.168.1.100 tcp dport 8080 accept") {
@@ -148,7 +186,7 @@ func TestGenerateRulesetIPv6Container(t *testing.T) {
 	table := "alca-test"
 	containerIP := "2001:db8::2"
 
-	ruleset := generateRuleset(table, containerIP, nil, "filter - 1")
+	ruleset := generateRuleset(table, containerIP, nil, "filter - 1", "/test/project", "")
 
 	// Verify IPv6 private ranges are blocked
 	if !strings.Contains(ruleset, "ip6 saddr 2001:db8::2 ip6 daddr fe80::/10 drop") {
@@ -209,7 +247,7 @@ func TestGenerateRulesetProtocolVariants(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ruleset := generateRuleset(table, containerIP, []shared.LANAccessRule{tt.rule}, "filter - 1")
+			ruleset := generateRuleset(table, containerIP, []shared.LANAccessRule{tt.rule}, "filter - 1", "/test/project", "")
 
 			for _, exp := range tt.expected {
 				if !strings.Contains(ruleset, exp) {
@@ -230,7 +268,7 @@ func TestGenerateRulesetSkipsAllLANRule(t *testing.T) {
 		{IP: "10.0.0.1", Port: 443, Protocol: shared.ProtoTCP, IsIPv6: false},
 	}
 
-	ruleset := generateRuleset(table, containerIP, rules, "filter - 1")
+	ruleset := generateRuleset(table, containerIP, rules, "filter - 1", "/test/project", "")
 
 	// Verify normal rules are present
 	if !strings.Contains(ruleset, "192.168.1.100 tcp dport 8080 accept") {
@@ -252,7 +290,7 @@ func TestGenerateRulesetIPv6AllowRule(t *testing.T) {
 		{IP: "fe80::1", Port: 8080, Protocol: shared.ProtoTCP, IsIPv6: true},
 	}
 
-	ruleset := generateRuleset(table, containerIP, rules, "filter - 1")
+	ruleset := generateRuleset(table, containerIP, rules, "filter - 1", "/test/project", "")
 
 	// IPv6 container to IPv6 destination
 	if !strings.Contains(ruleset, "ip6 saddr 2001:db8::2 ip6 daddr fe80::1 tcp dport 8080 accept") {
@@ -269,7 +307,7 @@ func TestGenerateRulesetMixedIPVersionAllowRules(t *testing.T) {
 		{IP: "fe80::1", Port: 443, Protocol: shared.ProtoTCP, IsIPv6: true},
 	}
 
-	ruleset := generateRuleset(table, containerIP, rules, "filter - 1")
+	ruleset := generateRuleset(table, containerIP, rules, "filter - 1", "/test/project", "")
 
 	// IPv4 container to IPv4 destination
 	if !strings.Contains(ruleset, "ip saddr 172.17.0.2 ip daddr 192.168.1.100 tcp dport 8080 accept") {
@@ -547,5 +585,341 @@ func TestNew_VMHelperEnvNilForEmptyPlatform(t *testing.T) {
 
 	if n.vmEnv != nil {
 		t.Errorf("New() with empty platform should not pre-construct vmEnv, got %v", n.vmEnv)
+	}
+}
+
+// =============================================================================
+// project-dir comment in generated ruleset
+// =============================================================================
+
+func TestGenerateRulesetIncludesProjectDir(t *testing.T) {
+	ruleset := generateRuleset("alca-test", "172.17.0.2", nil, "filter - 1", "/Users/alice/myproject", "")
+
+	if !strings.Contains(ruleset, "# project-dir: /Users/alice/myproject") {
+		t.Errorf("ruleset should contain project-dir comment\nGot:\n%s", ruleset)
+	}
+}
+
+func TestGenerateRulesetIncludesProjectID(t *testing.T) {
+	ruleset := generateRuleset("alca-test", "172.17.0.2", nil, "filter - 1", "/test/project", "test-uuid-1234")
+
+	if !strings.Contains(ruleset, "# project-id: test-uuid-1234") {
+		t.Errorf("ruleset should contain project-id comment\nGot:\n%s", ruleset)
+	}
+}
+
+// =============================================================================
+// parseProjectDir tests
+// =============================================================================
+
+func TestParseProjectDir(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "valid content",
+			content: "#!/usr/sbin/nft -f\n# Alcatraz container rules for table: alca-test\n\n# project-dir: /Users/alice/myproject\n\ntable inet alca-test {}\n",
+			want:    "/Users/alice/myproject",
+		},
+		{
+			name:    "missing comment",
+			content: "#!/usr/sbin/nft -f\ntable inet alca-test {}\n",
+			want:    "",
+		},
+		{
+			name:    "empty string",
+			content: "",
+			want:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseProjectDir(tt.content)
+			if got != tt.want {
+				t.Errorf("parseProjectDir() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// parseProjectID tests
+// =============================================================================
+
+func TestParseProjectID(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "valid content",
+			content: "#!/usr/sbin/nft -f\n# project-dir: /Users/alice/myproject\n# project-id: abc-123\n\ntable inet alca-test {}\n",
+			want:    "abc-123",
+		},
+		{
+			name:    "missing comment",
+			content: "#!/usr/sbin/nft -f\n# project-dir: /test\n\ntable inet alca-test {}\n",
+			want:    "",
+		},
+		{
+			name:    "empty string",
+			content: "",
+			want:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseProjectID(tt.content)
+			if got != tt.want {
+				t.Errorf("parseProjectID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// isStaleProject tests
+// =============================================================================
+
+func TestIsStaleProject(t *testing.T) {
+	t.Run("dir does not exist → stale", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		if !isStaleProject(fs, "/nonexistent", "some-id") {
+			t.Error("expected stale when dir does not exist")
+		}
+	})
+
+	t.Run("dir exists but no state.json → stale", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		_ = fs.MkdirAll("/project", 0755)
+		if !isStaleProject(fs, "/project", "some-id") {
+			t.Error("expected stale when state.json does not exist")
+		}
+	})
+
+	t.Run("dir + state.json exist but project ID mismatch → stale", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		_ = fs.MkdirAll("/project/.alca", 0755)
+		_ = afero.WriteFile(fs, "/project/.alca/state.json", []byte(`{"project_id":"actual-id"}`), 0644)
+		if !isStaleProject(fs, "/project", "different-id") {
+			t.Error("expected stale when project ID mismatches")
+		}
+	})
+
+	t.Run("dir + state.json exist and project ID matches → NOT stale", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		_ = fs.MkdirAll("/project/.alca", 0755)
+		_ = afero.WriteFile(fs, "/project/.alca/state.json", []byte(`{"project_id":"matching-id"}`), 0644)
+		if isStaleProject(fs, "/project", "matching-id") {
+			t.Error("expected NOT stale when project ID matches")
+		}
+	})
+
+	t.Run("old format file without project-id → NOT stale", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		_ = fs.MkdirAll("/project/.alca", 0755)
+		_ = afero.WriteFile(fs, "/project/.alca/state.json", []byte(`{"project_id":"any-id"}`), 0644)
+		if isStaleProject(fs, "/project", "") {
+			t.Error("expected NOT stale when project ID is empty (old format)")
+		}
+	})
+
+	t.Run("invalid state.json → stale", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		_ = fs.MkdirAll("/project/.alca", 0755)
+		_ = afero.WriteFile(fs, "/project/.alca/state.json", []byte(`not json`), 0644)
+		if !isStaleProject(fs, "/project", "some-id") {
+			t.Error("expected stale when state.json is invalid JSON")
+		}
+	})
+}
+
+// =============================================================================
+// parseTableName tests
+// =============================================================================
+
+func TestParseTableName(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "valid content",
+			content: "#!/usr/sbin/nft -f\n# Alcatraz container rules for table: alca-abc123def456\n\ntable inet alca-abc123def456 {}\n",
+			want:    "alca-abc123def456",
+		},
+		{
+			name:    "missing comment",
+			content: "#!/usr/sbin/nft -f\ntable inet alca-test {}\n",
+			want:    "",
+		},
+		{
+			name:    "empty string",
+			content: "",
+			want:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseTableName(tt.content)
+			if got != tt.want {
+				t.Errorf("parseTableName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// CleanupStaleFiles tests
+// =============================================================================
+
+func TestCleanupStaleFiles(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner()
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", runtime.PlatformLinux)
+	n := New(env).(*NFTables)
+
+	dir := nftDirOnLinux()
+	_ = mockFs.MkdirAll(dir, 0755)
+
+	// File a: project-dir exists with matching state.json → should be kept
+	existingDir := "/existing/project"
+	_ = mockFs.MkdirAll(existingDir+"/.alca", 0755)
+	_ = afero.WriteFile(mockFs, existingDir+"/.alca/state.json", []byte(`{"project_id":"proj-aaa"}`), 0644)
+	rulesetA := generateRuleset("alca-aaa", "172.17.0.2", nil, "filter - 1", existingDir, "proj-aaa")
+	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(existingDir)), []byte(rulesetA), 0644)
+
+	// File b: project-dir does NOT exist → should be deleted
+	missingDir := "/missing/project"
+	rulesetB := generateRuleset("alca-bbb", "172.17.0.3", nil, "filter - 1", missingDir, "proj-bbb")
+	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(missingDir)), []byte(rulesetB), 0644)
+
+	// File c: old format without project-dir comment → should be deleted (stale)
+	oldContent := "#!/usr/sbin/nft -f\ntable inet alca-ccc {}\n"
+	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/old-format.nft", dir), []byte(oldContent), 0644)
+
+	count, err := n.CleanupStaleFiles()
+	if err != nil {
+		t.Fatalf("CleanupStaleFiles() error = %v", err)
+	}
+
+	if count != 2 {
+		t.Errorf("CleanupStaleFiles() count = %d, want 2", count)
+	}
+
+	// File a should still exist
+	exists, _ := afero.Exists(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(existingDir)))
+	if !exists {
+		t.Error("file for existing project should be kept")
+	}
+
+	// File b should be deleted
+	exists, _ = afero.Exists(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(missingDir)))
+	if exists {
+		t.Error("file for missing project should be deleted")
+	}
+
+	// File c should be deleted (old format treated as stale)
+	exists, _ = afero.Exists(mockFs, fmt.Sprintf("%s/old-format.nft", dir))
+	if exists {
+		t.Error("old format file without project-dir should be deleted")
+	}
+}
+
+func TestCleanupStaleFiles_StateJsonMissing(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner()
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", runtime.PlatformLinux)
+	n := New(env).(*NFTables)
+
+	dir := nftDirOnLinux()
+	_ = mockFs.MkdirAll(dir, 0755)
+
+	// Dir exists but no .alca/state.json → stale
+	projectDir := "/orphan/project"
+	_ = mockFs.MkdirAll(projectDir, 0755)
+	ruleset := generateRuleset("alca-orphan", "172.17.0.2", nil, "filter - 1", projectDir, "some-id")
+	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(projectDir)), []byte(ruleset), 0644)
+
+	count, err := n.CleanupStaleFiles()
+	if err != nil {
+		t.Fatalf("CleanupStaleFiles() error = %v", err)
+	}
+	if count != 1 {
+		t.Errorf("CleanupStaleFiles() count = %d, want 1 (state.json missing)", count)
+	}
+}
+
+func TestCleanupStaleFiles_ProjectIDMismatch(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner()
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", runtime.PlatformLinux)
+	n := New(env).(*NFTables)
+
+	dir := nftDirOnLinux()
+	_ = mockFs.MkdirAll(dir, 0755)
+
+	// Dir + state.json exist but project ID mismatch → stale
+	projectDir := "/reused/project"
+	_ = mockFs.MkdirAll(projectDir+"/.alca", 0755)
+	_ = afero.WriteFile(mockFs, projectDir+"/.alca/state.json", []byte(`{"project_id":"new-id"}`), 0644)
+	ruleset := generateRuleset("alca-reused", "172.17.0.2", nil, "filter - 1", projectDir, "old-id")
+	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(projectDir)), []byte(ruleset), 0644)
+
+	count, err := n.CleanupStaleFiles()
+	if err != nil {
+		t.Fatalf("CleanupStaleFiles() error = %v", err)
+	}
+	if count != 1 {
+		t.Errorf("CleanupStaleFiles() count = %d, want 1 (project ID mismatch)", count)
+	}
+}
+
+func TestCleanupStaleFiles_OldFormatNoProjectID(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner()
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", runtime.PlatformLinux)
+	n := New(env).(*NFTables)
+
+	dir := nftDirOnLinux()
+	_ = mockFs.MkdirAll(dir, 0755)
+
+	// Dir + state.json exist, nft file has project-dir but no project-id → NOT stale (skip)
+	projectDir := "/legacy/project"
+	_ = mockFs.MkdirAll(projectDir+"/.alca", 0755)
+	_ = afero.WriteFile(mockFs, projectDir+"/.alca/state.json", []byte(`{"project_id":"any-id"}`), 0644)
+	// Simulate old-format file with project-dir but without project-id
+	oldContent := "#!/usr/sbin/nft -f\n# Alcatraz container rules for table: alca-legacy\n\n# project-dir: " + projectDir + "\n\ntable inet alca-legacy {}\n"
+	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(projectDir)), []byte(oldContent), 0644)
+
+	count, err := n.CleanupStaleFiles()
+	if err != nil {
+		t.Fatalf("CleanupStaleFiles() error = %v", err)
+	}
+	if count != 0 {
+		t.Errorf("CleanupStaleFiles() count = %d, want 0 (old format without project-id should be skipped)", count)
+	}
+}
+
+func TestCleanupStaleFiles_EmptyDir(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner()
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test", runtime.PlatformLinux)
+	n := New(env).(*NFTables)
+
+	// Directory doesn't exist — should return 0 with no error
+	count, err := n.CleanupStaleFiles()
+	if err != nil {
+		t.Fatalf("CleanupStaleFiles() error = %v", err)
+	}
+	if count != 0 {
+		t.Errorf("CleanupStaleFiles() count = %d, want 0", count)
 	}
 }

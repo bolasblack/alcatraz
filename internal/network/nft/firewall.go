@@ -2,6 +2,7 @@ package nft
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -34,6 +35,12 @@ func (n *NFTables) isDarwin() bool {
 // Uses short container ID prefix to keep names manageable.
 func tableName(containerID string) string {
 	return "alca-" + shared.ShortContainerID(containerID)
+}
+
+// nftFileName returns the nft rule filename for a project.
+// Uses the project directory path encoded as a safe filename.
+func nftFileName(projectDir string) string {
+	return shared.EncodePathForFilename(projectDir) + ".nft"
 }
 
 // chainPriority returns the nftables chain priority string for the given runtime.
@@ -74,12 +81,14 @@ func writeAllowRules(sb *strings.Builder, containerIP string, containerIsV6 bool
 // If rules is empty, blocks all RFC1918 traffic.
 // Uses idempotent flush+recreate pattern per AGD-028.
 // This is a pure function for testability.
-func generateRuleset(tableName string, containerIP string, rules []shared.LANAccessRule, priority string) string {
+func generateRuleset(tableName string, containerIP string, rules []shared.LANAccessRule, priority string, projectDir string, projectID string) string {
 	var sb strings.Builder
 
 	containerIsV6 := shared.IsIPv6(containerIP)
 
 	writeIdempotentHeader(&sb, fmt.Sprintf("Alcatraz container rules for table: %s", tableName), tableName)
+	fmt.Fprintf(&sb, "# project-dir: %s\n", projectDir)
+	fmt.Fprintf(&sb, "# project-id: %s\n\n", projectID)
 
 	// Create fresh table with rules
 	sb.WriteString("# Create fresh table with rules\n")
@@ -150,6 +159,70 @@ func formatProtocolSuffixes(proto shared.Protocol, port int) []string {
 	}
 }
 
+// parseProjectDir extracts the project directory path from an nft ruleset file content.
+// Returns empty string if the comment is not found.
+func parseProjectDir(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "# project-dir: ") {
+			return strings.TrimPrefix(line, "# project-dir: ")
+		}
+	}
+	return ""
+}
+
+// parseProjectID extracts the project ID from an nft ruleset file content.
+// Returns empty string if the comment is not found.
+func parseProjectID(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "# project-id: ") {
+			return strings.TrimPrefix(line, "# project-id: ")
+		}
+	}
+	return ""
+}
+
+// isStaleProject checks if a project is stale based on its nft file metadata.
+// A project is stale if any of: dir doesn't exist, state.json doesn't exist,
+// or project ID doesn't match (aligned with AGD-014 orphan detection).
+func isStaleProject(fs afero.Fs, projectDir string, projectID string) bool {
+	// Condition a: project directory does not exist
+	exists, err := afero.DirExists(fs, projectDir)
+	if err != nil || !exists {
+		return true
+	}
+
+	// Condition b: .alca/state.json does not exist
+	stateFilePath := filepath.Join(projectDir, ".alca", "state.json")
+	data, err := afero.ReadFile(fs, stateFilePath)
+	if err != nil {
+		return true
+	}
+
+	// Condition c: project ID mismatch
+	if projectID == "" {
+		// Old-format file without project-id, can't verify — not stale
+		return false
+	}
+	var st struct {
+		ProjectID string `json:"project_id"`
+	}
+	if err := json.Unmarshal(data, &st); err != nil {
+		return true
+	}
+	return st.ProjectID != projectID
+}
+
+// parseTableName extracts the table name from an nft ruleset file content.
+// Returns empty string if the comment is not found.
+func parseTableName(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "# Alcatraz container rules for table: ") {
+			return strings.TrimPrefix(line, "# Alcatraz container rules for table: ")
+		}
+	}
+	return ""
+}
+
 // ApplyRules creates nftables rules to apply network isolation with allow rules.
 // On Linux: persisted to /etc/nftables.d/alcatraz/<container-id>.nft, loaded via `nft -f`.
 // On macOS: persisted to ~/.alcatraz/files/alcatraz_nft/<container-table>.nft, reload via docker exec.
@@ -182,9 +255,9 @@ func writeRuleFile(fs afero.Fs, dir string, fileName string, ruleset string) (st
 // Writes the rule file via Fs, returns PostCommitAction to load rules via nft.
 func (n *NFTables) applyRulesOnLinux(containerID string, containerIP string, rules []shared.LANAccessRule) (*shared.PostCommitAction, error) {
 	table := tableName(containerID)
-	ruleset := generateRuleset(table, containerIP, rules, "filter - 1")
+	ruleset := generateRuleset(table, containerIP, rules, "filter - 1", n.env.ProjectDir, n.env.ProjectID)
 
-	rulePath, err := writeRuleFile(n.env.Fs, nftDirOnLinux(), containerID+".nft", ruleset)
+	rulePath, err := writeRuleFile(n.env.Fs, nftDirOnLinux(), nftFileName(n.env.ProjectDir), ruleset)
 	if err != nil {
 		return nil, err
 	}
@@ -205,15 +278,14 @@ func (n *NFTables) applyRulesOnLinux(containerID string, containerIP string, rul
 // Writes the rule file via Fs, returns PostCommitAction to reload VM helper.
 func (n *NFTables) applyRulesOnDarwin(containerID string, containerIP string, rules []shared.LANAccessRule) (*shared.PostCommitAction, error) {
 	table := tableName(containerID)
-	ruleset := generateRuleset(table, containerIP, rules, chainPriority(n.env.Runtime))
+	ruleset := generateRuleset(table, containerIP, rules, chainPriority(n.env.Runtime), n.env.ProjectDir, n.env.ProjectID)
 
 	dir, err := nftDirOnDarwin()
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine nft directory: %w", err)
 	}
 
-	fileName := table + ".nft"
-	rulePath, err := writeRuleFile(n.env.Fs, dir, fileName, ruleset)
+	rulePath, err := writeRuleFile(n.env.Fs, dir, nftFileName(n.env.ProjectDir), ruleset)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +316,7 @@ func (n *NFTables) Cleanup(containerID string) (*shared.PostCommitAction, error)
 // Removes the rule file via Fs, returns PostCommitAction to delete the nftables table.
 func (n *NFTables) cleanupOnLinux(containerID string) (*shared.PostCommitAction, error) {
 	// Delete rule file (best-effort, ignore if not exists)
-	rulePath := filepath.Join(nftDirOnLinux(), containerID+".nft")
+	rulePath := filepath.Join(nftDirOnLinux(), nftFileName(n.env.ProjectDir))
 	_ = n.env.Fs.Remove(rulePath)
 
 	// Post-commit: delete nftables table
@@ -264,8 +336,7 @@ func (n *NFTables) cleanupOnDarwin(containerID string) (*shared.PostCommitAction
 		return nil, fmt.Errorf("failed to determine nft directory: %w", err)
 	}
 
-	fileName := tableName(containerID) + ".nft"
-	rulePath := filepath.Join(dir, fileName)
+	rulePath := filepath.Join(dir, nftFileName(n.env.ProjectDir))
 	_ = n.env.Fs.Remove(rulePath)
 
 	// Post-commit: trigger reload via network helper container
@@ -293,4 +364,60 @@ func (n *NFTables) deleteTable(ctx context.Context, table string) error {
 		return fmt.Errorf("failed to delete table %s: %w: %s", table, err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+// CleanupStaleFiles scans the nft rule directory and removes files whose
+// project directory no longer exists on disk. Returns the count of cleaned-up
+// files. This handles orphaned files from projects that were moved/deleted
+// without running "alca down".
+func (n *NFTables) CleanupStaleFiles() (int, error) {
+	var dir string
+	if n.isDarwin() {
+		d, err := nftDirOnDarwin()
+		if err != nil {
+			return 0, fmt.Errorf("failed to determine nft directory: %w", err)
+		}
+		dir = d
+	} else {
+		dir = nftDirOnLinux()
+	}
+
+	entries, err := afero.ReadDir(n.env.Fs, dir)
+	if err != nil {
+		// Directory doesn't exist yet — nothing to clean up
+		return 0, nil
+	}
+
+	cleaned := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".nft") {
+			continue
+		}
+
+		filePath := filepath.Join(dir, entry.Name())
+		content, err := afero.ReadFile(n.env.Fs, filePath)
+		if err != nil {
+			continue
+		}
+
+		projectDir := parseProjectDir(string(content))
+		if projectDir == "" {
+			// Old format file without project-dir comment — treat as stale
+			if err := n.env.Fs.Remove(filePath); err != nil {
+				continue
+			}
+			cleaned++
+			continue
+		}
+
+		projectID := parseProjectID(string(content))
+		if isStaleProject(n.env.Fs, projectDir, projectID) {
+			if err := n.env.Fs.Remove(filePath); err != nil {
+				continue
+			}
+			cleaned++
+		}
+	}
+
+	return cleaned, nil
 }

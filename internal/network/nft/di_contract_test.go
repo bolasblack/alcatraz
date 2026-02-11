@@ -46,7 +46,7 @@ func TestNew_StoresInjectedEnv(t *testing.T) {
 func TestApplyRules_UsesInjectedFs(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "")
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{
@@ -59,7 +59,7 @@ func TestApplyRules_UsesInjectedFs(t *testing.T) {
 	}
 
 	// Verify the rule file was written to the mockFs
-	rulePath := "/etc/nftables.d/alcatraz/container123.nft"
+	rulePath := "/etc/nftables.d/alcatraz/" + nftFileName("/test/project")
 	exists, err := afero.Exists(mockFs, rulePath)
 	if err != nil {
 		t.Fatalf("Error checking file existence: %v", err)
@@ -102,7 +102,7 @@ func TestApplyRules_UsesInjectedCmd(t *testing.T) {
 func TestApplyRules_CmdReceivesCorrectArgs(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "")
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{
@@ -138,10 +138,11 @@ func TestApplyRules_CmdReceivesCorrectArgs(t *testing.T) {
 		t.Errorf("First arg should be '-f', got: %s", nftCall.Args[0])
 	}
 
-	// Should point to the rule file
+	// Should point to the project-path-based rule file
 	rulePath := nftCall.Args[1]
-	if !strings.Contains(rulePath, "abc123.nft") {
-		t.Errorf("Rule path should contain container ID, got: %s", rulePath)
+	expectedFileName := nftFileName("/test/project")
+	if !strings.Contains(rulePath, expectedFileName) {
+		t.Errorf("Rule path should contain project-path filename %s, got: %s", expectedFileName, rulePath)
 	}
 }
 
@@ -150,7 +151,7 @@ func TestApplyRules_CmdReceivesCorrectArgs(t *testing.T) {
 func TestApplyRules_FsReceivesCorrectContent(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "")
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{
@@ -163,7 +164,7 @@ func TestApplyRules_FsReceivesCorrectContent(t *testing.T) {
 	}
 
 	// Read the file content from mockFs
-	content, err := afero.ReadFile(mockFs, "/etc/nftables.d/alcatraz/testcontainer.nft")
+	content, err := afero.ReadFile(mockFs, "/etc/nftables.d/alcatraz/"+nftFileName("/test/project"))
 	if err != nil {
 		t.Fatalf("Failed to read rule file from mockFs: %v", err)
 	}
@@ -186,11 +187,11 @@ func TestApplyRules_FsReceivesCorrectContent(t *testing.T) {
 func TestCleanup_UsesInjectedFs(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "")
 	firewall := New(env)
 
-	// First create a rule file
-	rulePath := "/etc/nftables.d/alcatraz/container123.nft"
+	// First create a rule file using the project-path-based name
+	rulePath := "/etc/nftables.d/alcatraz/" + nftFileName("/test/project")
 	_ = mockFs.MkdirAll("/etc/nftables.d/alcatraz", 0755)
 	_ = afero.WriteFile(mockFs, rulePath, []byte("test"), 0644)
 
@@ -284,9 +285,9 @@ func TestApplyRules_ReturnsErrorFromInjectedCmd(t *testing.T) {
 	expectedErr := errors.New("nft command failed")
 	mockCmd := util.NewMockCommandRunner()
 	// Return error for nft -f command
-	mockCmd.ExpectFailure("sudo nft -f /etc/nftables.d/alcatraz/container123.nft", expectedErr)
+	mockCmd.ExpectFailure("sudo nft -f /etc/nftables.d/alcatraz/"+nftFileName("/test/project"), expectedErr)
 
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "")
 	firewall := New(env)
 
 	action, err := firewall.ApplyRules("container123", "172.17.0.2", nil)
@@ -327,7 +328,7 @@ func TestApplyRules_SkipsWhenAllLAN(t *testing.T) {
 	}
 
 	// No files should be written
-	exists, _ := afero.Exists(mockFs, "/etc/nftables.d/alcatraz/container123.nft")
+	exists, _ := afero.Exists(mockFs, "/etc/nftables.d/alcatraz/"+nftFileName(""))
 	if exists {
 		t.Error("ApplyRules with AllLAN should not write any files")
 	}
