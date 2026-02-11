@@ -1,4 +1,22 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Configuration on Alcatraz</title><link>https://bolasblack.github.io/alcatraz/config/</link><description>Recent content in Configuration on Alcatraz</description><generator>Hugo</generator><language>en</language><atom:link href="https://bolasblack.github.io/alcatraz/config/index.xml" rel="self" type="application/rss+xml"/><item><title>Includes</title><link>https://bolasblack.github.io/alcatraz/config/includes/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://bolasblack.github.io/alcatraz/config/includes/</guid><description>&lt;h1 id="includes"&gt;Includes&lt;a class="anchor" href="#includes"&gt;#&lt;/a&gt;&lt;/h1&gt;
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Configuration on Alcatraz</title><link>https://bolasblack.github.io/alcatraz/config/</link><description>Recent content in Configuration on Alcatraz</description><generator>Hugo</generator><language>en</language><atom:link href="https://bolasblack.github.io/alcatraz/config/index.xml" rel="self" type="application/rss+xml"/><item><title>Field Reference</title><link>https://bolasblack.github.io/alcatraz/config/fields/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://bolasblack.github.io/alcatraz/config/fields/</guid><description>&lt;h1 id="field-reference"&gt;Field Reference&lt;a class="anchor" href="#field-reference"&gt;#&lt;/a&gt;&lt;/h1&gt;
+&lt;h2 id="image"&gt;image&lt;a class="anchor" href="#image"&gt;#&lt;/a&gt;&lt;/h2&gt;
+&lt;p&gt;The container image to use for the isolated environment.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#272822;background-color:#fafafa;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"&gt;&lt;code class="language-toml" data-lang="toml"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75af00"&gt;image&lt;/span&gt; &lt;span style="color:#111"&gt;=&lt;/span&gt; &lt;span style="color:#d88200"&gt;&amp;#34;nixos/nix&amp;#34;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Type&lt;/strong&gt;: string&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Required&lt;/strong&gt;: Yes&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Default&lt;/strong&gt;: None (must be specified)&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Examples&lt;/strong&gt;: &lt;code&gt;&amp;quot;ubuntu:22.04&amp;quot;&lt;/code&gt;, &lt;code&gt;&amp;quot;alpine:latest&amp;quot;&lt;/code&gt;, &lt;code&gt;&amp;quot;nixos/nix&amp;quot;&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="workdir"&gt;workdir&lt;a class="anchor" href="#workdir"&gt;#&lt;/a&gt;&lt;/h2&gt;
+&lt;p&gt;The working directory inside the container where your project will be mounted.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#272822;background-color:#fafafa;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"&gt;&lt;code class="language-toml" data-lang="toml"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75af00"&gt;workdir&lt;/span&gt; &lt;span style="color:#111"&gt;=&lt;/span&gt; &lt;span style="color:#d88200"&gt;&amp;#34;/workspace&amp;#34;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Type&lt;/strong&gt;: string&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Required&lt;/strong&gt;: No&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Default&lt;/strong&gt;: &lt;code&gt;&amp;quot;/workspace&amp;quot;&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Notes&lt;/strong&gt;: Must be an absolute path&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="workdir_exclude"&gt;workdir_exclude&lt;a class="anchor" href="#workdir_exclude"&gt;#&lt;/a&gt;&lt;/h2&gt;
+&lt;p&gt;Patterns to exclude from the workdir mount. When specified, Alcatraz uses &lt;a href="https://mutagen.io/"&gt;Mutagen&lt;/a&gt; for file synchronization instead of direct bind mounts.&lt;/p&gt;</description></item><item><title>Includes</title><link>https://bolasblack.github.io/alcatraz/config/includes/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://bolasblack.github.io/alcatraz/config/includes/</guid><description>&lt;h1 id="includes"&gt;Includes&lt;a class="anchor" href="#includes"&gt;#&lt;/a&gt;&lt;/h1&gt;
 &lt;p&gt;Configuration files can include other files for composable configuration:&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#272822;background-color:#fafafa;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"&gt;&lt;code class="language-toml" data-lang="toml"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75af00"&gt;includes&lt;/span&gt; &lt;span style="color:#111"&gt;=&lt;/span&gt; &lt;span style="color:#111"&gt;[&lt;/span&gt;&lt;span style="color:#d88200"&gt;&amp;#34;.alca.dev.toml&amp;#34;&lt;/span&gt;&lt;span style="color:#111"&gt;,&lt;/span&gt; &lt;span style="color:#d88200"&gt;&amp;#34;.alca.local.toml&amp;#34;&lt;/span&gt;&lt;span style="color:#111"&gt;]&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id="basic-usage"&gt;Basic Usage&lt;a class="anchor" href="#basic-usage"&gt;#&lt;/a&gt;&lt;/h2&gt;
 &lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#272822;background-color:#fafafa;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"&gt;&lt;code class="language-toml" data-lang="toml"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75715e"&gt;# .alca.toml - main config&lt;/span&gt;
@@ -44,25 +62,7 @@
  &lt;/tbody&gt;
 &lt;/table&gt;
 &lt;h2 id="processing-order"&gt;Processing Order&lt;a class="anchor" href="#processing-order"&gt;#&lt;/a&gt;&lt;/h2&gt;
-&lt;p&gt;Includes are processed depth-first:&lt;/p&gt;</description></item><item><title>Field Reference</title><link>https://bolasblack.github.io/alcatraz/config/fields/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://bolasblack.github.io/alcatraz/config/fields/</guid><description>&lt;h1 id="field-reference"&gt;Field Reference&lt;a class="anchor" href="#field-reference"&gt;#&lt;/a&gt;&lt;/h1&gt;
-&lt;h2 id="image"&gt;image&lt;a class="anchor" href="#image"&gt;#&lt;/a&gt;&lt;/h2&gt;
-&lt;p&gt;The container image to use for the isolated environment.&lt;/p&gt;
-&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#272822;background-color:#fafafa;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"&gt;&lt;code class="language-toml" data-lang="toml"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75af00"&gt;image&lt;/span&gt; &lt;span style="color:#111"&gt;=&lt;/span&gt; &lt;span style="color:#d88200"&gt;&amp;#34;nixos/nix&amp;#34;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ul&gt;
-&lt;li&gt;&lt;strong&gt;Type&lt;/strong&gt;: string&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Required&lt;/strong&gt;: Yes&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Default&lt;/strong&gt;: None (must be specified)&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Examples&lt;/strong&gt;: &lt;code&gt;&amp;quot;ubuntu:22.04&amp;quot;&lt;/code&gt;, &lt;code&gt;&amp;quot;alpine:latest&amp;quot;&lt;/code&gt;, &lt;code&gt;&amp;quot;nixos/nix&amp;quot;&lt;/code&gt;&lt;/li&gt;
-&lt;/ul&gt;
-&lt;h2 id="workdir"&gt;workdir&lt;a class="anchor" href="#workdir"&gt;#&lt;/a&gt;&lt;/h2&gt;
-&lt;p&gt;The working directory inside the container where your project will be mounted.&lt;/p&gt;
-&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#272822;background-color:#fafafa;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"&gt;&lt;code class="language-toml" data-lang="toml"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75af00"&gt;workdir&lt;/span&gt; &lt;span style="color:#111"&gt;=&lt;/span&gt; &lt;span style="color:#d88200"&gt;&amp;#34;/workspace&amp;#34;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ul&gt;
-&lt;li&gt;&lt;strong&gt;Type&lt;/strong&gt;: string&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Required&lt;/strong&gt;: No&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Default&lt;/strong&gt;: &lt;code&gt;&amp;quot;/workspace&amp;quot;&lt;/code&gt;&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Notes&lt;/strong&gt;: Must be an absolute path&lt;/li&gt;
-&lt;/ul&gt;
-&lt;h2 id="workdir_exclude"&gt;workdir_exclude&lt;a class="anchor" href="#workdir_exclude"&gt;#&lt;/a&gt;&lt;/h2&gt;
-&lt;p&gt;Patterns to exclude from the workdir mount. When specified, Alcatraz uses &lt;a href="https://mutagen.io/"&gt;Mutagen&lt;/a&gt; for file synchronization instead of direct bind mounts.&lt;/p&gt;</description></item><item><title>Network Configuration</title><link>https://bolasblack.github.io/alcatraz/config/network/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://bolasblack.github.io/alcatraz/config/network/</guid><description>&lt;h1 id="network-configuration"&gt;Network Configuration&lt;a class="anchor" href="#network-configuration"&gt;#&lt;/a&gt;&lt;/h1&gt;
+&lt;p&gt;Includes are processed depth-first:&lt;/p&gt;</description></item><item><title>Network Configuration</title><link>https://bolasblack.github.io/alcatraz/config/network/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://bolasblack.github.io/alcatraz/config/network/</guid><description>&lt;h1 id="network-configuration"&gt;Network Configuration&lt;a class="anchor" href="#network-configuration"&gt;#&lt;/a&gt;&lt;/h1&gt;
 &lt;p&gt;By default, Alcatraz containers can access the internet but &lt;strong&gt;cannot access your local network (LAN)&lt;/strong&gt;. This prevents AI agents from reaching local services, databases, or other machines on your network.&lt;/p&gt;
 &lt;h2 id="quick-summary"&gt;Quick Summary&lt;a class="anchor" href="#quick-summary"&gt;#&lt;/a&gt;&lt;/h2&gt;
 &lt;table&gt;
@@ -95,5 +95,5 @@
  &lt;/tr&gt;
  &lt;/tbody&gt;
 &lt;/table&gt;
-&lt;h2 id="networklan-access"&gt;network.lan-access&lt;a class="anchor" href="#networklan-access"&gt;#&lt;/a&gt;&lt;/h2&gt;
-&lt;p&gt;Allow containers to access LAN hosts.&lt;/p&gt;</description></item></channel></rss>
+&lt;h2 id="why-nftables-inside-the-vm"&gt;Why nftables Inside the VM?&lt;a class="anchor" href="#why-nftables-inside-the-vm"&gt;#&lt;/a&gt;&lt;/h2&gt;
+&lt;p&gt;On macOS, both Docker Desktop and OrbStack run containers inside a Linux VM. Container network traffic does not pass through macOS kernel network interfaces — instead it is handled entirely in userspace:&lt;/p&gt;</description></item></channel></rss>
