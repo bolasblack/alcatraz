@@ -109,8 +109,9 @@ func ListMutagenSyncs(env *RuntimeEnv, namePrefix string) ([]string, error) {
 }
 
 // buildListSyncsArgs constructs the arguments for mutagen sync list.
+// mutagen passes []Session to the template, so we must use range.
 func buildListSyncsArgs() []string {
-	return []string{"sync", "list", "--template={{.Name}}"}
+	return []string{"sync", "list", `--template={{range .}}{{.Name}}{{"\n"}}{{end}}`}
 }
 
 // parseMutagenListOutput parses the output of mutagen sync list and filters by prefix.
@@ -124,6 +125,22 @@ func parseMutagenListOutput(output string, namePrefix string) []string {
 		}
 	}
 	return result
+}
+
+// ListSessionJSON returns raw JSON output for a Mutagen sync session.
+// CLI command: mutagen sync list <sessionName> --template='{{json .}}'
+func ListSessionJSON(env *RuntimeEnv, sessionName string) ([]byte, error) {
+	args := buildListSessionJSONArgs(sessionName)
+	output, err := env.Cmd.RunQuiet("mutagen", args...)
+	if err != nil {
+		return nil, fmt.Errorf("mutagen sync list failed: %w: %s", err, string(output))
+	}
+	return output, nil
+}
+
+// buildListSessionJSONArgs constructs the arguments for mutagen sync list JSON output.
+func buildListSessionJSONArgs(sessionName string) []string {
+	return []string{"sync", "list", sessionName, "--template={{json .}}"}
 }
 
 // MutagenSessionName generates a unique session name for a project mount.

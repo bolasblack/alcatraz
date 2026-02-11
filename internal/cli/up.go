@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/config"
@@ -13,6 +14,7 @@ import (
 	"github.com/bolasblack/alcatraz/internal/network/darwin/vmhelper"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
+	"github.com/bolasblack/alcatraz/internal/sync"
 	"github.com/bolasblack/alcatraz/internal/transact"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
@@ -143,6 +145,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 			util.ProgressStep(out, "Warning: %v\n", err)
 		}
 	}
+
+	// Show sync conflict banner if any (best-effort, errors ignored).
+	syncEnv := sync.NewSyncEnv(afero.NewOsFs(), deps.CmdRunner, runtime.NewMutagenSyncClient(runtimeEnv))
+	showSyncBanner(syncEnv, st.ProjectID, cwd, os.Stderr)
 
 	util.ProgressDone(out, "Environment ready\n")
 	return nil

@@ -5,11 +5,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
+	"github.com/bolasblack/alcatraz/internal/sync"
 )
 
 var statusCmd = &cobra.Command{
@@ -88,6 +90,12 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	printContainerStatus(status, st, &cfg, rt)
+
+	// Show sync conflict banner if container is running (AGD-031).
+	if status.State == runtime.StateRunning {
+		syncEnv := sync.NewSyncEnv(afero.NewOsFs(), deps.CmdRunner, runtime.NewMutagenSyncClient(runtimeEnv))
+		showSyncBanner(syncEnv, st.ProjectID, cwd, os.Stderr)
+	}
 
 	return nil
 }

@@ -37,8 +37,16 @@ This is an experimental feature and its behavior may change in future versions.`
 	RunE: runReload,
 }
 
+var syncCmd = &cobra.Command{
+	Use:   "sync",
+	Short: "Sync conflict management",
+}
+
 func init() {
 	experimentalCmd.AddCommand(reloadCmd)
+	experimentalCmd.AddCommand(syncCmd)
+	syncCmd.AddCommand(syncCheckCmd)
+	syncCmd.AddCommand(syncResolveCmd)
 }
 
 // runReload re-applies the configuration to the running container.

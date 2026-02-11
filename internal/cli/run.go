@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/runtime"
+	"github.com/bolasblack/alcatraz/internal/sync"
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
@@ -62,6 +63,19 @@ func runRun(cmd *cobra.Command, args []string) error {
 	if status.State != runtime.StateRunning {
 		return errors.New(ErrMsgNotRunning)
 	}
+
+	// SWR: show stale cache banner immediately, refresh in background.
+	syncEnv := sync.NewSyncEnv(afero.NewOsFs(), cmdRunner, runtime.NewMutagenSyncClient(runtimeEnv))
+	if cache, err := sync.ReadCache(afero.NewOsFs(), cwd); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to read sync conflict cache: %v\n", err)
+	} else if cache != nil && len(cache.Conflicts) > 0 {
+		sync.RenderBanner(cache.Conflicts, os.Stderr)
+	}
+	go func() {
+		if _, err := sync.SyncUpdateCache(syncEnv, st.ProjectID, cwd); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to update sync conflict cache: %v\n", err)
+		}
+	}()
 
 	// Build command with optional enter prefix
 	// If commands.enter is set, use it as command wrapper/prefix

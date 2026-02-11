@@ -1,6 +1,27 @@
-See [.agents/CLAUDE.md](.agents/CLAUDE.md) for the Agent Centric framework.
+## Build System
+
+- `make build` — build all platform binaries
+- `make test` — run tests
+- `make lint` — run linter
+- `make schema` — regenerate `alca-config.schema.json`
+- `make docs` — generate all docs (markdown + man pages)
+- `make docs-markdown` — update `docs/commands/` from cobra command definitions
+- `make vendor` — update vendor directory
+- `make vendor-hash-update` - update vendor hash in `flake.nix`
+
+**Important**: If Makefile targets change, update this section accordingly.
+
+After modifying code, always run `make lint` and `make test` to find and fix any issues before reporting completion.
+
+After dependency updates, always run `make vendor-hash-update` to update the vendor hash in `flake.nix`.
+
+### Makefile Embedded File Tracking
+
+Non-`.go` embedded files (e.g., `entry.sh` via `//go:embed`) must be added to `EMBED_SRC` in the Makefile. Otherwise `make build` won't detect changes to these files and will skip rebuilding.
 
 ## AGD Operations
+
+See [.agents/CLAUDE.md](.agents/CLAUDE.md) for the Agent Centric framework.
 
 When creating or updating AGD files, **always load the `/agent-centric` skill first**. This ensures proper validation, indexing, and relationship maintenance.
 
@@ -11,10 +32,6 @@ When modifying config-related code (`internal/config/`):
 1. **Update documentation**: `docs/config/` - add/update field descriptions, examples
 2. **Regenerate schema**: Run `make schema` to update `alca-config.schema.json` for editor autocomplete
 3. **Create AGD if needed**: Record significant config design decisions
-
-## Quality Checks
-
-After modifying code, always run `make lint` and fix any issues before reporting completion.
 
 ## Code Patterns
 
@@ -45,6 +62,14 @@ var _ MyInterface = (*MyImplementation)(nil)
 ```
 
 This catches interface drift at compile time rather than runtime. Apply this in all packages where interfaces are defined and implemented.
+
+### TransactFs Commit Ordering
+
+Files that need to exist on the real filesystem (e.g., scripts read by Docker containers via volume mounts) must be written in the **pre-commit** phase via TransactFs. The post-commit phase (e.g., Docker operations) can only read files that have already been committed to disk.
+
+- Pre-commit: `WriteEntryScript()` — stages file in TransactFs
+- `commitIfNeeded()` — flushes to disk
+- Post-commit: `InstallHelper()` — Docker ops that read from disk
 
 ### Env Dependency Injection (AGD-029)
 
@@ -78,17 +103,3 @@ Tests exist to discover bugs — mismatches between implementation and expectati
 - **Write expected behavior first**, run the test, then fix the implementation if it fails
 - **Test behavior, not implementation**: test inputs/outputs from the caller's perspective. If a test breaks when you refactor internals without changing behavior, it's a bad test
 - **No implementation mirroring**: don't assert concrete types, internal field values, or call sequences. Test through interfaces
-
-## Build
-
-### Makefile Embedded File Tracking
-
-Non-`.go` embedded files (e.g., `entry.sh` via `//go:embed`) must be added to `EMBED_SRC` in the Makefile. Otherwise `make build` won't detect changes to these files and will skip rebuilding.
-
-### TransactFs Commit Ordering
-
-Files that need to exist on the real filesystem (e.g., scripts read by Docker containers via volume mounts) must be written in the **pre-commit** phase via TransactFs. The post-commit phase (e.g., Docker operations) can only read files that have already been committed to disk.
-
-- Pre-commit: `WriteEntryScript()` — stages file in TransactFs
-- `commitIfNeeded()` — flushes to disk
-- Post-commit: `InstallHelper()` — Docker ops that read from disk
