@@ -17,6 +17,7 @@ Alcatraz wraps your agent in a configurable container with file and network isol
 - **Full agent freedom** — No permission prompts. No guardrails. Maximum productivity inside the container.
 - **Network on lockdown** — Zero LAN access by default. Kernel-level nftables firewall.
 - **File isolation** — Mount only what you choose. Hide secrets with exclude patterns.
+- **Selective file mounting** — `workdir_exclude` and per-mount `exclude` patterns hide secrets and sensitive files from the container, powered by Mutagen sync
 - **Zero-config startup** — `alca init && alca up` gets you running
 - **Auto-detect runtime** — Chooses Docker, OrbStack, or Podman automatically
 - **Nix/Flake integration** — Automatically activates `nix develop` environments
@@ -63,5 +64,9 @@ alca run make build
 - ### [Network]({{< relref "config/network" >}})
 
   Network isolation and LAN access. Platform-specific firewall setup and troubleshooting.
+
+- ### [Sync Conflicts]({{< relref "sync-conflicts" >}})
+
+  Detect and resolve file sync conflicts when using selective file mounting.
 
 {{% /columns %}}

@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-weight: 10
+weight: 1
 ---
 
 # Quickstart Guide
@@ -88,6 +88,21 @@ Edit `.alca.toml` to customize your setup. For example, add resource limits:
 memory = "8g"
 cpus = 4
 ```
+
+Or hide sensitive files from the agent:
+
+```toml
+# Shorthand: exclude from workdir mount
+workdir_exclude = ["**/.env", "**/.env.*", "**/secrets/"]
+
+# Or use extended mount format for any mount
+[[mounts]]
+source = "~/.config/myapp"
+target = "/root/.config/myapp"
+exclude = ["**/*.key", "**/credentials.json"]
+```
+
+Excluded files are invisible inside the container.
 
 Common configuration options:
 
@@ -247,3 +262,4 @@ Rebuild container with new configuration? [y/N]
 - See `alca --help` for all available commands
 - Check `alca <command> --help` for command-specific options
 - Review the [Configuration Reference]({{< relref "config" >}}) for all options
+- If using `workdir_exclude` or `mounts.exclude`, see [Sync Conflicts]({{< relref "sync-conflicts" >}}) for conflict detection and resolution

@@ -1,6 +1,6 @@
 ---
 title: "Sync Conflicts"
-date: 2026-02-10
+weight: 4
 ---
 
 # Sync Conflicts
@@ -77,19 +77,19 @@ The `--template` flag accepts a Go [`text/template`](https://pkg.go.dev/text/tem
 
 The root object has the following fields:
 
-| Field        | Type             | Description                  |
-|--------------|------------------|------------------------------|
-| `.Count`     | `int`            | Number of conflicts          |
-| `.Conflicts` | `[]ConflictInfo` | List of conflict details     |
+| Field        | Type             | Description              |
+| ------------ | ---------------- | ------------------------ |
+| `.Count`     | `int`            | Number of conflicts      |
+| `.Conflicts` | `[]ConflictInfo` | List of conflict details |
 
 Each `ConflictInfo` in `.Conflicts` has:
 
-| Field             | Type        | Description                                                        |
-|-------------------|-------------|--------------------------------------------------------------------|
-| `.Path`           | `string`    | Relative file path from project root                               |
-| `.LocalState`     | `string`    | State on your machine: `modified`, `created`, `deleted`, `directory` |
+| Field             | Type        | Description                                                           |
+| ----------------- | ----------- | --------------------------------------------------------------------- |
+| `.Path`           | `string`    | Relative file path from project root                                  |
+| `.LocalState`     | `string`    | State on your machine: `modified`, `created`, `deleted`, `directory`  |
 | `.ContainerState` | `string`    | State in the container: `modified`, `created`, `deleted`, `directory` |
-| `.DetectedAt`     | `time.Time` | When the conflict was first detected                               |
+| `.DetectedAt`     | `time.Time` | When the conflict was first detected                                  |
 
 A built-in `json` helper function is available for JSON serialization.
 

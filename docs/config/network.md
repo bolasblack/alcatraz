@@ -1,6 +1,6 @@
 ---
 title: Network Configuration
-weight: 3
+weight: 2.3
 ---
 
 # Network Configuration
@@ -9,11 +9,22 @@ By default, Alcatraz containers can access the internet but **cannot access your
 
 ## Quick Summary
 
-| Scenario | Internet | LAN | Config needed |
-|----------|----------|-----|---------------|
-| Default (no config) | Yes | No | None |
-| Allow specific LAN access | Yes | Configured hosts | `lan-access = [...]` |
-| Allow all LAN access | Yes | Yes | `lan-access = ["*"]` |
+| Scenario                  | Internet | LAN              | Config needed        |
+| ------------------------- | -------- | ---------------- | -------------------- |
+| Default (no config)       | Yes      | No               | None                 |
+| Allow specific LAN access | Yes      | Configured hosts | `lan-access = [...]` |
+| Allow all LAN access      | Yes      | Yes              | `lan-access = ["*"]` |
+
+## Why nftables Inside the VM?
+
+On macOS, both Docker Desktop and OrbStack run containers inside a Linux VM. Container network traffic does not pass through macOS kernel network interfaces — instead it is handled entirely in userspace:
+
+- **Docker Desktop** uses [vpnkit](https://www.docker.com/blog/how-docker-desktop-networking-works-under-the-hood/), a userspace TCP/IP stack that reads raw ethernet frames from the VM over a shared-memory channel and translates them into regular macOS socket calls via the `com.docker.backend` process. Docker's security documentation [explicitly describes](https://docs.docker.com/security/faqs/networking-and-vms/) this as "a user-space process (`com.docker.vpnkit`) for network connectivity instead of kernel-level networking."
+- **OrbStack** uses a [custom-built virtual network stack](https://docs.orbstack.dev/architecture) that is "purpose-built from scratch." The [45 Gbps throughput](https://docs.orbstack.dev/docker/network) between macOS and Linux confirms shared-memory transport rather than kernel network interfaces.
+
+Since macOS `pf` (packet filter) operates on kernel network interfaces, it **cannot intercept container traffic** on either platform. Docker's own documentation [recommends](https://docs.docker.com/security/faqs/networking-and-vms/) applying process-level firewall rules to `com.docker.backend` instead, but this only provides coarse-grained control (all containers or none). Per-container firewall rules must be applied inside the Linux VM using [nftables](https://docs.docker.com/engine/network/firewall-nftables), which is exactly what Alcatraz does automatically.
+
+On Linux, containers run natively, and Alcatraz uses the system's native nftables directly.
 
 ## network.lan-access
 
@@ -33,11 +44,11 @@ lan-access = ["*"]
 
 Both macOS and Linux use **nftables** for network isolation and LAN access rules.
 
-| Platform | Runtime | Mechanism | Helper |
-|----------|---------|-----------|--------|
-| macOS | OrbStack | nftables via vmhelper container (nsenter into VM) | `alcatraz-network-helper` Docker container |
-| macOS | Docker Desktop | nftables via vmhelper container (nsenter into VM) | `alcatraz-network-helper` Docker container |
-| Linux | Docker/Podman | Native nftables | Include in `/etc/nftables.conf` |
+| Platform | Runtime        | Mechanism                                         | Helper                                     |
+| -------- | -------------- | ------------------------------------------------- | ------------------------------------------ |
+| macOS    | OrbStack       | nftables via vmhelper container (nsenter into VM) | `alcatraz-network-helper` Docker container |
+| macOS    | Docker Desktop | nftables via vmhelper container (nsenter into VM) | `alcatraz-network-helper` Docker container |
+| Linux    | Docker/Podman  | Native nftables                                   | Include in `/etc/nftables.conf`            |
 
 ## Network Helper
 
@@ -77,6 +88,7 @@ Instead, Alcatraz runs a helper container (`alcatraz-network-helper`) that appli
 4. The helper also responds to SIGHUP for on-demand reloads
 
 **Install** creates:
+
 - `~/.alcatraz/files/alcatraz_nft/` directory for rule files
 - `~/.alcatraz/files/alcatraz_network_helper/entry.sh` script
 - `alcatraz-network-helper` Docker container (privileged, `--pid=host`, `--net=host`, `--restart=always`)
@@ -88,11 +100,13 @@ Instead, Alcatraz runs a helper container (`alcatraz-network-helper`) that appli
 On Linux, Alcatraz uses the system's native nftables directly.
 
 **Install** creates:
+
 - `/etc/nftables.d/alcatraz/` directory for rule files
 - Include line in `/etc/nftables.conf`: `include "/etc/nftables.d/alcatraz/*.nft"`
 - Enables and reloads `nftables.service`
 
 **Uninstall** removes:
+
 - All rule files from `/etc/nftables.d/alcatraz/`
 - The include line from `/etc/nftables.conf`
 - All `alca-*` nftables tables
@@ -110,6 +124,17 @@ On Linux, Alcatraz uses the system's native nftables directly.
    - Cleans up container-specific nftables tables
 
 For design rationale, see [AGD-030](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-030_orbstack-nftables-network-isolation.md).
+
+## Without Alcatraz
+
+For context, here's what manual LAN isolation requires on macOS:
+
+1. Run a privileged container or use `nsenter` to access the Docker Desktop / OrbStack VM's network namespace
+2. Write nftables or iptables rules blocking traffic to private IP ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`)
+3. Handle rule persistence — rules are lost on VM restart and must be reapplied
+4. Manage per-container rule lifecycle (create on start, clean up on stop)
+
+Alcatraz automates all of this through the network helper.
 
 ## Manual Cleanup
 

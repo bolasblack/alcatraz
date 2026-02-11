@@ -1,6 +1,6 @@
 ---
 title: Field Reference
-weight: 2
+weight: 2.1
 ---
 
 # Field Reference
@@ -63,6 +63,8 @@ exclude = ["node_modules", ".git"]
 ```
 
 **Note**: You cannot add a mount targeting the same path as `workdir`. If you need to exclude subdirectories from syncing, use `workdir_exclude` instead of creating a separate mount.
+
+> When using `workdir_exclude`, Alcatraz monitors for sync conflicts (simultaneous edits on both sides). See [Sync Conflicts]({{< relref "sync-conflicts" >}}) for detection and resolution.
 
 ## runtime
 
@@ -142,23 +144,23 @@ exclude = [
 ]
 ```
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `source` | string | Yes | - | Host path |
-| `target` | string | Yes | - | Container path |
-| `readonly` | bool | No | `false` | Read-only mount |
-| `exclude` | array | No | `[]` | Glob patterns to exclude |
+| Field      | Type   | Required | Default | Description              |
+| ---------- | ------ | -------- | ------- | ------------------------ |
+| `source`   | string | Yes      | -       | Host path                |
+| `target`   | string | Yes      | -       | Container path           |
+| `readonly` | bool   | No       | `false` | Read-only mount          |
+| `exclude`  | array  | No       | `[]`    | Glob patterns to exclude |
 
 ### Exclude Patterns
 
 Exclude patterns follow gitignore-like syntax (Mutagen ignore format):
 
-| Pattern | Matches |
-|---------|---------|
-| `**/` | Any directory depth |
-| `*.ext` | Files with extension |
-| `dir/` | Directory (trailing slash) |
-| `**/.env` | `.env` file at any depth |
+| Pattern       | Matches                           |
+| ------------- | --------------------------------- |
+| `**/`         | Any directory depth               |
+| `*.ext`       | Files with extension              |
+| `dir/`        | Directory (trailing slash)        |
+| `**/.env`     | `.env` file at any depth          |
 | `**/secrets/` | `secrets/` directory at any depth |
 
 **Security: hide sensitive files from your agent:**
@@ -268,18 +270,18 @@ GREETING = "hello${NAME}"    # Complex interpolation not supported
 
 The following are passed by default with `override_on_enter = true`:
 
-| Variable | Description |
-|----------|-------------|
-| `TERM` | Terminal type |
-| `COLORTERM` | Color terminal capability |
-| `LANG` | Default locale |
-| `LC_ALL` | Override all locale settings |
-| `LC_COLLATE` | Collation order |
-| `LC_CTYPE` | Character classification |
-| `LC_MESSAGES` | Message language |
-| `LC_MONETARY` | Monetary formatting |
-| `LC_NUMERIC` | Numeric formatting |
-| `LC_TIME` | Date/time formatting |
+| Variable      | Description                  |
+| ------------- | ---------------------------- |
+| `TERM`        | Terminal type                |
+| `COLORTERM`   | Color terminal capability    |
+| `LANG`        | Default locale               |
+| `LC_ALL`      | Override all locale settings |
+| `LC_COLLATE`  | Collation order              |
+| `LC_CTYPE`    | Character classification     |
+| `LC_MESSAGES` | Message language             |
+| `LC_MONETARY` | Monetary formatting          |
+| `LC_NUMERIC`  | Numeric formatting           |
+| `LC_TIME`     | Date/time formatting         |
 
 User-defined values override these defaults.
 
@@ -299,6 +301,7 @@ image = "nixos/nix"
 **Result**: `--cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add KILL --cap-add SETUID --cap-add SETGID`
 
 Default capabilities:
+
 - `CHOWN`: Package managers (npm, pip, cargo) need to modify file ownership
 - `DAC_OVERRIDE`: Bypass file read/write/execute permission checks for file operations in containers
 - `FOWNER`: Modify file permissions and attributes during builds
@@ -344,11 +347,42 @@ drop = ["NET_RAW", "MKNOD", "SYS_CHROOT"]
 
 ### Troubleshooting
 
-| Error | Solution |
-|-------|----------|
-| `Permission denied` when writing files | Add `DAC_OVERRIDE` capability |
-| `Operation not permitted` with setuid | Ensure `SETUID` and `SETGID` are in add list (included by default) |
-| Package manager fails to change ownership | Ensure `CHOWN` and `FOWNER` are in add list |
+| Error                                     | Solution                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------ |
+| `Permission denied` when writing files    | Add `DAC_OVERRIDE` capability                                      |
+| `Operation not permitted` with setuid     | Ensure `SETUID` and `SETGID` are in add list (included by default) |
+| Package manager fails to change ownership | Ensure `CHOWN` and `FOWNER` are in add list                        |
+
+## includes
+
+Include other configuration files for composable configuration. Supports glob patterns.
+
+```toml
+includes = [".alca.base.toml", ".alca.local.toml"]
+```
+
+- **Type**: array of strings
+- **Required**: No
+- **Default**: `[]`
+- **Notes**: Paths are resolved relative to the including file's directory. Supports glob patterns (`*.toml`). Later values override earlier ones.
+
+See [Includes]({{< relref "includes" >}}) for full documentation including merge behavior and processing order.
+
+## network.lan-access
+
+Control container access to your local network (LAN).
+
+```toml
+[network]
+lan-access = ["*"]
+```
+
+- **Type**: array of strings
+- **Required**: No
+- **Default**: `[]` (no LAN access — containers can reach the internet but not local machines)
+- **Valid values**: `"*"` (allow all LAN access)
+
+See [Network Configuration]({{< relref "network" >}}) for platform behavior, the network helper, and why nftables inside the VM is necessary on macOS.
 
 ## Runtime-Specific Notes
 

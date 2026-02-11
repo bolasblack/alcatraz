@@ -1,6 +1,6 @@
 ---
 title: Runtimes
-weight: 30
+weight: 3
 ---
 
 # Runtimes
@@ -78,11 +78,11 @@ docker run -m 4g --cpus 4 ...
 
 ### Troubleshooting
 
-| Issue                             | Solution                                              |
-| --------------------------------- | ----------------------------------------------------- |
+| Issue                             | Solution                                                                    |
+| --------------------------------- | --------------------------------------------------------------------------- |
 | "Docker not found"                | Install Docker Desktop, [OrbStack](https://orbstack.dev/), or Docker Engine |
-| "Cannot connect to Docker daemon" | Start Docker Desktop / OrbStack or `sudo systemctl start docker` |
-| Container slow / memory issues    | Increase Docker Desktop VM memory (OrbStack manages this automatically) |
+| "Cannot connect to Docker daemon" | Start Docker Desktop / OrbStack or `sudo systemctl start docker`            |
+| Container slow / memory issues    | Increase Docker Desktop VM memory (OrbStack manages this automatically)     |
 
 ## OrbStack
 
@@ -128,9 +128,9 @@ podman run -m 4g --cpus 4 ...
 
 ### Troubleshooting
 
-| Issue                               | Solution                                                                  |
-| ----------------------------------- | ------------------------------------------------------------------------- |
-| "Podman not found"                  | Install via package manager (`apt install podman`) |
+| Issue              | Solution                                           |
+| ------------------ | -------------------------------------------------- |
+| "Podman not found" | Install via package manager (`apt install podman`) |
 
 ## Comparison Table
 

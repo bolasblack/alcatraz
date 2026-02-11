@@ -1,6 +1,6 @@
 ---
 title: Includes
-weight: 1
+weight: 2.2
 ---
 
 # Includes
@@ -47,11 +47,11 @@ includes = [".alca.*.toml"]  # Includes .alca.dev.toml, .alca.local.toml, etc.
 
 ## Merge Behavior
 
-| Type | Behavior |
-|------|----------|
-| **Objects** | Deep merge (nested fields merged recursively) |
-| **Arrays** | Append (concatenate, no deduplication) |
-| **Same key** | Later value wins (overlay overrides base) |
+| Type         | Behavior                                      |
+| ------------ | --------------------------------------------- |
+| **Objects**  | Deep merge (nested fields merged recursively) |
+| **Arrays**   | Append (concatenate, no deduplication)        |
+| **Same key** | Later value wins (overlay overrides base)     |
 
 ## Processing Order
 
