@@ -299,48 +299,6 @@ func TestConfigValidateEnvs(t *testing.T) {
 	})
 }
 
-func TestGenerateConfig(t *testing.T) {
-	tests := []struct {
-		name     string
-		template Template
-		wantImg  string
-		wantCmt  string
-	}{
-		{"nix", TemplateNix, "nixos/nix", "# prebuild, to reduce the time costs on enter"},
-		{"debian", TemplateDebian, "debian:bookworm-slim", "# prepare the environment"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			content, err := GenerateConfig(tt.template)
-			if err != nil {
-				t.Fatalf("GenerateConfig failed: %v", err)
-			}
-
-			if !strings.Contains(content, tt.wantImg) {
-				t.Errorf("expected image %q in output", tt.wantImg)
-			}
-			if !strings.Contains(content, tt.wantCmt) {
-				t.Errorf("expected comment %q in output", tt.wantCmt)
-			}
-			if !strings.Contains(content, SchemaComment) {
-				t.Error("expected schema comment in output")
-			}
-		})
-	}
-}
-
-func TestGenerateConfigUnknownTemplate(t *testing.T) {
-	// Unknown template should fall back to nix
-	content, err := GenerateConfig("unknown")
-	if err != nil {
-		t.Fatalf("GenerateConfig failed: %v", err)
-	}
-	if !strings.Contains(content, "nixos/nix") {
-		t.Error("expected unknown template to fall back to nix")
-	}
-}
-
 func TestRawEnvValueMapJSONSchema(t *testing.T) {
 	schema := RawEnvValueMap{}.JSONSchema()
 

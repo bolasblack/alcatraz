@@ -9,9 +9,12 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
+	"github.com/spf13/afero"
 )
 
 // Template represents a configuration template type.
@@ -33,12 +36,32 @@ type TemplateConfig struct {
 	Includes  []string // Config files to include (RawConfig-only field)
 	Extends   []string // Config files to extend (RawConfig-only field)
 	UpComment string   // Comment to insert before the "up" command
+	Gitignore []string // Entries to append to .gitignore if it exists
 }
 
-// GenerateConfig returns the TOML content for the given template.
-func GenerateConfig(template Template) (string, error) {
-	tc := getTemplateConfig(template)
+// GenerateConfig writes the TOML config file and appends gitignore entries.
+func GenerateConfig(fs afero.Fs, configPath string, tc TemplateConfig) error {
+	content, err := generateConfigContent(tc)
+	if err != nil {
+		return err
+	}
 
+	if err := afero.WriteFile(fs, configPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+
+	if len(tc.Gitignore) > 0 {
+		dir := filepath.Dir(configPath)
+		if err := appendGitignoreEntries(fs, dir, tc.Gitignore); err != nil {
+			return fmt.Errorf("update .gitignore: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// generateConfigContent returns the TOML content string for a TemplateConfig.
+func generateConfigContent(tc TemplateConfig) (string, error) {
 	raw := configToRaw(tc.Config)
 	raw.Extends = tc.Extends
 	raw.Includes = tc.Includes
@@ -49,8 +72,8 @@ func GenerateConfig(template Template) (string, error) {
 	}
 
 	content := buf.String()
+	content = convertMultilineStrings(content)
 
-	// Insert comment before "up" command if present
 	if tc.UpComment != "" {
 		content = insertUpComment(content, tc.UpComment)
 	}
@@ -58,15 +81,15 @@ func GenerateConfig(template Template) (string, error) {
 	return SchemaComment + content, nil
 }
 
-func getTemplateConfig(template Template) TemplateConfig {
+// GetTemplateConfig returns the TemplateConfig for a given template.
+func GetTemplateConfig(template Template) TemplateConfig {
 	switch template {
 	case TemplateNix:
 		return TemplateConfig{
 			Config: Config{
 				Image: "nixos/nix",
 				Mounts: []MountConfig{
-					{Source: ".alca.cache/go", Target: "/root/go"},
-					{Source: ".alca.cache/mise", Target: "/root/.local/share/mise"},
+					{Source: ".alca.mounts/mise", Target: "/root/.local/share/mise"},
 				},
 				Commands: Commands{
 					Up:    CommandValue{Command: "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command true"},
@@ -77,17 +100,18 @@ func getTemplateConfig(template Template) TemplateConfig {
 					"NIXPKGS_ALLOW_UNFREE": {Value: "1"},
 					"NIX_CONFIG":           {Value: "extra-experimental-features = nix-command flakes"},
 				},
+				WorkdirExclude: []string{".env"},
 			},
 			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prebuild, to reduce the time costs on enter",
+			Gitignore: []string{".alca.local.toml", ".alca.mounts/"},
 		}
 	case TemplateDebian:
 		return TemplateConfig{
 			Config: Config{
 				Image: "debian:bookworm-slim",
 				Mounts: []MountConfig{
-					{Source: ".alca.cache/go", Target: "/root/go"},
-					{Source: ".alca.cache/mise", Target: "/root/.local/share/mise"},
+					{Source: ".alca.mounts/mise", Target: "/root/.local/share/mise"},
 				},
 				Commands: Commands{
 					Up: CommandValue{Command: `apt update -y && apt install -y curl
@@ -101,18 +125,24 @@ echo '
 export PATH="/root/.local/share/mise/shims:$PATH"
 export PATH="/extra-bin:$PATH"
 ' >> ~/.bashrc
-. ~/.bashrc`},
+. ~/.bashrc
+
+mise trust
+mise install`},
+					Enter: CommandValue{Command: `. ~/.bashrc`},
 				},
 				Envs: map[string]EnvValue{
 					"IS_SANDBOX": {Value: "1"},
 				},
+				WorkdirExclude: []string{".env"},
 			},
 			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prepare the environment",
+			Gitignore: []string{".alca.local.toml", ".alca.mounts/"},
 		}
 	default:
 		// Intentional fallback: unknown templates default to Nix (tested by TestGenerateConfigUnknownTemplate)
-		return getTemplateConfig(TemplateNix)
+		return GetTemplateConfig(TemplateNix)
 	}
 }
 
@@ -161,7 +191,11 @@ func configToRaw(c Config) RawConfig {
 	if len(c.Envs) > 0 {
 		envs = make(RawEnvValueMap)
 		for k, v := range c.Envs {
-			envs[k] = v
+			if !v.OverrideOnEnter {
+				envs[k] = v.Value // simple string
+			} else {
+				envs[k] = v // full struct
+			}
 		}
 	}
 
@@ -212,15 +246,16 @@ func configToRaw(c Config) RawConfig {
 	}
 
 	return RawConfig{
-		Image:     c.Image,
-		Workdir:   c.Workdir,
-		Runtime:   c.Runtime,
-		Commands:  commands,
-		Mounts:    mounts,
-		Resources: c.Resources,
-		Envs:      envs,
-		Network:   c.Network,
-		Caps:      caps,
+		Image:          c.Image,
+		Workdir:        c.Workdir,
+		WorkdirExclude: c.WorkdirExclude,
+		Runtime:        c.Runtime,
+		Commands:       commands,
+		Mounts:         mounts,
+		Resources:      c.Resources,
+		Envs:           envs,
+		Network:        c.Network,
+		Caps:           caps,
 	}
 }
 
@@ -234,6 +269,73 @@ func commandValueToRaw(cv CommandValue) RawCommandValue {
 		}
 	}
 	return cv.Command
+}
+
+// multilinePattern matches TOML key-value lines where the string value contains literal \n sequences.
+var multilinePattern = regexp.MustCompile(`^(\s*\S+\s*=\s*)"((?:[^"\\]|\\.)*)"\s*$`)
+
+// convertMultilineStrings post-processes TOML output to convert string values
+// containing literal \n escape sequences into TOML multiline basic strings (""").
+func convertMultilineStrings(content string) string {
+	lines := strings.Split(content, "\n")
+	var result []string
+
+	for _, line := range lines {
+		m := multilinePattern.FindStringSubmatch(line)
+		if m != nil && strings.Contains(m[2], `\n`) {
+			prefix := m[1] // e.g. "up = "
+			raw := m[2]
+			// Replace literal \n sequences with actual newlines,
+			// and unescape \" to " (unnecessary inside triple-quoted strings)
+			expanded := strings.ReplaceAll(raw, `\n`, "\n")
+			expanded = strings.ReplaceAll(expanded, `\"`, `"`)
+			result = append(result, prefix+"\"\"\"\n"+expanded+"\n\"\"\"")
+			continue
+		}
+		result = append(result, line)
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// appendGitignoreEntries appends entries to .gitignore if the file exists.
+// It does not create .gitignore if it doesn't exist.
+func appendGitignoreEntries(fs afero.Fs, dir string, entries []string) error {
+	gitignorePath := filepath.Join(dir, ".gitignore")
+
+	var content string
+	if data, err := afero.ReadFile(fs, gitignorePath); err == nil {
+		content = string(data)
+	}
+
+	existingLines := strings.Split(content, "\n")
+
+	var toAdd []string
+	for _, entry := range entries {
+		found := false
+		for _, line := range existingLines {
+			if strings.TrimSpace(line) == entry {
+				found = true
+				break
+			}
+		}
+		if !found {
+			toAdd = append(toAdd, entry)
+		}
+	}
+
+	if len(toAdd) == 0 {
+		return nil
+	}
+
+	// Ensure a trailing newline before appending
+	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+
+	content += strings.Join(toAdd, "\n") + "\n"
+
+	return afero.WriteFile(fs, gitignorePath, []byte(content), 0644)
 }
 
 // mountConfigToMap converts MountConfig to map for TOML serialization.

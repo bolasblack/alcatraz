@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"github.com/charmbracelet/huh"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/bolasblack/alcatraz/internal/config"
@@ -49,8 +48,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	err = huh.NewSelect[string]().
 		Title("Select a template").
 		Options(
-			huh.NewOption("Nix - NixOS-based development environment", string(config.TemplateNix)),
 			huh.NewOption("Debian - Debian-based environment with mise", string(config.TemplateDebian)),
+			huh.NewOption("Nix - NixOS-based development environment", string(config.TemplateNix)),
 		).
 		Value(&selectedTemplate).
 		Run()
@@ -59,14 +58,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Generate configuration from template
-	template := config.Template(selectedTemplate)
-	content, err := config.GenerateConfig(template)
-	if err != nil {
+	tc := config.GetTemplateConfig(config.Template(selectedTemplate))
+	if err := config.GenerateConfig(env.Fs, configPath, tc); err != nil {
 		return fmt.Errorf("failed to generate configuration: %w", err)
-	}
-
-	if err := afero.WriteFile(env.Fs, configPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write configuration: %w", err)
 	}
 
 	// Commit the changes (project dir, normally no sudo needed)
