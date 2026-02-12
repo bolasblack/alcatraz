@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -38,12 +39,12 @@ image = "main:latest"
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
 
-	// Main config overrides base config's image
-	if cfg.Image != "main:latest" {
-		t.Errorf("expected image 'main:latest', got %q", cfg.Image)
+	// Included file (base) wins over declaring file (main) — AGD-033
+	if cfg.Image != "base:latest" {
+		t.Errorf("expected image 'base:latest', got %q", cfg.Image)
 	}
 
-	// Base config's workdir is preserved since main doesn't override it
+	// Base config's workdir is preserved (main doesn't set it)
 	if cfg.Workdir != "/base" {
 		t.Errorf("expected workdir '/base', got %q", cfg.Workdir)
 	}
@@ -90,14 +91,14 @@ workdir = "/main"
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
 
-	// Dev config's image (overrode common)
-	if cfg.Image != "dev:latest" {
-		t.Errorf("expected image 'dev:latest', got %q", cfg.Image)
+	// Included files win at each level: common wins over dev, dev-result wins over main
+	if cfg.Image != "common:latest" {
+		t.Errorf("expected image 'common:latest', got %q", cfg.Image)
 	}
 
-	// Main config's workdir (overrode common)
-	if cfg.Workdir != "/main" {
-		t.Errorf("expected workdir '/main', got %q", cfg.Workdir)
+	// Included file's workdir wins over main's
+	if cfg.Workdir != "/common" {
+		t.Errorf("expected workdir '/common', got %q", cfg.Workdir)
 	}
 
 	// Mounts should be concatenated: common + dev
@@ -307,9 +308,9 @@ SHARED_VAR = "main_shared"
 		t.Errorf("expected MAIN_VAR='main_value', got %v", cfg.Envs["MAIN_VAR"])
 	}
 
-	// SHARED_VAR should be overridden by main
-	if e, ok := cfg.Envs["SHARED_VAR"]; !ok || e.Value != "main_shared" {
-		t.Errorf("expected SHARED_VAR='main_shared', got %v", cfg.Envs["SHARED_VAR"])
+	// SHARED_VAR should be overridden by included file (base wins over main)
+	if e, ok := cfg.Envs["SHARED_VAR"]; !ok || e.Value != "base_shared" {
+		t.Errorf("expected SHARED_VAR='base_shared', got %v", cfg.Envs["SHARED_VAR"])
 	}
 }
 
@@ -469,14 +470,694 @@ func TestExpandGlob(t *testing.T) {
 	})
 }
 
+// --- Extends tests (AGD-033): declaring file wins over extended files ---
+
+func TestLoadWithIncludes_SimpleExtends(t *testing.T) {
+	env, memFs := newTestEnv(t)
+	baseDir := "/test"
+
+	baseContent := `
+image = "base:latest"
+workdir = "/base"
+`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.base.toml", []byte(baseContent), 0644); err != nil {
+		t.Fatalf("failed to write base file: %v", err)
+	}
+
+	mainContent := `
+extends = [".alca.base.toml"]
+image = "main:latest"
+`
+	mainPath := baseDir + "/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	cfg, err := LoadWithIncludes(env, mainPath)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes failed: %v", err)
+	}
+
+	// Declaring file (main) wins over extended file (base)
+	if cfg.Image != "main:latest" {
+		t.Errorf("expected image 'main:latest', got %q", cfg.Image)
+	}
+
+	// Base's workdir preserved since main doesn't set it
+	if cfg.Workdir != "/base" {
+		t.Errorf("expected workdir '/base', got %q", cfg.Workdir)
+	}
+}
+
+func TestLoadWithIncludes_NestedExtends(t *testing.T) {
+	env, memFs := newTestEnv(t)
+	baseDir := "/test"
+
+	commonContent := `
+image = "common:latest"
+workdir = "/common"
+`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.common.toml", []byte(commonContent), 0644); err != nil {
+		t.Fatalf("failed to write common file: %v", err)
+	}
+
+	devContent := `
+extends = [".alca.common.toml"]
+image = "dev:latest"
+`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.dev.toml", []byte(devContent), 0644); err != nil {
+		t.Fatalf("failed to write dev file: %v", err)
+	}
+
+	mainContent := `
+extends = [".alca.dev.toml"]
+image = "main:latest"
+`
+	mainPath := baseDir + "/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	cfg, err := LoadWithIncludes(env, mainPath)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes failed: %v", err)
+	}
+
+	// Each declaring file wins: main > dev > common
+	if cfg.Image != "main:latest" {
+		t.Errorf("expected image 'main:latest', got %q", cfg.Image)
+	}
+
+	// common's workdir inherited through chain (no override)
+	if cfg.Workdir != "/common" {
+		t.Errorf("expected workdir '/common', got %q", cfg.Workdir)
+	}
+}
+
+func TestLoadWithIncludes_ExtendsWithGlob(t *testing.T) {
+	env, memFs := newTestEnv(t)
+	baseDir := "/test"
+
+	for i, name := range []string{".alca.base-a.toml", ".alca.base-b.toml"} {
+		content := `mounts = ["/mount` + string(rune('a'+i)) + `:/mount` + string(rune('a'+i)) + `"]`
+		if err := afero.WriteFile(memFs, baseDir+"/"+name, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write %s: %v", name, err)
+		}
+	}
+
+	mainContent := `
+extends = [".alca.base-*.toml"]
+image = "main:latest"
+`
+	mainPath := baseDir + "/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	cfg, err := LoadWithIncludes(env, mainPath)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes failed: %v", err)
+	}
+
+	if cfg.Image != "main:latest" {
+		t.Errorf("expected image 'main:latest', got %q", cfg.Image)
+	}
+	if len(cfg.Mounts) != 2 {
+		t.Fatalf("expected 2 mounts from glob extends, got %d", len(cfg.Mounts))
+	}
+	if cfg.Mounts[0].Source != "/mountb" || cfg.Mounts[0].Target != "/mountb" {
+		t.Errorf("expected mount[0] /mountb:/mountb, got %s:%s", cfg.Mounts[0].Source, cfg.Mounts[0].Target)
+	}
+	if cfg.Mounts[1].Source != "/mounta" || cfg.Mounts[1].Target != "/mounta" {
+		t.Errorf("expected mount[1] /mounta:/mounta, got %s:%s", cfg.Mounts[1].Source, cfg.Mounts[1].Target)
+	}
+}
+
+func TestLoadWithIncludes_ExtendsCircularReference(t *testing.T) {
+	env, memFs := newTestEnv(t)
+	baseDir := "/test"
+
+	// Create circular reference via extends: a -> b -> a
+	aContent := `
+extends = [".alca.b.toml"]
+image = "a:latest"
+`
+	aPath := baseDir + "/.alca.a.toml"
+	if err := afero.WriteFile(memFs, aPath, []byte(aContent), 0644); err != nil {
+		t.Fatalf("failed to write a file: %v", err)
+	}
+
+	bContent := `
+extends = [".alca.a.toml"]
+image = "b:latest"
+`
+	bPath := baseDir + "/.alca.b.toml"
+	if err := afero.WriteFile(memFs, bPath, []byte(bContent), 0644); err != nil {
+		t.Fatalf("failed to write b file: %v", err)
+	}
+
+	_, err := LoadWithIncludes(env, aPath)
+	if err == nil {
+		t.Error("expected circular reference error, got nil")
+	}
+	if !strings.Contains(err.Error(), "circular") {
+		t.Errorf("expected error to mention 'circular', got: %v", err)
+	}
+}
+
+func TestLoadWithIncludes_MultipleIncludesAppend(t *testing.T) {
+	env, memFs := newTestEnv(t)
+	baseDir := "/test"
+
+	aContent := `
+[commands.up]
+command = "foo"
+append = true
+`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.a.toml", []byte(aContent), 0644); err != nil {
+		t.Fatalf("failed to write a file: %v", err)
+	}
+
+	bContent := `
+[commands.up]
+command = "bar"
+append = true
+`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.b.toml", []byte(bContent), 0644); err != nil {
+		t.Fatalf("failed to write b file: %v", err)
+	}
+
+	mainContent := `
+includes = [".alca.a.toml", ".alca.b.toml"]
+image = "test:latest"
+
+[commands]
+up = "base"
+`
+	mainPath := baseDir + "/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	cfg, err := LoadWithIncludes(env, mainPath)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes failed: %v", err)
+	}
+
+	// Each include appends to accumulating result: "base" + " foo" + " bar"
+	if cfg.Commands.Up.Command != "base foo bar" {
+		t.Errorf("expected 'base foo bar', got %q", cfg.Commands.Up.Command)
+	}
+}
+
+// --- Includes new semantics tests (AGD-033): included files win ---
+
+func TestLoadWithIncludes_IncludesOverridesImage(t *testing.T) {
+	env, memFs := newTestEnv(t)
+	baseDir := "/test"
+
+	localContent := `
+image = "local:latest"
+`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.local.toml", []byte(localContent), 0644); err != nil {
+		t.Fatalf("failed to write local file: %v", err)
+	}
+
+	mainContent := `
+includes = [".alca.local.toml"]
+image = "main:latest"
+`
+	mainPath := baseDir + "/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	cfg, err := LoadWithIncludes(env, mainPath)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes failed: %v", err)
+	}
+
+	// Included file's image overrides main's
+	if cfg.Image != "local:latest" {
+		t.Errorf("expected image 'local:latest', got %q", cfg.Image)
+	}
+}
+
+func TestLoadWithIncludes_IncludesPreservesNonOverlapping(t *testing.T) {
+	env, memFs := newTestEnv(t)
+	baseDir := "/test"
+
+	localContent := `
+image = "local:latest"
+`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.local.toml", []byte(localContent), 0644); err != nil {
+		t.Fatalf("failed to write local file: %v", err)
+	}
+
+	mainContent := `
+includes = [".alca.local.toml"]
+image = "main:latest"
+workdir = "/main"
+runtime = "docker"
+`
+	mainPath := baseDir + "/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	cfg, err := LoadWithIncludes(env, mainPath)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes failed: %v", err)
+	}
+
+	// Included file overrides image
+	if cfg.Image != "local:latest" {
+		t.Errorf("expected image 'local:latest', got %q", cfg.Image)
+	}
+	// Fields only in main are preserved
+	if cfg.Workdir != "/main" {
+		t.Errorf("expected workdir '/main', got %q", cfg.Workdir)
+	}
+	if cfg.Runtime != RuntimeDocker {
+		t.Errorf("expected runtime 'docker', got %q", cfg.Runtime)
+	}
+}
+
+// --- Three-layer merge tests (AGD-033): extends + self + includes ---
+
+func TestLoadWithIncludes_ExtendsAndIncludes(t *testing.T) {
+	env, memFs := newTestEnv(t)
+	baseDir := "/test"
+
+	// extends file: base layer
+	extendsContent := `
+image = "extends:latest"
+workdir = "/extends"
+
+[commands]
+up = "extends-up"
+enter = "extends-enter"
+`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.base.toml", []byte(extendsContent), 0644); err != nil {
+		t.Fatalf("failed to write extends file: %v", err)
+	}
+
+	// includes file: top layer (wins)
+	includesContent := `
+image = "includes:latest"
+`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.local.toml", []byte(includesContent), 0644); err != nil {
+		t.Fatalf("failed to write includes file: %v", err)
+	}
+
+	// self: middle layer
+	mainContent := `
+extends = [".alca.base.toml"]
+includes = [".alca.local.toml"]
+image = "self:latest"
+
+[commands]
+up = "self-up"
+`
+	mainPath := baseDir + "/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	cfg, err := LoadWithIncludes(env, mainPath)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes failed: %v", err)
+	}
+
+	// Three-layer: extends(base) → self(middle) → includes(top)
+	// includes wins for image
+	if cfg.Image != "includes:latest" {
+		t.Errorf("expected image 'includes:latest', got %q", cfg.Image)
+	}
+
+	// self wins over extends for commands.up; includes doesn't set it
+	if cfg.Commands.Up.Command != "self-up" {
+		t.Errorf("expected commands.up 'self-up', got %q", cfg.Commands.Up.Command)
+	}
+
+	// extends provides commands.enter (no override from self or includes)
+	if cfg.Commands.Enter.Command != "extends-enter" {
+		t.Errorf("expected commands.enter 'extends-enter', got %q", cfg.Commands.Enter.Command)
+	}
+
+	// extends provides workdir (no override from self or includes)
+	if cfg.Workdir != "/extends" {
+		t.Errorf("expected workdir '/extends', got %q", cfg.Workdir)
+	}
+}
+
+// --- Array priority tests (AGD-033) ---
+
+func TestLoadWithIncludes_ExtendsArrayPriority(t *testing.T) {
+	env, memFs := newTestEnv(t)
+	baseDir := "/test"
+
+	// B sets image to "b:latest"
+	bContent := `image = "b:latest"`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.b.toml", []byte(bContent), 0644); err != nil {
+		t.Fatalf("failed to write b file: %v", err)
+	}
+
+	// C sets image to "c:latest"
+	cContent := `image = "c:latest"`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.c.toml", []byte(cContent), 0644); err != nil {
+		t.Fatalf("failed to write c file: %v", err)
+	}
+
+	// Main extends [B, C] — first entry (B) should win
+	mainContent := `extends = [".alca.b.toml", ".alca.c.toml"]`
+	mainPath := baseDir + "/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	cfg, err := LoadWithIncludes(env, mainPath)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes failed: %v", err)
+	}
+
+	// extends: first entry wins (B > C)
+	if cfg.Image != "b:latest" {
+		t.Errorf("expected image 'b:latest' (first entry wins), got %q", cfg.Image)
+	}
+}
+
+func TestLoadWithIncludes_IncludesArrayPriority(t *testing.T) {
+	env, memFs := newTestEnv(t)
+	baseDir := "/test"
+
+	// B sets image to "b:latest"
+	bContent := `image = "b:latest"`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.b.toml", []byte(bContent), 0644); err != nil {
+		t.Fatalf("failed to write b file: %v", err)
+	}
+
+	// C sets image to "c:latest"
+	cContent := `image = "c:latest"`
+	if err := afero.WriteFile(memFs, baseDir+"/.alca.c.toml", []byte(cContent), 0644); err != nil {
+		t.Fatalf("failed to write c file: %v", err)
+	}
+
+	// Main includes [B, C] — last entry (C) should win
+	mainContent := `includes = [".alca.b.toml", ".alca.c.toml"]`
+	mainPath := baseDir + "/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	cfg, err := LoadWithIncludes(env, mainPath)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes failed: %v", err)
+	}
+
+	// includes: last entry wins (C > B)
+	if cfg.Image != "c:latest" {
+		t.Errorf("expected image 'c:latest' (last entry wins), got %q", cfg.Image)
+	}
+}
+
+// --- Command append unit tests (AGD-034) ---
+
+func TestMergeCommandValue_Replace(t *testing.T) {
+	base := CommandValue{Command: "base-cmd"}
+	overlay := CommandValue{Command: "overlay-cmd", Append: false}
+
+	result := mergeCommandValue(base, overlay)
+
+	if result.Command != "overlay-cmd" {
+		t.Errorf("expected 'overlay-cmd', got %q", result.Command)
+	}
+	if result.Append {
+		t.Error("expected Append=false for replace")
+	}
+}
+
+func TestMergeCommandValue_Append(t *testing.T) {
+	base := CommandValue{Command: "nix develop"}
+	overlay := CommandValue{Command: "bash", Append: true}
+
+	result := mergeCommandValue(base, overlay)
+
+	if result.Command != "nix develop bash" {
+		t.Errorf("expected 'nix develop bash', got %q", result.Command)
+	}
+	// Append flag consumed during merge
+	if result.Append {
+		t.Error("expected Append=false after merge")
+	}
+}
+
+func TestMergeCommandValue_AppendEmptyBase(t *testing.T) {
+	base := CommandValue{}
+	overlay := CommandValue{Command: "bash", Append: true}
+
+	result := mergeCommandValue(base, overlay)
+
+	// Empty base: overlay replaces (no space-concat with empty)
+	if result.Command != "bash" {
+		t.Errorf("expected 'bash', got %q", result.Command)
+	}
+	if !result.Append {
+		t.Error("expected Append=true preserved for later merges when base is empty")
+	}
+}
+
+func TestMergeCommandValue_EmptyOverlay(t *testing.T) {
+	base := CommandValue{Command: "base-cmd"}
+	overlay := CommandValue{}
+
+	result := mergeCommandValue(base, overlay)
+
+	if result.Command != "base-cmd" {
+		t.Errorf("expected 'base-cmd', got %q", result.Command)
+	}
+	if result.Append {
+		t.Error("expected Append=false for empty overlay")
+	}
+}
+
+func TestMergeCommandValue_BaseAppendIgnored(t *testing.T) {
+	base := CommandValue{Command: "nix develop", Append: true}
+	overlay := CommandValue{Command: "bash", Append: false}
+
+	result := mergeCommandValue(base, overlay)
+
+	// Base's append flag is ignored; overlay has append=false → replace
+	if result.Command != "bash" {
+		t.Errorf("expected 'bash', got %q", result.Command)
+	}
+	if result.Append {
+		t.Error("expected Append=false when base append is ignored")
+	}
+}
+
+// --- parseCommandValue tests (AGD-034) ---
+
+func TestParseCommandValue_String(t *testing.T) {
+	cv, err := parseCommandValue("docker compose up")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cv.Command != "docker compose up" {
+		t.Errorf("expected command 'docker compose up', got %q", cv.Command)
+	}
+	if cv.Append {
+		t.Error("expected Append=false for string input")
+	}
+}
+
+func TestParseCommandValue_Struct(t *testing.T) {
+	cv, err := parseCommandValue(map[string]any{"command": "bash", "append": true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cv.Command != "bash" {
+		t.Errorf("expected command 'bash', got %q", cv.Command)
+	}
+	if !cv.Append {
+		t.Error("expected Append=true")
+	}
+}
+
+func TestParseCommandValue_StructNoAppend(t *testing.T) {
+	cv, err := parseCommandValue(map[string]any{"command": "bash"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cv.Command != "bash" {
+		t.Errorf("expected command 'bash', got %q", cv.Command)
+	}
+	if cv.Append {
+		t.Error("expected Append=false when not specified")
+	}
+}
+
+func TestParseCommandValue_Nil(t *testing.T) {
+	cv, err := parseCommandValue(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cv.Command != "" {
+		t.Errorf("expected empty command, got %q", cv.Command)
+	}
+}
+
+func TestParseCommandValue_InvalidType(t *testing.T) {
+	_, err := parseCommandValue(123)
+	if err == nil {
+		t.Error("expected error for invalid type")
+	}
+}
+
+func TestCommandValue_UnmarshalJSON_String(t *testing.T) {
+	// Backward compat: old state.json stored commands as plain strings
+	var cv CommandValue
+	if err := json.Unmarshal([]byte(`"apt update"`), &cv); err != nil {
+		t.Fatalf("UnmarshalJSON string failed: %v", err)
+	}
+	if cv.Command != "apt update" {
+		t.Errorf("expected command 'apt update', got %q", cv.Command)
+	}
+	if cv.Append {
+		t.Error("expected Append=false for string format")
+	}
+}
+
+func TestCommandValue_UnmarshalJSON_Object(t *testing.T) {
+	var cv CommandValue
+	if err := json.Unmarshal([]byte(`{"command":"bash","append":true}`), &cv); err != nil {
+		t.Fatalf("UnmarshalJSON object failed: %v", err)
+	}
+	if cv.Command != "bash" {
+		t.Errorf("expected command 'bash', got %q", cv.Command)
+	}
+	if !cv.Append {
+		t.Error("expected Append=true")
+	}
+}
+
+// --- Integration tests: command append with includes/extends (AGD-034) ---
+
+func TestLoadConfig_CommandAppendExample(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	mainConfig := `
+image = "test:latest"
+includes = ["./*.local.toml"]
+
+[commands.up]
+command = "nix develop"
+`
+	localConfig := `
+[commands.up]
+command = "bash"
+append = true
+`
+	if err := afero.WriteFile(fs, "/project/.alca.toml", []byte(mainConfig), 0644); err != nil {
+		t.Fatalf("failed to write main config: %v", err)
+	}
+	if err := afero.WriteFile(fs, "/project/.alca.local.toml", []byte(localConfig), 0644); err != nil {
+		t.Fatalf("failed to write local config: %v", err)
+	}
+
+	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
+
+	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	// includes: local is overlay, local has append=true → "nix develop" + " " + "bash"
+	if cfg.Commands.Up.Command != "nix develop bash" {
+		t.Errorf("expected 'nix develop bash', got %q", cfg.Commands.Up.Command)
+	}
+}
+
+func TestLoadConfig_CommandAppendWithExtends(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	baseConfig := `
+image = "test:latest"
+
+[commands.up]
+command = "nix develop"
+`
+	mainConfig := `
+extends = ["base.toml"]
+
+[commands.up]
+command = "bash"
+append = true
+`
+	if err := afero.WriteFile(fs, "/project/base.toml", []byte(baseConfig), 0644); err != nil {
+		t.Fatalf("failed to write base config: %v", err)
+	}
+	if err := afero.WriteFile(fs, "/project/.alca.toml", []byte(mainConfig), 0644); err != nil {
+		t.Fatalf("failed to write main config: %v", err)
+	}
+
+	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
+
+	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	// extends: main is overlay over base, main has append=true → "nix develop" + " " + "bash"
+	if cfg.Commands.Up.Command != "nix develop bash" {
+		t.Errorf("expected 'nix develop bash', got %q", cfg.Commands.Up.Command)
+	}
+}
+
+func TestLoadConfig_CommandAppendBaseIgnored(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
+	baseConfig := `
+image = "test:latest"
+
+[commands.up]
+command = "nix develop"
+append = true
+`
+	mainConfig := `
+extends = ["base.toml"]
+
+[commands.up]
+command = "bash"
+`
+	if err := afero.WriteFile(fs, "/project/base.toml", []byte(baseConfig), 0644); err != nil {
+		t.Fatalf("failed to write base config: %v", err)
+	}
+	if err := afero.WriteFile(fs, "/project/.alca.toml", []byte(mainConfig), 0644); err != nil {
+		t.Fatalf("failed to write main config: %v", err)
+	}
+
+	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
+
+	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	// extends: main is overlay, main has append=false → replace, base's append ignored
+	if cfg.Commands.Up.Command != "bash" {
+		t.Errorf("expected 'bash', got %q", cfg.Commands.Up.Command)
+	}
+}
+
 func TestConfigToRaw(t *testing.T) {
 	cfg := Config{
 		Image:   "test:latest",
 		Workdir: "/test",
 		Runtime: RuntimeDocker,
 		Commands: Commands{
-			Up:    "up cmd",
-			Enter: "enter cmd",
+			Up:    CommandValue{Command: "up cmd"},
+			Enter: CommandValue{Command: "enter cmd"},
 		},
 		Mounts: []MountConfig{
 			{Source: "/a", Target: "/a"},
@@ -506,8 +1187,8 @@ func TestConfigToRaw(t *testing.T) {
 	if raw.Runtime != cfg.Runtime {
 		t.Errorf("Runtime mismatch: got %q, want %q", raw.Runtime, cfg.Runtime)
 	}
-	if raw.Commands.Up != cfg.Commands.Up {
-		t.Errorf("Commands.Up mismatch: got %q, want %q", raw.Commands.Up, cfg.Commands.Up)
+	if raw.Commands.Up != cfg.Commands.Up.Command {
+		t.Errorf("Commands.Up mismatch: got %q, want %q", raw.Commands.Up, cfg.Commands.Up.Command)
 	}
 	if len(raw.Mounts) != len(cfg.Mounts) {
 		t.Errorf("Mounts length mismatch: got %d, want %d", len(raw.Mounts), len(cfg.Mounts))
@@ -542,8 +1223,8 @@ func TestMergeConfigs(t *testing.T) {
 		Workdir: "/base",
 		Mounts:  []MountConfig{{Source: "/base", Target: "/base"}},
 		Commands: Commands{
-			Up:    "base up",
-			Enter: "base enter",
+			Up:    CommandValue{Command: "base up"},
+			Enter: CommandValue{Command: "base enter"},
 		},
 		Resources: Resources{
 			Memory: "2g",
@@ -558,7 +1239,7 @@ func TestMergeConfigs(t *testing.T) {
 		Image:  "overlay:latest",
 		Mounts: []MountConfig{{Source: "/overlay", Target: "/overlay"}},
 		Commands: Commands{
-			Up: "overlay up",
+			Up: CommandValue{Command: "overlay up"},
 		},
 		Resources: Resources{
 			Memory: "4g",
@@ -586,11 +1267,11 @@ func TestMergeConfigs(t *testing.T) {
 	}
 
 	// Commands deep merged
-	if result.Commands.Up != "overlay up" {
-		t.Errorf("expected commands.up 'overlay up', got %q", result.Commands.Up)
+	if result.Commands.Up.Command != "overlay up" {
+		t.Errorf("expected commands.up 'overlay up', got %q", result.Commands.Up.Command)
 	}
-	if result.Commands.Enter != "base enter" {
-		t.Errorf("expected commands.enter 'base enter', got %q", result.Commands.Enter)
+	if result.Commands.Enter.Command != "base enter" {
+		t.Errorf("expected commands.enter 'base enter', got %q", result.Commands.Enter.Command)
 	}
 
 	// Resources deep merged

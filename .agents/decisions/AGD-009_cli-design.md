@@ -2,8 +2,10 @@
 title: Alcatraz CLI Design
 description: CLI command structure, configuration format, and workflow design for the Alcatraz isolation tool
 tags: cli, config
-updated_by: AGD-012, AGD-014, AGD-017, AGD-022, AGD-025, AGD-026
+updated_by: AGD-012, AGD-014, AGD-017, AGD-022, AGD-025, AGD-026, AGD-033, AGD-034
 ---
+
+
 
 
 ## Context

@@ -35,3 +35,5 @@ decisions/AGD-029_env-dependency-injection.md: #patterns
 decisions/AGD-030_orbstack-nftables-network-isolation.md: #macos, #network-isolation, #security, #runtime
 decisions/AGD-031_mutagen-sync-conflict-notification.md: #cli, #file-isolation, #runtime
 decisions/AGD-032_context-threading-convention.md: #patterns
+decisions/AGD-033_extends-includes-directives.md: #config
+decisions/AGD-034_command-append.md: #config

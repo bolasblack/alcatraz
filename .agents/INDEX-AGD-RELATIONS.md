@@ -19,3 +19,6 @@ decisions/AGD-030_orbstack-nftables-network-isolation.md -(o)-> decisions/AGD-02
 decisions/AGD-030_orbstack-nftables-network-isolation.md -(u)-> decisions/AGD-005_defer-network-isolation.md
 decisions/AGD-031_mutagen-sync-conflict-notification.md -(u)-> decisions/AGD-025_mount-exclude-with-mutagen.md
 decisions/AGD-032_context-threading-convention.md -(u)-> decisions/AGD-029_env-dependency-injection.md
+decisions/AGD-033_extends-includes-directives.md -(o)-> decisions/AGD-022_config-includes-support.md
+decisions/AGD-033_extends-includes-directives.md -(u)-> decisions/AGD-009_cli-design.md
+decisions/AGD-034_command-append.md -(u)-> decisions/AGD-009_cli-design.md

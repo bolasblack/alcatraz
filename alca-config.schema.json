@@ -2,20 +2,6 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$ref": "#/$defs/RawConfig",
   "$defs": {
-    "Commands": {
-      "properties": {
-        "up": {
-          "type": "string",
-          "description": "Command to run when starting the container"
-        },
-        "enter": {
-          "type": "string",
-          "description": "Command to run when entering an existing container"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
     "Network": {
       "properties": {
         "lan-access": {
@@ -29,14 +15,29 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "RawCommands": {
+      "properties": {
+        "up": true,
+        "enter": true
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "RawConfig": {
       "properties": {
+        "extends": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Config files to extend (declaring file overrides extended files)"
+        },
         "includes": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "Other config files to include and merge (supports glob patterns)"
+          "description": "Config files to include (included files override declaring file)"
         },
         "image": {
           "type": "string",
@@ -62,7 +63,58 @@
           "description": "Container runtime selection"
         },
         "commands": {
-          "$ref": "#/$defs/Commands",
+          "properties": {
+            "up": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "Command string"
+                },
+                {
+                  "properties": {
+                    "command": {
+                      "type": "string",
+                      "description": "The command string"
+                    },
+                    "append": {
+                      "type": "boolean",
+                      "description": "Append to base command during merge (default: false)"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "type": "object",
+                  "description": "Command with append support"
+                }
+              ],
+              "description": "Command value (string or object with append flag)"
+            },
+            "enter": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "Command string"
+                },
+                {
+                  "properties": {
+                    "command": {
+                      "type": "string",
+                      "description": "The command string"
+                    },
+                    "append": {
+                      "type": "boolean",
+                      "description": "Append to base command during merge (default: false)"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "type": "object",
+                  "description": "Command with append support"
+                }
+              ],
+              "description": "Command value (string or object with append flag)"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
           "description": "Lifecycle commands"
         },
         "mounts": {

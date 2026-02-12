@@ -109,7 +109,7 @@ cpus = 2
 | `resources.memory`   | Memory limit (e.g. `4g`, `512m`)                                                                        |
 | `resources.cpus`     | Number of CPUs to allocate                                                                              |
 | `network.lan-access` | LAN access for containers (`["*"]` to allow all)                                                        |
-| `includes`           | Include other config files ([details](docs/config/includes.md))                                         |
+| `extends`/`includes` | Compose config files ([details](docs/config/extends-includes.md))                                       |
 
 See the [full configuration reference](docs/config/fields.md) for all options.
 

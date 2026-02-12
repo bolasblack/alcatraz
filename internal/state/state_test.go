@@ -386,8 +386,8 @@ func TestDetectConfigDrift_NoChanges(t *testing.T) {
 		Workdir: "/app",
 		Runtime: config.RuntimeDocker,
 		Commands: config.Commands{
-			Up:    "apt update",
-			Enter: "bash",
+			Up:    config.CommandValue{Command: "apt update"},
+			Enter: config.CommandValue{Command: "bash"},
 		},
 		Mounts: []config.MountConfig{{Source: "/host", Target: "/container"}},
 		Resources: config.Resources{
@@ -410,8 +410,8 @@ func TestDetectConfigDrift_NoChanges(t *testing.T) {
 		Workdir: "/app",
 		Runtime: config.RuntimeDocker,
 		Commands: config.Commands{
-			Up:    "apt update",
-			Enter: "bash",
+			Up:    config.CommandValue{Command: "apt update"},
+			Enter: config.CommandValue{Command: "bash"},
 		},
 		Mounts: []config.MountConfig{{Source: "/host", Target: "/container"}},
 		Resources: config.Resources{
@@ -491,11 +491,11 @@ func TestDetectConfigDrift_RuntimeChange(t *testing.T) {
 func TestDetectConfigDrift_CommandUpChange(t *testing.T) {
 	state := &State{
 		Config: &config.Config{
-			Commands: config.Commands{Up: "old command"},
+			Commands: config.Commands{Up: config.CommandValue{Command: "old command"}},
 		},
 	}
 	current := &config.Config{
-		Commands: config.Commands{Up: "new command"},
+		Commands: config.Commands{Up: config.CommandValue{Command: "new command"}},
 	}
 
 	changes := state.DetectConfigDrift(current)
@@ -507,11 +507,11 @@ func TestDetectConfigDrift_CommandUpChange(t *testing.T) {
 func TestDetectConfigDrift_CommandEnterIgnored(t *testing.T) {
 	state := &State{
 		Config: &config.Config{
-			Commands: config.Commands{Enter: "old enter"},
+			Commands: config.Commands{Enter: config.CommandValue{Command: "old enter"}},
 		},
 	}
 	current := &config.Config{
-		Commands: config.Commands{Enter: "new enter"},
+		Commands: config.Commands{Enter: config.CommandValue{Command: "new enter"}},
 	}
 
 	changes := state.DetectConfigDrift(current)
@@ -671,12 +671,12 @@ func TestDetectConfigDrift_MultipleChanges_EnvsAndCommandUp(t *testing.T) {
 	// - Expected: DriftChanges should have BOTH CommandUp AND Envs set
 	state := &State{
 		Config: &config.Config{
-			Commands: config.Commands{Up: "old command"},
+			Commands: config.Commands{Up: config.CommandValue{Command: "old command"}},
 			Envs:     nil, // No envs in original config
 		},
 	}
 	current := &config.Config{
-		Commands: config.Commands{Up: "new command"},
+		Commands: config.Commands{Up: config.CommandValue{Command: "new command"}},
 		Envs:     map[string]config.EnvValue{"NEW_VAR": {Value: "value"}},
 	}
 
@@ -704,7 +704,7 @@ func TestDetectConfigDrift_AfterSaveLoad_EnvsNilToNonNil(t *testing.T) {
 	// Step 1: Create and save state with config that has NO envs and commands.up = "old"
 	originalConfig := &config.Config{
 		Image:    "ubuntu:latest",
-		Commands: config.Commands{Up: "old command"},
+		Commands: config.Commands{Up: config.CommandValue{Command: "old command"}},
 		Envs:     nil, // No envs
 	}
 	state := &State{
@@ -728,7 +728,7 @@ func TestDetectConfigDrift_AfterSaveLoad_EnvsNilToNonNil(t *testing.T) {
 	// Step 3: New config with envs AND changed commands.up
 	newConfig := &config.Config{
 		Image:    "ubuntu:latest",
-		Commands: config.Commands{Up: "new command"},
+		Commands: config.Commands{Up: config.CommandValue{Command: "new command"}},
 		Envs:     map[string]config.EnvValue{"NEW_VAR": {Value: "value"}},
 	}
 

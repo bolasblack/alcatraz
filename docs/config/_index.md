@@ -14,20 +14,22 @@ Alcatraz uses TOML format for configuration. The configuration file should be na
 
 ## Field Reference
 
-| Field                | Type        | Required | Default                                  | Description                                    |
-| -------------------- | ----------- | -------- | ---------------------------------------- | ---------------------------------------------- |
-| `image`              | string      | Yes      | -                                        | Container image to use                         |
-| `workdir`            | string      | No       | `"/workspace"`                           | Working directory inside container             |
-| `workdir_exclude`    | array       | No       | `[]`                                     | Patterns to exclude from workdir mount         |
-| `runtime`            | string      | No       | `"auto"`                                 | Runtime selection mode                         |
-| `commands.up`        | string      | No       | -                                        | Setup command (run once on container creation) |
-| `commands.enter`     | string      | No       | `"[ -f flake.nix ] && exec nix develop"` | Entry command (run on each shell entry)        |
-| `mounts`             | array       | No       | `[]`                                     | Additional mount points                        |
-| `resources.memory`   | string      | No       | -                                        | Memory limit (e.g., "4g", "512m")              |
-| `resources.cpus`     | int         | No       | -                                        | CPU limit (e.g., 2, 4)                         |
-| `envs`               | table       | No       | See below                                | Environment variables for the container        |
-| `network.lan-access` | array       | No       | `[]`                                     | LAN access configuration                       |
-| `caps`               | array/table | No       | See below                                | Container Linux capabilities configuration     |
+| Field                | Type             | Required | Default                                  | Description                                         |
+| -------------------- | ---------------- | -------- | ---------------------------------------- | --------------------------------------------------- |
+| `extends`            | array            | No       | `[]`                                     | Config files to extend (declaring file wins)        |
+| `includes`           | array            | No       | `[]`                                     | Config files to include (included files win)        |
+| `image`              | string           | Yes      | -                                        | Container image to use                              |
+| `workdir`            | string           | No       | `"/workspace"`                           | Working directory inside container                  |
+| `workdir_exclude`    | array            | No       | `[]`                                     | Patterns to exclude from workdir mount              |
+| `runtime`            | string           | No       | `"auto"`                                 | Runtime selection mode                              |
+| `commands.up`        | string or object | No       | -                                        | Setup command (run once on container creation)      |
+| `commands.enter`     | string or object | No       | `"[ -f flake.nix ] && exec nix develop"` | Entry command (run on each shell entry)             |
+| `mounts`             | array            | No       | `[]`                                     | Additional mount points                             |
+| `resources.memory`   | string           | No       | -                                        | Memory limit (e.g., "4g", "512m")                   |
+| `resources.cpus`     | int              | No       | -                                        | CPU limit (e.g., 2, 4)                              |
+| `envs`               | table            | No       | See below                                | Environment variables for the container             |
+| `network.lan-access` | array            | No       | `[]`                                     | LAN access configuration                            |
+| `caps`               | array/table      | No       | See below                                | Container Linux capabilities configuration          |
 
 ## Full Example
 

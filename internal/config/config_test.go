@@ -44,11 +44,11 @@ enter = "bash"
 	if cfg.Workdir != "/app" {
 		t.Errorf("expected workdir '/app', got %q", cfg.Workdir)
 	}
-	if cfg.Commands.Up != "apt update" {
-		t.Errorf("expected commands.up 'apt update', got %q", cfg.Commands.Up)
+	if cfg.Commands.Up.Command != "apt update" {
+		t.Errorf("expected commands.up 'apt update', got %q", cfg.Commands.Up.Command)
 	}
-	if cfg.Commands.Enter != "bash" {
-		t.Errorf("expected commands.enter 'bash', got %q", cfg.Commands.Enter)
+	if cfg.Commands.Enter.Command != "bash" {
+		t.Errorf("expected commands.enter 'bash', got %q", cfg.Commands.Enter.Command)
 	}
 	// Mounts[0] is the workdir mount (normalized), user mounts follow
 	if len(cfg.Mounts) != 3 {

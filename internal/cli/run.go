@@ -78,14 +78,14 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// Build command with optional enter prefix
 	// If commands.enter is set, use it as command wrapper/prefix
 	var execCmd []string
-	if cfg.Commands.Enter != "" {
+	if cfg.Commands.Enter.Command != "" {
 		// Enter may contain shell syntax (&&, |, etc.), so wrap with sh -c
 		// Quote each arg to preserve spaces and special characters
 		quotedArgs := make([]string, len(args))
 		for i, arg := range args {
 			quotedArgs[i] = shellQuote(arg)
 		}
-		fullCmd := cfg.Commands.Enter + " " + strings.Join(quotedArgs, " ")
+		fullCmd := cfg.Commands.Enter.Command + " " + strings.Join(quotedArgs, " ")
 		execCmd = []string{"sh", "-c", fullCmd}
 	} else {
 		// Run command directly

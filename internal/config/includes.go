@@ -1,5 +1,5 @@
-// includes.go implements config file includes support.
-// See AGD-022 for design decisions.
+// includes.go implements config file composition (extends/includes).
+// See AGD-033 for extends/includes design, AGD-034 for command append.
 package config
 
 import (
@@ -13,13 +13,18 @@ import (
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
-// LoadWithIncludes loads config with includes support.
-// It processes includes recursively, merging configs in the order they are specified.
+// LoadWithIncludes loads config with extends/includes support.
+// It processes extends and includes recursively, merging configs per AGD-033 priority rules.
 func LoadWithIncludes(env *util.Env, path string) (Config, error) {
 	return loadWithIncludes(env, path, make(map[string]bool))
 }
 
 // loadWithIncludes is the internal recursive implementation.
+// Processing order (AGD-033):
+//  1. Load and parse raw config
+//  2. Process extends files (they become the base)
+//  3. Convert current file to Config, merge: current overlays extends result
+//  4. Process includes files (they overlay current)
 func loadWithIncludes(env *util.Env, path string, visited map[string]bool) (Config, error) {
 	absPath, err := validateAndMarkVisited(path, visited)
 	if err != nil {
@@ -32,19 +37,37 @@ func loadWithIncludes(env *util.Env, path string, visited map[string]bool) (Conf
 	}
 
 	baseDir := filepath.Dir(absPath)
-	mergedConfig, err := processIncludes(env, raw.Includes, baseDir, visited)
+
+	// Step 1: Process extends (current file wins over extended files)
+	extendsResult, err := processExtends(env, raw.Extends, baseDir, visited)
 	if err != nil {
 		return Config{}, err
 	}
 
+	// Step 2: Convert current file
 	currentConfig, err := rawToConfig(raw)
 	if err != nil {
 		return Config{}, fmt.Errorf("failed to convert config %s: %w", path, err)
 	}
 
-	if len(raw.Includes) > 0 {
-		return mergeConfigs(mergedConfig, currentConfig), nil
+	// Step 3: Merge extends: current overlays extends result (current wins)
+	if len(raw.Extends) > 0 {
+		currentConfig = mergeConfigs(extendsResult, currentConfig)
 	}
+
+	// Step 4: Process includes (included files win over current)
+	// Fold includes one-by-one onto currentConfig so each append sees
+	// the accumulated result (not just other includes merged together).
+	if len(raw.Includes) > 0 {
+		includeConfigs, err := loadFileRefs(env, raw.Includes, baseDir, visited)
+		if err != nil {
+			return Config{}, err
+		}
+		for _, cfg := range includeConfigs {
+			currentConfig = mergeConfigs(currentConfig, cfg)
+		}
+	}
+
 	return currentConfig, nil
 }
 
@@ -55,7 +78,7 @@ func validateAndMarkVisited(path string, visited map[string]bool) (string, error
 		return "", fmt.Errorf("failed to resolve path %s: %w", path, err)
 	}
 	if visited[absPath] {
-		return "", fmt.Errorf("circular include detected: %s", path)
+		return "", fmt.Errorf("circular reference detected: %s", path)
 	}
 	visited[absPath] = true
 	return absPath, nil
@@ -74,10 +97,24 @@ func readRawConfig(env *util.Env, path string) (RawConfig, error) {
 	return raw, nil
 }
 
-// processIncludes loads and merges all included configs.
-func processIncludes(env *util.Env, includes []string, baseDir string, visited map[string]bool) (Config, error) {
-	var merged Config
-	for _, pattern := range includes {
+// processExtends loads and merges extends refs with first-entry-wins priority.
+// Fold right-to-left: start from last, each earlier entry is overlay (wins).
+func processExtends(env *util.Env, refs []string, baseDir string, visited map[string]bool) (Config, error) {
+	configs, err := loadFileRefs(env, refs, baseDir, visited)
+	if err != nil {
+		return Config{}, err
+	}
+	var result Config
+	for i := len(configs) - 1; i >= 0; i-- {
+		result = mergeConfigs(result, configs[i])
+	}
+	return result, nil
+}
+
+// loadFileRefs loads all referenced configs, expanding globs and resolving recursively.
+func loadFileRefs(env *util.Env, refs []string, baseDir string, visited map[string]bool) ([]Config, error) {
+	var configs []Config
+	for _, pattern := range refs {
 		resolved := pattern
 		if !filepath.IsAbs(pattern) {
 			resolved = filepath.Join(baseDir, pattern)
@@ -85,30 +122,31 @@ func processIncludes(env *util.Env, includes []string, baseDir string, visited m
 
 		files, err := expandGlob(env, resolved)
 		if err != nil {
-			return Config{}, fmt.Errorf("failed to expand glob %s: %w", pattern, err)
+			return nil, fmt.Errorf("failed to expand glob %s: %w", pattern, err)
 		}
 
 		for _, file := range files {
 			cfg, err := loadWithIncludes(env, file, visited)
 			if err != nil {
-				return Config{}, fmt.Errorf("failed to load include %s: %w", file, err)
+				return nil, fmt.Errorf("failed to load referenced config %s: %w", file, err)
 			}
-			merged = mergeConfigs(merged, cfg)
+			configs = append(configs, cfg)
 		}
 	}
-	return merged, nil
+	return configs, nil
 }
 
 // rawToConfig converts RawConfig to Config without applying defaults.
 func rawToConfig(raw RawConfig) (Config, error) {
 	// Mirror type ensures all RawConfig fields are explicitly handled (AGD-015).
 	type rawConfigFields struct {
+		Extends        []string
 		Includes       []string
 		Image          string
 		Workdir        string
 		WorkdirExclude []string
 		Runtime        RuntimeType
-		Commands       Commands
+		Commands       RawCommands
 		Mounts         RawMountSlice
 		Resources      Resources
 		Envs           RawEnvValueMap
@@ -139,18 +177,51 @@ func rawToConfig(raw RawConfig) (Config, error) {
 		return Config{}, err
 	}
 
+	// Convert raw commands to Commands
+	cmdUp, err := parseCommandValue(raw.Commands.Up)
+	if err != nil {
+		return Config{}, fmt.Errorf("commands.up: %w", err)
+	}
+	cmdEnter, err := parseCommandValue(raw.Commands.Enter)
+	if err != nil {
+		return Config{}, fmt.Errorf("commands.enter: %w", err)
+	}
+
 	return Config{
 		Image:          raw.Image,
 		Workdir:        raw.Workdir,
 		WorkdirExclude: raw.WorkdirExclude,
 		Runtime:        raw.Runtime,
-		Commands:       raw.Commands,
+		Commands:       Commands{Up: cmdUp, Enter: cmdEnter},
 		Mounts:         mounts,
 		Resources:      raw.Resources,
 		Envs:           envs,
 		Network:        raw.Network,
 		Caps:           caps,
 	}, nil
+}
+
+// parseCommandValue converts a raw value to CommandValue.
+// Accepts string or map[string]any with command and append fields.
+func parseCommandValue(val any) (CommandValue, error) {
+	if val == nil {
+		return CommandValue{}, nil
+	}
+	switch v := val.(type) {
+	case string:
+		return CommandValue{Command: v}, nil
+	case map[string]any:
+		var cv CommandValue
+		if cmd, ok := v["command"].(string); ok {
+			cv.Command = cmd
+		}
+		if append, ok := v["append"].(bool); ok {
+			cv.Append = append
+		}
+		return cv, nil
+	default:
+		return CommandValue{}, fmt.Errorf("expected string or object, got %T", val)
+	}
 }
 
 // parseCaps converts raw caps value to Caps.
@@ -379,13 +450,9 @@ func mergeConfigs(base, overlay Config) Config {
 		result.Runtime = overlay.Runtime
 	}
 
-	// Commands: deep merge
-	if overlay.Commands.Up != "" {
-		result.Commands.Up = overlay.Commands.Up
-	}
-	if overlay.Commands.Enter != "" {
-		result.Commands.Enter = overlay.Commands.Enter
-	}
+	// Commands: deep merge with append support (AGD-033)
+	result.Commands.Up = mergeCommandValue(base.Commands.Up, overlay.Commands.Up)
+	result.Commands.Enter = mergeCommandValue(base.Commands.Enter, overlay.Commands.Enter)
 
 	// Mounts: append (concatenate arrays)
 	if len(overlay.Mounts) > 0 {
@@ -419,4 +486,24 @@ func mergeConfigs(base, overlay Config) Config {
 	}
 
 	return result
+}
+
+// mergeCommandValue merges two CommandValues with append support.
+// If overlay is empty, base is returned unchanged.
+// If overlay has Append=true and base is non-empty, commands are space-concatenated.
+// Otherwise overlay replaces base.
+func mergeCommandValue(base, overlay CommandValue) CommandValue {
+	if overlay.Command == "" {
+		return base
+	}
+	if overlay.Append && base.Command != "" {
+		return CommandValue{
+			Command: base.Command + " " + overlay.Command,
+			Append:  false, // append is consumed during merge
+		}
+	}
+	return CommandValue{
+		Command: overlay.Command,
+		Append:  overlay.Append, // preserve for later merges in layered resolution
+	}
 }

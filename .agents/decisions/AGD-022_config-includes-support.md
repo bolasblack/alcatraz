@@ -1,9 +1,11 @@
 ---
-title: "Config Includes Support"
-description: "Add includes directive for composable configuration files"
+title: Config Includes Support
+description: Add includes directive for composable configuration files
 tags: config
 updates: AGD-009
+obsoleted_by: AGD-033
 ---
+
 
 ## Context
 

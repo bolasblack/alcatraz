@@ -90,7 +90,7 @@ Setup command executed once when the container is created. Use this for one-time
 up = "nix-channel --update && nix-env -iA nixpkgs.git"
 ```
 
-- **Type**: string
+- **Type**: string or object
 - **Required**: No
 - **Default**: None
 - **Examples**:
@@ -106,10 +106,61 @@ Entry command executed each time you enter the container shell. Use this for env
 enter = "[ -f flake.nix ] && exec nix develop"
 ```
 
-- **Type**: string
+- **Type**: string or object
 - **Required**: No
 - **Default**: `"[ -f flake.nix ] && exec nix develop"`
 - **Notes**: If the command uses `exec`, it replaces the shell process
+
+## Command Formats
+
+Commands support both a simple string format and a struct format with merge control.
+
+### String Format
+
+```toml
+[commands]
+up = "docker compose up -d"
+```
+
+### Struct Format
+
+```toml
+[commands.up]
+command = "docker compose up -d"
+append = false
+```
+
+| Field     | Type   | Required | Default | Description                                |
+| --------- | ------ | -------- | ------- | ------------------------------------------ |
+| `command` | string | Yes      | -       | The command string                         |
+| `append`  | bool   | No       | `false` | Append to base command during config merge |
+
+Both formats are equivalent when `append` is not needed.
+
+### Command Append
+
+The `append` flag controls how a command merges with its base during config layering (via `extends` or `includes`):
+
+- `append = false` (default): overlay replaces the base command entirely
+- `append = true`: result is `base_command + " " + overlay_command` (space-concatenated)
+
+**Only the overlay's `append` flag is consulted.** The base's `append` value is ignored during merge.
+
+```toml
+# .alca.toml
+includes = [".alca.local.toml"]
+[commands.up]
+command = "nix develop"
+
+# .alca.local.toml (overlay via includes)
+[commands.up]
+command = "bash"
+append = true
+
+# Result: "nix develop bash"
+```
+
+See [AGD-034](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-034_command-append.md) for design rationale.
 
 ## mounts
 
@@ -353,20 +404,33 @@ drop = ["NET_RAW", "MKNOD", "SYS_CHROOT"]
 | `Operation not permitted` with setuid     | Ensure `SETUID` and `SETGID` are in add list (included by default) |
 | Package manager fails to change ownership | Ensure `CHOWN` and `FOWNER` are in add list                        |
 
-## includes
+## extends
 
-Include other configuration files for composable configuration. Supports glob patterns.
+Extend other configuration files. The declaring file overrides extended files.
 
 ```toml
-includes = [".alca.base.toml", ".alca.local.toml"]
+extends = [".alca.base.toml"]
 ```
 
 - **Type**: array of strings
 - **Required**: No
 - **Default**: `[]`
-- **Notes**: Paths are resolved relative to the including file's directory. Supports glob patterns (`*.toml`). Later values override earlier ones.
+- **Notes**: Paths are resolved relative to the declaring file's directory. Supports glob patterns (`*.toml`). The declaring file's values win over extended files.
 
-See [Includes]({{< relref "includes" >}}) for full documentation including merge behavior and processing order.
+## includes
+
+Include other configuration files. Included files override the declaring file.
+
+```toml
+includes = [".alca.local.toml"]
+```
+
+- **Type**: array of strings
+- **Required**: No
+- **Default**: `[]`
+- **Notes**: Paths are resolved relative to the declaring file's directory. Supports glob patterns (`*.toml`). Included files' values win over the declaring file.
+
+See [Extends & Includes]({{< relref "extends-includes" >}}) for full documentation including three-layer merge, processing order, and migration guide.
 
 ## network.lan-access
 

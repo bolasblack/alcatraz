@@ -31,6 +31,7 @@ const SchemaComment = "#:schema https://raw.githubusercontent.com/bolasblack/alc
 type TemplateConfig struct {
 	Config    Config
 	Includes  []string // Config files to include (RawConfig-only field)
+	Extends   []string // Config files to extend (RawConfig-only field)
 	UpComment string   // Comment to insert before the "up" command
 }
 
@@ -39,6 +40,7 @@ func GenerateConfig(template Template) (string, error) {
 	tc := getTemplateConfig(template)
 
 	raw := configToRaw(tc.Config)
+	raw.Extends = tc.Extends
 	raw.Includes = tc.Includes
 
 	var buf bytes.Buffer
@@ -67,8 +69,8 @@ func getTemplateConfig(template Template) TemplateConfig {
 					{Source: ".alca.cache/mise", Target: "/root/.local/share/mise"},
 				},
 				Commands: Commands{
-					Up:    "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command true",
-					Enter: "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command",
+					Up:    CommandValue{Command: "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command true"},
+					Enter: CommandValue{Command: "[ -f flake.nix ] && exec nix develop --profile /nix/var/nix/profiles/devshell --command"},
 				},
 				Envs: map[string]EnvValue{
 					"IS_SANDBOX":           {Value: "1"},
@@ -88,7 +90,7 @@ func getTemplateConfig(template Template) TemplateConfig {
 					{Source: ".alca.cache/mise", Target: "/root/.local/share/mise"},
 				},
 				Commands: Commands{
-					Up: `apt update -y && apt install -y curl
+					Up: CommandValue{Command: `apt update -y && apt install -y curl
 install -dm 755 /etc/apt/keyrings
 curl -fSs https://mise.jdx.dev/gpg-key.pub | tee /etc/apt/keyrings/mise-archive-keyring.asc 1> /dev/null
 echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.jdx.dev/deb stable main" | tee /etc/apt/sources.list.d/mise.list
@@ -99,7 +101,7 @@ echo '
 export PATH="/root/.local/share/mise/shims:$PATH"
 export PATH="/extra-bin:$PATH"
 ' >> ~/.bashrc
-. ~/.bashrc`,
+. ~/.bashrc`},
 				},
 				Envs: map[string]EnvValue{
 					"IS_SANDBOX": {Value: "1"},
@@ -200,17 +202,38 @@ func configToRaw(c Config) RawConfig {
 		caps = capsMap
 	}
 
+	// Convert Commands to RawCommands (use simple string format when no append)
+	var commands RawCommands
+	if c.Commands.Up.Command != "" {
+		commands.Up = commandValueToRaw(c.Commands.Up)
+	}
+	if c.Commands.Enter.Command != "" {
+		commands.Enter = commandValueToRaw(c.Commands.Enter)
+	}
+
 	return RawConfig{
 		Image:     c.Image,
 		Workdir:   c.Workdir,
 		Runtime:   c.Runtime,
-		Commands:  c.Commands,
+		Commands:  commands,
 		Mounts:    mounts,
 		Resources: c.Resources,
 		Envs:      envs,
 		Network:   c.Network,
 		Caps:      caps,
 	}
+}
+
+// commandValueToRaw converts CommandValue to raw format for TOML serialization.
+// Uses simple string format when append is false, object format when append is true.
+func commandValueToRaw(cv CommandValue) RawCommandValue {
+	if cv.Append {
+		return map[string]any{
+			"command": cv.Command,
+			"append":  true,
+		}
+	}
+	return cv.Command
 }
 
 // mountConfigToMap converts MountConfig to map for TOML serialization.

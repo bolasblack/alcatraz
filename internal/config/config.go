@@ -1,6 +1,6 @@
 // Package config handles parsing and writing of Alcatraz configuration files (.alca.toml).
 // See AGD-009 for configuration format design decisions.
-// See AGD-022 for includes support and Config/RawConfig type separation.
+// See AGD-033 for extends/includes design and Config/RawConfig type separation.
 package config
 
 import (
@@ -14,10 +14,49 @@ import (
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
+// CommandValue represents a command that can be either a simple string
+// or a struct with command string and append flag.
+// See AGD-033 for command append design.
+type CommandValue struct {
+	Command string `json:"command,omitempty"`
+	Append  bool   `json:"append,omitempty"`
+}
+
+// UnmarshalJSON supports both string format (backward compat with old state files)
+// and object format for CommandValue.
+func (cv *CommandValue) UnmarshalJSON(data []byte) error {
+	// Try string format first (backward compat with old state files)
+	var s string
+	if json.Unmarshal(data, &s) == nil {
+		cv.Command = s
+		cv.Append = false
+		return nil
+	}
+	// Object format — use alias to avoid infinite recursion
+	type alias CommandValue
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	*cv = CommandValue(a)
+	return nil
+}
+
 // Commands defines the lifecycle commands for the container.
 type Commands struct {
-	Up    string `toml:"up,omitempty,multiline" json:"up,omitempty" jsonschema:"description=Command to run when starting the container"`
-	Enter string `toml:"enter,omitempty,multiline" json:"enter,omitempty" jsonschema:"description=Command to run when entering an existing container"`
+	Up    CommandValue `json:"up,omitempty"`
+	Enter CommandValue `json:"enter,omitempty"`
+}
+
+// RawCommandValue is the raw type for command values in TOML.
+// Supports string format ("cmd") or struct format ({command = "cmd", append = true}).
+type RawCommandValue = any
+
+// RawCommands is the raw TOML representation of Commands.
+// Uses RawCommandValue to support polymorphic decoding.
+type RawCommands struct {
+	Up    RawCommandValue `toml:"up,omitempty" json:"up,omitempty"`
+	Enter RawCommandValue `toml:"enter,omitempty" json:"enter,omitempty"`
 }
 
 // Resources defines container resource limits.
@@ -404,13 +443,48 @@ func capsJSONSchema() *jsonschema.Schema {
 	}
 }
 
+// commandValueJSONSchema returns the JSON schema for a command value field.
+func commandValueJSONSchema() *jsonschema.Schema {
+	cmdProps := jsonschema.NewProperties()
+	cmdProps.Set("command", &jsonschema.Schema{Type: "string", Description: "The command string"})
+	cmdProps.Set("append", &jsonschema.Schema{Type: "boolean", Description: "Append to base command during merge (default: false)"})
+
+	return &jsonschema.Schema{
+		OneOf: []*jsonschema.Schema{
+			{Type: "string", Description: "Command string"},
+			{
+				Type:                 "object",
+				Properties:           cmdProps,
+				AdditionalProperties: jsonschema.FalseSchema,
+				Description:          "Command with append support",
+			},
+		},
+		Description: "Command value (string or object with append flag)",
+	}
+}
+
+// commandsJSONSchema returns the JSON schema for the commands section.
+func commandsJSONSchema() *jsonschema.Schema {
+	props := jsonschema.NewProperties()
+	props.Set("up", commandValueJSONSchema())
+	props.Set("enter", commandValueJSONSchema())
+
+	return &jsonschema.Schema{
+		Type:                 "object",
+		Properties:           props,
+		AdditionalProperties: jsonschema.FalseSchema,
+		Description:          "Lifecycle commands",
+	}
+}
+
 // JSONSchemaExtend implements jsonschema.Extender to fix up fields that
-// can't self-describe (RawCaps is `any` for TOML polymorphic decoding).
+// can't self-describe (RawCaps/RawCommands use `any` for TOML polymorphic decoding).
 func (RawConfig) JSONSchemaExtend(schema *jsonschema.Schema) {
 	if schema.Properties == nil {
 		return
 	}
 	schema.Properties.Set("caps", capsJSONSchema())
+	schema.Properties.Set("commands", commandsJSONSchema())
 }
 
 // RawMountSlice is a slice of raw mount values for RawConfig.
@@ -455,12 +529,13 @@ func (RawMountSlice) JSONSchema() *jsonschema.Schema {
 // to their validated, strongly-typed counterparts (Config, []MountConfig, EnvValue, Caps)
 // during parsing in rawToConfig(). See also: RawMountSlice, RawEnvValueMap, RawCaps.
 type RawConfig struct {
-	Includes       []string       `toml:"includes,omitempty" json:"includes,omitempty" jsonschema:"description=Other config files to include and merge (supports glob patterns)"`
+	Extends        []string       `toml:"extends,omitempty" json:"extends,omitempty" jsonschema:"description=Config files to extend (declaring file overrides extended files)"`
+	Includes       []string       `toml:"includes,omitempty" json:"includes,omitempty" jsonschema:"description=Config files to include (included files override declaring file)"`
 	Image          string         `toml:"image" json:"image" jsonschema:"description=Container image to use"`
 	Workdir        string         `toml:"workdir,omitempty" json:"workdir,omitempty" jsonschema:"description=Working directory inside container"`
 	WorkdirExclude []string       `toml:"workdir_exclude,omitempty" json:"workdir_exclude,omitempty" jsonschema:"description=Patterns to exclude from workdir mount (requires Mutagen)"`
 	Runtime        RuntimeType    `toml:"runtime,omitempty" json:"runtime,omitempty" jsonschema:"enum=auto,enum=docker,description=Container runtime selection"`
-	Commands       Commands       `toml:"commands,omitempty" json:"commands,omitempty" jsonschema:"description=Lifecycle commands"`
+	Commands       RawCommands    `toml:"commands,omitempty" json:"commands,omitempty" jsonschema:"description=Lifecycle commands"`
 	Mounts         RawMountSlice  `toml:"mounts,omitempty" json:"mounts,omitempty"`
 	Resources      Resources      `toml:"resources,omitempty" json:"resources,omitempty" jsonschema:"description=Container resource limits"`
 	Envs           RawEnvValueMap `toml:"envs,omitempty" json:"envs,omitempty"`

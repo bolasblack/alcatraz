@@ -106,7 +106,7 @@ func (r *dockerCLICompatibleRuntime) Up(ctx context.Context, env *RuntimeEnv, cf
 	}
 
 	// Run the up command if specified
-	if cfg.Commands.Up != "" {
+	if cfg.Commands.Up.Command != "" {
 		// Wait for Mutagen syncs to complete before running setup command,
 		// otherwise the command may see incomplete or missing files.
 		if err := r.flushMutagenSyncs(ctx, env, syncs, progressOut); err != nil {
@@ -205,7 +205,7 @@ func (r *dockerCLICompatibleRuntime) flushMutagenSyncs(ctx context.Context, env 
 // executeUpCommand runs the post-creation setup command.
 func (r *dockerCLICompatibleRuntime) executeUpCommand(ctx context.Context, env *RuntimeEnv, cfg *config.Config, containerName string, progressOut io.Writer) error {
 	util.ProgressStep(progressOut, "Running setup command...\n")
-	execArgs := []string{"exec", containerName, "sh", "-c", cfg.Commands.Up}
+	execArgs := []string{"exec", containerName, "sh", "-c", cfg.Commands.Up.Command}
 	output, err := env.Cmd.Run(ctx, r.command, execArgs...)
 	if err != nil {
 		return fmt.Errorf("up command failed: %w: %s", err, string(output))

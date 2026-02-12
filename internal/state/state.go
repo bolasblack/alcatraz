@@ -227,10 +227,17 @@ func enforceConfigFieldCompleteness(cfg *config.Config) {
 	_ = fields(*cfg)
 
 	type fieldsCommands struct {
-		Up    string
-		Enter string
+		Up    config.CommandValue
+		Enter config.CommandValue
 	}
 	_ = fieldsCommands(cfg.Commands)
+
+	type fieldsCommandValue struct {
+		Command string
+		Append  bool
+	}
+	_ = fieldsCommandValue(cfg.Commands.Up)
+	_ = fieldsCommandValue(cfg.Commands.Enter)
 
 	type fieldsResources struct {
 		Memory string
@@ -287,8 +294,8 @@ func compareConfigs(old, new *config.Config) *DriftChanges {
 	if old.Runtime != new.Runtime {
 		c.Runtime = &[2]string{string(old.Runtime), string(new.Runtime)}
 	}
-	if old.Commands.Up != new.Commands.Up {
-		c.CommandUp = &[2]string{old.Commands.Up, new.Commands.Up}
+	if old.Commands.Up.Command != new.Commands.Up.Command {
+		c.CommandUp = &[2]string{old.Commands.Up.Command, new.Commands.Up.Command}
 	}
 	if old.Resources.Memory != new.Resources.Memory {
 		c.Memory = &[2]string{old.Resources.Memory, new.Resources.Memory}
