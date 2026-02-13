@@ -61,17 +61,23 @@
             runHook postBuild
           '';
 
-          # Install binary and generate man pages
+          # Install binary, man pages, and shell completions
           installPhase = ''
             runHook preInstall
             mkdir -p $out/bin
             cp out/bin/${binaryName} $out/bin/alca
 
-            # Build gendocs for man page generation
-            go build -o gendocs ./cmd/gendocs
-            ./gendocs man
+            make docs-man
             mkdir -p $out/share/man/man1
-            mv out/man/*.1 $out/share/man/man1/
+            cp out/man/*.1 $out/share/man/man1/
+
+            make docs-completions
+            mkdir -p $out/share/bash-completion/completions
+            mkdir -p $out/share/zsh/site-functions
+            mkdir -p $out/share/fish/vendor_completions.d
+            cp out/completions/alca.bash $out/share/bash-completion/completions/alca
+            cp out/completions/alca.zsh $out/share/zsh/site-functions/_alca
+            cp out/completions/alca.fish $out/share/fish/vendor_completions.d/alca.fish
             runHook postInstall
           '';
 

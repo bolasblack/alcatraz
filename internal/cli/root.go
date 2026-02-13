@@ -9,8 +9,10 @@ import (
 )
 
 var (
-	// Version is set at build time via ldflags
+	// Version, Commit, and Date are set at build time via ldflags
 	Version = "dev"
+	Commit  = ""
+	Date    = ""
 )
 
 var rootCmd = &cobra.Command{
@@ -41,6 +43,8 @@ func init() {
 	if os.Getenv("ALCA_DEBUG") == "" {
 		log.SetOutput(os.Stderr)
 	}
+
+	rootCmd.SetVersionTemplate(fmt.Sprintf("alca version %s\ncommit: %s\ndate: %s\n", Version, Commit, Date))
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(statusCmd)

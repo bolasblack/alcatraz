@@ -17,7 +17,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: gendocs <markdown|man>")
+		fmt.Println("Usage: gendocs <markdown|man|completions>")
 		os.Exit(1)
 	}
 
@@ -28,6 +28,8 @@ func main() {
 		generateMarkdown(cmd)
 	case "man":
 		generateMan(cmd)
+	case "completions":
+		generateCompletions(cmd)
 	default:
 		fmt.Printf("Unknown format: %s\n", os.Args[1])
 		os.Exit(1)
@@ -65,6 +67,39 @@ date: %s
 	}
 
 	fmt.Printf("Generated markdown documentation in %s/\n", dir)
+}
+
+func generateCompletions(cmd *cobra.Command) {
+	dir := "out/completions"
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Fatalf("Failed to create directory: %v", err)
+	}
+
+	writeCompletion(filepath.Join(dir, "alca.bash"), func(f *os.File) error {
+		return cmd.GenBashCompletionV2(f, true)
+	})
+	writeCompletion(filepath.Join(dir, "alca.zsh"), func(f *os.File) error {
+		return cmd.GenZshCompletion(f)
+	})
+	writeCompletion(filepath.Join(dir, "alca.fish"), func(f *os.File) error {
+		return cmd.GenFishCompletion(f, true)
+	})
+
+	fmt.Printf("Generated shell completions in %s/\n", dir)
+}
+
+func writeCompletion(path string, gen func(*os.File) error) {
+	f, err := os.Create(path)
+	if err != nil {
+		log.Fatalf("Failed to create %s: %v", path, err)
+	}
+	if err := gen(f); err != nil {
+		_ = f.Close()
+		log.Fatalf("Failed to generate %s: %v", path, err)
+	}
+	if err := f.Close(); err != nil {
+		log.Fatalf("Failed to close %s: %v", path, err)
+	}
 }
 
 func generateMan(cmd *cobra.Command) {

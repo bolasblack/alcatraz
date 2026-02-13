@@ -3,3 +3,4 @@ go = "1.25.6"
 golangci-lint = "2.8.0"
 "go:golang.org/x/tools/cmd/goimports" = "latest"
 "go:github.com/gohugoio/hugo" = { version = "v0.154.5", tags = "extended" }
+"go:github.com/caarlos0/svu/v2" = "latest"

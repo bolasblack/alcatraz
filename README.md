@@ -55,6 +55,13 @@ alca down
 
 ## Installation
 
+### Homebrew
+
+```bash
+brew tap bolasblack/alcatraz
+brew install alca
+```
+
 ### Go
 
 ```bash
@@ -73,6 +80,21 @@ Or use in flake:
 {
   inputs.alcatraz.url = "github:bolasblack/alcatraz";
 }
+```
+
+### mise
+
+Add to your project `.mise.toml`:
+
+```toml
+[tools]
+"go:github.com/bolasblack/alcatraz/cmd/alca" = "latest"
+```
+
+Or install globally:
+
+```bash
+mise use -g "go:github.com/bolasblack/alcatraz/cmd/alca@latest"
 ```
 
 ## Configuration

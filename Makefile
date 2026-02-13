@@ -1,7 +1,4 @@
-.PHONY: build test clean docs docs-markdown docs-man docs-html docs-serve vendor vendor-clean vendor-hash-update schema lint
-.PHONY: build\:linux\:amd64 build\:linux\:arm64
-.PHONY: build\:linux\:amd64-static build\:linux\:arm64-static
-.PHONY: build\:darwin\:amd64 build\:darwin\:arm64
+.PHONY: clean
 
 LINT_DIR := out_lint
 OUT_DIR := out
@@ -11,9 +8,19 @@ GO_SRC := $(shell find . -name '*.go' -type f -not -path './.alca.cache/*' -not 
 EMBED_SRC := $(shell find . -name '*.sh' -type f -not -path './.alca.cache/*' -not -path './vendor/*' -not -path './.git/*')
 BUILD_SRC := $(GO_SRC) $(EMBED_SRC)
 
-# ========= Cross-compilation builds =========
+clean:
+	rm -rf $(OUT_DIR) $(LINT_DIR)
+
+# ========= Builds =========
+.PHONY: build build\:all
+.PHONY: build\:linux\:amd64 build\:linux\:arm64
+.PHONY: build\:linux\:amd64-static build\:linux\:arm64-static
+.PHONY: build\:darwin\:amd64 build\:darwin\:arm64
+
+build: build\:all schema docs-man docs-completions
+
 # Build all targets
-build: schema build\:linux\:amd64 build\:linux\:arm64 build\:linux\:amd64-static build\:linux\:arm64-static build\:darwin\:amd64 build\:darwin\:arm64
+build\:all: build\:linux\:amd64 build\:linux\:arm64 build\:linux\:amd64-static build\:linux\:arm64-static build\:darwin\:amd64 build\:darwin\:arm64
 
 # Linux glibc builds
 build\:linux\:amd64: $(BIN_DIR)/alca-linux-amd64
@@ -48,14 +55,16 @@ $(BIN_DIR)/alca-darwin-arm64: $(BUILD_SRC)
 	@mkdir -p $(BIN_DIR)
 	GOOS=darwin GOARCH=arm64 go build -o $@ ./cmd/alca
 
+# ========= Testing =========
+.PHONY: test
+
 test:
 	go test -coverprofile=out_coverage ./...
 	go tool cover -html=out_coverage -o out_coverage.html
 
-clean:
-	rm -rf $(OUT_DIR) $(LINT_DIR)
-
 # ========= Linting =========
+.PHONY: lint
+
 CUSTOM_GCL := $(LINT_DIR)/custom-gcl
 
 $(CUSTOM_GCL): $(shell find tools/fslint -name '*.go' -type f) config/golangci-lint-custom.yml
@@ -69,6 +78,8 @@ lint: $(CUSTOM_GCL)
 	GOOS=darwin $(CUSTOM_GCL) run ./...
 
 # ========= Vendor management =========
+.PHONY: vendor vendor-clean vendor-hash-update
+
 vendor:
 	go mod tidy
 	go mod vendor
@@ -96,7 +107,9 @@ vendor-hash-update: vendor
 	fi
 
 # ========= Documentation generation =========
-docs: docs-markdown docs-man
+.PHONY: docs docs-markdown docs-man docs-completions docs-html docs-serve
+
+docs: docs-markdown docs-man docs-completions
 
 docs-markdown:
 	go run ./cmd/gendocs markdown
@@ -104,7 +117,9 @@ docs-markdown:
 docs-man:
 	go run ./cmd/gendocs man
 
-# ========= Hugo HTML documentation =========
+docs-completions:
+	go run ./cmd/gendocs completions
+
 HUGO_BOOK_VERSION ?= v13
 HUGO_THEME_DIR := .hugo/themes/hugo-book
 
@@ -120,5 +135,22 @@ docs-serve: $(HUGO_THEME_DIR)
 	hugo server --buildDrafts
 
 # ========= JSON Schema generation =========
+.PHONY: schema
+
 schema:
 	go run ./cmd/genschema alca-config.schema.json
+
+# ========= Release =========
+.PHONY: release-patch release-minor release-major
+
+release-patch:
+	@if ! command -v svu >/dev/null 2>&1; then echo "svu not found. Install: mise install"; exit 1; fi
+	@VERSION=$$(svu patch) && git tag -a $$VERSION -m "Release $$VERSION" && git push origin $$VERSION
+
+release-minor:
+	@if ! command -v svu >/dev/null 2>&1; then echo "svu not found. Install: mise install"; exit 1; fi
+	@VERSION=$$(svu minor) && git tag -a $$VERSION -m "Release $$VERSION" && git push origin $$VERSION
+
+release-major:
+	@if ! command -v svu >/dev/null 2>&1; then echo "svu not found. Install: mise install"; exit 1; fi
+	@VERSION=$$(svu major) && git tag -a $$VERSION -m "Release $$VERSION" && git push origin $$VERSION

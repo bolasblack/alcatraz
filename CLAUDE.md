@@ -1,15 +1,23 @@
 ## Build System
 
-- `make build` — build all platform binaries
+- `make build` — full build: all platform binaries + schema + man pages + shell completions
+- `make build:all` — build all platform binaries only
 - `make test` — run tests
 - `make lint` — run linter
 - `make schema` — regenerate `alca-config.schema.json`
-- `make docs` — generate all docs (markdown + man pages)
+- `make docs` — generate all docs (markdown + man pages + shell completions)
 - `make docs-markdown` — update `docs/commands/` from cobra command definitions
+- `make docs-man` — generate man pages to `out/man/`
+- `make docs-completions` — generate shell completions (bash/zsh/fish) to `out/completions/`
 - `make vendor` — update vendor directory
 - `make vendor-hash-update` - update vendor hash in `flake.nix`
+- `make release-patch` — tag and push a patch release (triggers goreleaser via GitHub Actions)
+- `make release-minor` — tag and push a minor release
+- `make release-major` — tag and push a major release
 
 **Important**: If Makefile targets change, update this section accordingly.
+
+**Release prerequisites**: Requires `svu` (installed via `mise install`). Homebrew formula is stored in the `HomebrewFormula/` directory of this repo.
 
 After modifying code, always run `make lint` and `make test` to find and fix any issues before reporting completion.
 

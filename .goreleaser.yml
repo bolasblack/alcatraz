@@ -1,0 +1,71 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - make docs-man
+    - make docs-completions
+
+builds:
+  - id: alca
+    main: ./cmd/alca
+    binary: alca
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/bolasblack/alcatraz/internal/cli.Version={{.Version}}
+      - -X github.com/bolasblack/alcatraz/internal/cli.Commit={{.Commit}}
+      - -X github.com/bolasblack/alcatraz/internal/cli.Date={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - src: out/man/*.1
+        dst: man/man1
+      - src: out/completions/*
+        dst: completions
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+
+release:
+  draft: true
+
+brews:
+  - name: alca
+    repository:
+      owner: bolasblack
+      name: alcatraz
+    directory: HomebrewFormula
+    homepage: "https://github.com/bolasblack/alcatraz"
+    description: "Run code agents unrestricted, but fearlessly"
+    license: "MIT"
+    install: |
+      bin.install "alca"
+      man1.install Dir["man/man1/*"]
+      bash_completion.install "completions/alca.bash" => "alca"
+      zsh_completion.install "completions/alca.zsh" => "_alca"
+      fish_completion.install "completions/alca.fish"
+    test: |
+      system "#{bin}/alca", "--version"
