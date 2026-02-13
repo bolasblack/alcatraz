@@ -557,8 +557,8 @@ func TestNew_VMHelperEnvPreConstructedOnDarwin(t *testing.T) {
 
 			n := New(env).(*NFTables)
 
-			if n.vmEnv == nil {
-				t.Errorf("New() with %s should pre-construct vmEnv, got nil", platform)
+			if n.vmHelperEnv == nil {
+				t.Errorf("New() with %s should pre-construct vmHelperEnv, got nil", platform)
 			}
 		})
 	}
@@ -574,8 +574,8 @@ func TestNew_VMHelperEnvNilOnLinux(t *testing.T) {
 
 	n := New(env).(*NFTables)
 
-	if n.vmEnv != nil {
-		t.Errorf("New() with PlatformLinux should not pre-construct vmEnv, got %v", n.vmEnv)
+	if n.vmHelperEnv != nil {
+		t.Errorf("New() with PlatformLinux should not pre-construct vmHelperEnv, got %v", n.vmHelperEnv)
 	}
 }
 
@@ -589,8 +589,8 @@ func TestNew_VMHelperEnvNilForEmptyPlatform(t *testing.T) {
 
 	n := New(env).(*NFTables)
 
-	if n.vmEnv != nil {
-		t.Errorf("New() with empty platform should not pre-construct vmEnv, got %v", n.vmEnv)
+	if n.vmHelperEnv != nil {
+		t.Errorf("New() with empty platform should not pre-construct vmHelperEnv, got %v", n.vmHelperEnv)
 	}
 }
 

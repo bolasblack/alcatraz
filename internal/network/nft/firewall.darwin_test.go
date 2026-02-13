@@ -140,7 +140,7 @@ func TestApplyRulesOnDarwin_ReloadFailsWhenHelperNotInstalled(t *testing.T) {
 	if action != nil && action.Run != nil {
 		err = action.Run(context.Background(), nil)
 		if err == nil {
-			t.Fatal("reloadVMHelper should fail when helper is not installed")
+			t.Fatal("reloadNetworkHelper should fail when helper is not installed")
 		}
 		if !strings.Contains(err.Error(), "not installed") {
 			t.Errorf("error should mention 'not installed', got: %v", err)

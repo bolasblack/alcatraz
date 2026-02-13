@@ -46,8 +46,8 @@ Both macOS and Linux use **nftables** for network isolation and LAN access rules
 
 | Platform | Runtime        | Mechanism                                         | Helper                                     |
 | -------- | -------------- | ------------------------------------------------- | ------------------------------------------ |
-| macOS    | OrbStack       | nftables via vmhelper container (nsenter into VM) | `alcatraz-network-helper` Docker container |
-| macOS    | Docker Desktop | nftables via vmhelper container (nsenter into VM) | `alcatraz-network-helper` Docker container |
+| macOS    | OrbStack       | nftables via network helper container (nsenter into VM) | `alcatraz-network-helper` Docker container |
+| macOS    | Docker Desktop | nftables via network helper container (nsenter into VM) | `alcatraz-network-helper` Docker container |
 | Linux    | Docker/Podman  | Native nftables                                   | Include in `/etc/nftables.conf`            |
 
 ## Network Helper
@@ -76,11 +76,11 @@ Network helper required for LAN access.
 Install now? [y/N]
 ```
 
-### macOS: vmhelper Container
+### macOS: Network Helper Container
 
 On macOS, containers run inside a Linux VM managed by OrbStack or Docker Desktop. Alcatraz cannot use macOS-level firewalls (like pf) because container traffic is handled in userspace and never passes through the macOS kernel's network stack.
 
-Instead, Alcatraz runs a helper container (`alcatraz-network-helper`) that applies nftables rules **inside the VM** using `nsenter`:
+Instead, Alcatraz runs a network helper container (`alcatraz-network-helper`) that applies nftables rules **inside the VM** using `nsenter`:
 
 1. Rule files (`.nft`) are written to `~/.alcatraz/files/alcatraz_nft/`
 2. The helper container mounts `~/.alcatraz/files/` and watches for changes

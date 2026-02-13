@@ -275,7 +275,7 @@ func TestDarwinInstallHelper_ReturnsPostCommitAction(t *testing.T) {
 	assert.NotNil(t, action.Run, "InstallHelper PostCommitAction.Run should not be nil")
 }
 
-func TestDarwinInstallHelper_PostCommitCallsVMHelperInstall(t *testing.T) {
+func TestDarwinInstallHelper_PostCommitCallsNetworkHelperInstall(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, []byte("true\n"))
@@ -333,7 +333,7 @@ func TestDarwinUninstallHelper_ReturnsPostCommitAction(t *testing.T) {
 	assert.NotNil(t, action.Run, "UninstallHelper PostCommitAction.Run should not be nil")
 }
 
-func TestDarwinUninstallHelper_PostCommitCallsVMHelperUninstall(t *testing.T) {
+func TestDarwinUninstallHelper_PostCommitCallsNetworkHelperUninstall(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)

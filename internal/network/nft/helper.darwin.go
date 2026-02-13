@@ -16,8 +16,8 @@ import (
 
 // nftDarwinHelper implements shared.NetworkHelper for macOS using vmhelper + nft.
 type nftDarwinHelper struct {
-	platform    runtime.RuntimePlatform
-	vmEnvCached *vmhelper.VMHelperEnv
+	platform         runtime.RuntimePlatform
+	vmHelperEnvCache *vmhelper.VMHelperEnv
 }
 
 // Compile-time interface assertion.
@@ -32,11 +32,11 @@ func NewDarwinHelper(cfg config.Network, platform runtime.RuntimePlatform) share
 	return &nftDarwinHelper{platform: platform}
 }
 
-func (h *nftDarwinHelper) vmEnv(env *shared.NetworkEnv) *vmhelper.VMHelperEnv {
-	if h.vmEnvCached == nil {
-		h.vmEnvCached = vmhelper.NewVMHelperEnv(env.Fs, env.Cmd)
+func (h *nftDarwinHelper) vmHelperEnv(env *shared.NetworkEnv) *vmhelper.VMHelperEnv {
+	if h.vmHelperEnvCache == nil {
+		h.vmHelperEnvCache = vmhelper.NewVMHelperEnv(env.Fs, env.Cmd)
 	}
-	return h.vmEnvCached
+	return h.vmHelperEnvCache
 }
 
 func (h *nftDarwinHelper) Setup(env *shared.NetworkEnv, projectDir string, progress shared.ProgressFunc) (*shared.PostCommitAction, error) {
@@ -52,16 +52,16 @@ func (h *nftDarwinHelper) Teardown(env *shared.NetworkEnv, projectDir string) er
 }
 
 func (h *nftDarwinHelper) HelperStatus(ctx context.Context, env *shared.NetworkEnv) shared.HelperStatus {
-	vmEnv := h.vmEnv(env)
+	vmHelperEnv := h.vmHelperEnv(env)
 
-	installed, err := vmhelper.IsInstalled(ctx, vmEnv)
+	installed, err := vmhelper.IsInstalled(ctx, vmHelperEnv)
 	if err != nil {
 		return shared.HelperStatus{Installed: false}
 	}
 
 	needsUpdate := false
 	if installed {
-		needsUpdate, _ = vmhelper.NeedsUpdate(vmEnv)
+		needsUpdate, _ = vmhelper.NeedsUpdate(vmHelperEnv)
 	}
 
 	return shared.HelperStatus{
@@ -108,30 +108,30 @@ func (h *nftDarwinHelper) DetailedStatus(env *shared.NetworkEnv) shared.Detailed
 func (h *nftDarwinHelper) InstallHelper(env *shared.NetworkEnv, progress shared.ProgressFunc) (*shared.PostCommitAction, error) {
 	progress = shared.SafeProgress(progress)
 
-	vmEnv := h.vmEnv(env)
+	vmHelperEnv := h.vmHelperEnv(env)
 	platform := h.platform
 
 	// Write entry.sh and create directories via TransactFs (pre-commit).
 	// These changes are staged and will be flushed to disk when the caller commits.
 	progress("Writing entry script and creating directories...\n")
-	if err := vmhelper.WriteEntryScript(vmEnv); err != nil {
+	if err := vmhelper.WriteEntryScript(vmHelperEnv); err != nil {
 		return nil, fmt.Errorf("failed to write entry script: %w", err)
 	}
 
 	return &shared.PostCommitAction{
 		Run: func(ctx context.Context, progress shared.ProgressFunc) error {
-			return vmhelper.InstallHelper(ctx, vmEnv, platform, progress)
+			return vmhelper.InstallHelper(ctx, vmHelperEnv, platform, progress)
 		},
 	}, nil
 }
 
 func (h *nftDarwinHelper) UninstallHelper(env *shared.NetworkEnv, _ shared.ProgressFunc) (*shared.PostCommitAction, error) {
 	// No pre-commit progress reporting needed; PostCommitAction.Run receives its own progress.
-	vmEnv := h.vmEnv(env)
+	vmHelperEnv := h.vmHelperEnv(env)
 
 	return &shared.PostCommitAction{
 		Run: func(ctx context.Context, progress shared.ProgressFunc) error {
-			return vmhelper.UninstallHelper(ctx, vmEnv, progress)
+			return vmhelper.UninstallHelper(ctx, vmHelperEnv, progress)
 		},
 	}, nil
 }

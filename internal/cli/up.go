@@ -12,7 +12,6 @@ import (
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/network"
-	"github.com/bolasblack/alcatraz/internal/network/darwin/vmhelper"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
 	"github.com/bolasblack/alcatraz/internal/sync"
@@ -143,7 +142,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// Files written via tfs, committed to real disk before nft loads them.
 	fw, fwType := network.New(ctx, networkEnv)
 
-	if err := setupFirewall(ctx, fw, fwType, networkEnv, env, tfs, runtimeEnv, cfg.Network, rt, st, out); err != nil {
+	if err := setupFirewall(ctx, fw, fwType, networkEnv, env, tfs, runtimeEnv, cfg.Network, rt, st, nh, out); err != nil {
 		if errors.Is(err, errSkipFirewall) {
 			// User declined helper install — already messaged, not an error
 		} else {
@@ -266,7 +265,7 @@ func setupNetwork(ctx context.Context, nh network.NetworkHelper, networkEnv *net
 // - A firewall backend is available (nftables on Linux, nftables via VM on macOS)
 // - lan-access is NOT ["*"] (user wants network isolation)
 // See AGD-027 for design decisions.
-func setupFirewall(ctx context.Context, fw network.Firewall, fwType network.Type, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, netCfg config.Network, rt runtime.Runtime, st *state.State, out io.Writer) error {
+func setupFirewall(ctx context.Context, fw network.Firewall, fwType network.Type, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, netCfg config.Network, rt runtime.Runtime, st *state.State, nh network.NetworkHelper, out io.Writer) error {
 	// Clean up stale rule files unconditionally — must run even when
 	// HasAllLAN or TypeNone would cause early returns below.
 	if fw != nil {
@@ -288,12 +287,10 @@ func setupFirewall(ctx context.Context, fw network.Firewall, fwType network.Type
 		return nil
 	}
 
-	// On darwin, the VM helper must be installed for nft reload.
+	// The network helper must be installed for nft reload.
 	// If setupNetwork didn't run (e.g. lan-access is empty), the helper may not be installed.
-	if runtime.IsDarwin(networkEnv.Runtime) {
-		if err := ensureVMHelper(ctx, networkEnv, env, tfs, out); err != nil {
-			return err
-		}
+	if err := ensureNetworkHelper(ctx, nh, networkEnv, env, tfs, out); err != nil {
+		return err
 	}
 
 	if fwType == network.TypeNone {
@@ -353,17 +350,16 @@ On Linux, install nftables:
 	return nil
 }
 
-// ensureVMHelper checks if the VM helper is installed on darwin and prompts to install if needed.
+// ensureNetworkHelper checks if the network helper is installed and prompts to install if needed.
 // Returns nil if the helper is already installed or was successfully installed.
 // Returns a non-nil error sentinel to signal the caller to skip firewall setup (not a real error).
-func ensureVMHelper(ctx context.Context, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, out io.Writer) error {
-	vmEnv := vmhelper.NewVMHelperEnv(networkEnv.Fs, networkEnv.Cmd)
-
-	installed, err := vmhelper.IsInstalled(ctx, vmEnv)
-	if err != nil {
-		return fmt.Errorf("failed to check VM helper status: %w", err)
+func ensureNetworkHelper(ctx context.Context, nh network.NetworkHelper, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, out io.Writer) error {
+	if nh == nil {
+		return fmt.Errorf("no network helper available for this platform")
 	}
-	if installed {
+
+	status := nh.HelperStatus(ctx, networkEnv)
+	if status.Installed {
 		return nil
 	}
 
@@ -375,14 +371,6 @@ func ensureVMHelper(ctx context.Context, networkEnv *network.NetworkEnv, env *ut
 
 	// Install the helper (same flow as setupNetwork)
 	progress := progressFunc(out)
-	nh := network.NewNetworkHelper(
-		config.Network{LANAccess: []string{"_placeholder"}},
-		networkEnv.Runtime,
-	)
-	if nh == nil {
-		return fmt.Errorf("failed to create network helper for install")
-	}
-
 	action, err := nh.InstallHelper(networkEnv, progress)
 	if err != nil {
 		return fmt.Errorf("failed to install network helper: %w", err)

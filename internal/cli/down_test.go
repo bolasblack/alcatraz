@@ -76,7 +76,7 @@ func (m *mockRuntime) Status(_ context.Context, _ *runtime.RuntimeEnv, _ string,
 }
 
 func TestCleanupFirewall_NoFirewallAvailable(t *testing.T) {
-	// Mock command runner where "which nft" fails → Detect returns TypeNone
+	// When no firewall is available, fw is nil — cleanupFirewall returns nil immediately
 	cmd := util.NewMockCommandRunner()
 	fs := afero.NewMemMapFs()
 	tfs := transact.New(transact.WithActualFs(fs))
@@ -84,11 +84,9 @@ func TestCleanupFirewall_NoFirewallAvailable(t *testing.T) {
 	runtimeEnv := runtime.NewRuntimeEnv(cmd)
 	rt := &mockRuntime{}
 	st := &state.State{ContainerName: "alca-test"}
-	networkEnv := network.NewNetworkEnv(tfs, cmd, "/tmp/test", "", runtime.PlatformLinux)
-	fw, _ := network.New(context.Background(), networkEnv)
 
 	var buf bytes.Buffer
-	err := cleanupFirewall(context.Background(), fw, env, tfs, runtimeEnv, rt, st, &buf)
+	err := cleanupFirewall(context.Background(), nil, env, tfs, runtimeEnv, rt, st, &buf)
 
 	if err != nil {
 		t.Errorf("expected nil error when no firewall available, got: %v", err)

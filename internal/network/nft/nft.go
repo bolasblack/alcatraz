@@ -12,9 +12,9 @@ import (
 
 // New creates a new NFTables firewall instance.
 func New(env *shared.NetworkEnv) shared.Firewall {
-	var vmEnv *vmhelper.VMHelperEnv
+	var vmHelperEnv *vmhelper.VMHelperEnv
 	if runtime.IsDarwin(env.Runtime) {
-		vmEnv = vmhelper.NewVMHelperEnv(env.Fs, env.Cmd)
+		vmHelperEnv = vmhelper.NewVMHelperEnv(env.Fs, env.Cmd)
 	}
-	return &NFTables{env: env, vmEnv: vmEnv}
+	return &NFTables{env: env, vmHelperEnv: vmHelperEnv}
 }

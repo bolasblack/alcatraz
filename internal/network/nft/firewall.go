@@ -20,8 +20,8 @@ var _ shared.Firewall = (*NFTables)(nil)
 // NFTables implements shared.Firewall using nftables.
 // Each container gets its own table for isolation and clean teardown (AGD-030).
 type NFTables struct {
-	env   *shared.NetworkEnv
-	vmEnv *vmhelper.VMHelperEnv // pre-constructed for Darwin; nil on Linux
+	env         *shared.NetworkEnv
+	vmHelperEnv *vmhelper.VMHelperEnv // pre-constructed for Darwin; nil on Linux
 }
 
 // isDarwin reports whether this instance targets macOS (Darwin).
@@ -275,7 +275,7 @@ func (n *NFTables) applyRulesOnLinux(containerID string, containerIP string, rul
 }
 
 // applyRulesOnDarwin applies per-container rules on macOS per AGD-030.
-// Writes the rule file via Fs, returns PostCommitAction to reload VM helper.
+// Writes the rule file via Fs, returns PostCommitAction to reload network helper.
 func (n *NFTables) applyRulesOnDarwin(containerID string, containerIP string, rules []shared.LANAccessRule) (*shared.PostCommitAction, error) {
 	table := tableName(containerID)
 	ruleset := generateRuleset(table, containerIP, rules, chainPriority(n.env.Runtime), n.env.ProjectDir, n.env.ProjectID)
@@ -293,7 +293,7 @@ func (n *NFTables) applyRulesOnDarwin(containerID string, containerIP string, ru
 	// Post-commit: trigger reload via network helper container
 	return &shared.PostCommitAction{
 		Run: func(ctx context.Context, _ shared.ProgressFunc) error {
-			if err := n.reloadVMHelper(ctx); err != nil {
+			if err := n.reloadNetworkHelper(ctx); err != nil {
 				return fmt.Errorf("failed to trigger nft reload on darwin for %s: %w", rulePath, err)
 			}
 			return nil
@@ -329,7 +329,7 @@ func (n *NFTables) cleanupOnLinux(containerID string) (*shared.PostCommitAction,
 }
 
 // cleanupOnDarwin removes per-container rules on macOS.
-// Removes the rule file via Fs, returns PostCommitAction to reload VM helper.
+// Removes the rule file via Fs, returns PostCommitAction to reload network helper.
 func (n *NFTables) cleanupOnDarwin(containerID string) (*shared.PostCommitAction, error) {
 	dir, err := nftDirOnDarwin()
 	if err != nil {
@@ -342,7 +342,7 @@ func (n *NFTables) cleanupOnDarwin(containerID string) (*shared.PostCommitAction
 	// Post-commit: trigger reload via network helper container
 	return &shared.PostCommitAction{
 		Run: func(ctx context.Context, _ shared.ProgressFunc) error {
-			if err := n.reloadVMHelper(ctx); err != nil {
+			if err := n.reloadNetworkHelper(ctx); err != nil {
 				return fmt.Errorf("failed to trigger nft reload on darwin after cleanup of %s: %w", rulePath, err)
 			}
 			return nil
