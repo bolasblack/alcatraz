@@ -86,15 +86,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// Detect platform once for all network operations
 	platform := runtime.DetectPlatform(ctx, runtimeEnv)
 
-	// Network helper (handles all platform-specific logic)
-	nh := network.NewNetworkHelper(cfg.Network, platform)
-	if nh != nil {
-		if err := setupNetwork(ctx, nh, env, tfs, cwd, platform, out); err != nil {
-			return err
-		}
-	}
-
-	// Load or create state
+	// Load or create state early — ProjectID is needed by network env
 	st, isNew, err := state.LoadOrCreate(env, cwd, rt.Name())
 	if err != nil {
 		return fmt.Errorf("failed to load state: %w", err)
@@ -102,6 +94,17 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	if isNew {
 		util.ProgressStep(out, "Created new state file: %s\n", state.StateFilePath(cwd))
+	}
+
+	// Create shared network env once for all network operations (AGD-029)
+	networkEnv := network.NewNetworkEnv(tfs, deps.CmdRunner, cwd, st.ProjectID, platform)
+
+	// Network helper (handles all platform-specific logic)
+	nh := network.NewNetworkHelper(cfg.Network, platform)
+	if nh != nil {
+		if err := setupNetwork(ctx, nh, networkEnv, env, tfs, out); err != nil {
+			return err
+		}
 	}
 
 	// Check for configuration drift and handle rebuild
@@ -138,9 +141,9 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// Setup firewall rules for network isolation
 	// See AGD-027 for design decisions
 	// Files written via tfs, committed to real disk before nft loads them.
-	firewallEnv := network.NewNetworkEnv(tfs, deps.CmdRunner, cwd, platform)
-	firewallEnv.ProjectID = st.ProjectID
-	if err := setupFirewall(ctx, firewallEnv, env, tfs, runtimeEnv, cfg.Network, rt, st, out); err != nil {
+	fw, fwType := network.New(ctx, networkEnv)
+
+	if err := setupFirewall(ctx, fw, fwType, networkEnv, env, tfs, runtimeEnv, cfg.Network, rt, st, out); err != nil {
 		if errors.Is(err, errSkipFirewall) {
 			// User declined helper install — already messaged, not an error
 		} else {
@@ -209,10 +212,8 @@ func rebuildContainerIfNeeded(ctx context.Context, runtimeEnv *runtime.RuntimeEn
 
 // setupNetwork configures network helper for LAN access.
 // See AGD-030 for design decisions.
-func setupNetwork(ctx context.Context, nh network.NetworkHelper, env *util.Env, tfs *transact.TransactFs, projectDir string, platform runtime.RuntimePlatform, out io.Writer) error {
+func setupNetwork(ctx context.Context, nh network.NetworkHelper, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, out io.Writer) error {
 	progress := progressFunc(out)
-
-	networkEnv := network.NewNetworkEnv(env.Fs, env.Cmd, projectDir, platform)
 
 	// Check and install helper if needed
 	status := nh.HelperStatus(ctx, networkEnv)
@@ -241,7 +242,7 @@ func setupNetwork(ctx context.Context, nh network.NetworkHelper, env *util.Env, 
 	}
 
 	// Setup project rules
-	action, err := nh.Setup(networkEnv, projectDir, progress)
+	action, err := nh.Setup(networkEnv, networkEnv.ProjectDir, progress)
 	if err != nil {
 		return fmt.Errorf("failed to setup network: %w", err)
 	}
@@ -265,7 +266,17 @@ func setupNetwork(ctx context.Context, nh network.NetworkHelper, env *util.Env, 
 // - A firewall backend is available (nftables on Linux, nftables via VM on macOS)
 // - lan-access is NOT ["*"] (user wants network isolation)
 // See AGD-027 for design decisions.
-func setupFirewall(ctx context.Context, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, netCfg config.Network, rt runtime.Runtime, st *state.State, out io.Writer) error {
+func setupFirewall(ctx context.Context, fw network.Firewall, fwType network.Type, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, netCfg config.Network, rt runtime.Runtime, st *state.State, out io.Writer) error {
+	// Clean up stale rule files unconditionally — must run even when
+	// HasAllLAN or TypeNone would cause early returns below.
+	if fw != nil {
+		if staleCount, err := fw.CleanupStaleFiles(); err != nil {
+			util.ProgressStep(out, "Warning: stale rule cleanup: %v\n", err)
+		} else if staleCount > 0 {
+			util.ProgressStep(out, "Cleaned up %d stale firewall rule file(s)\n", staleCount)
+		}
+	}
+
 	// Parse lan-access rules
 	rules, err := network.ParseLANAccessRules(netCfg.LANAccess)
 	if err != nil {
@@ -284,9 +295,6 @@ func setupFirewall(ctx context.Context, networkEnv *network.NetworkEnv, env *uti
 			return err
 		}
 	}
-
-	// Detect firewall availability
-	fw, fwType := network.New(ctx, networkEnv)
 
 	if fwType == network.TypeNone {
 		// No firewall available - emit warning per AGD-027
@@ -307,13 +315,6 @@ On Linux, install nftables:
 
 	if fw == nil {
 		return nil
-	}
-
-	// Clean up stale rule files from moved/deleted projects
-	if staleCount, err := fw.CleanupStaleFiles(); err != nil {
-		util.ProgressStep(out, "Warning: stale rule cleanup: %v\n", err)
-	} else if staleCount > 0 {
-		util.ProgressStep(out, "Cleaned up %d stale firewall rule file(s)\n", staleCount)
 	}
 
 	// Get container status to find the container name

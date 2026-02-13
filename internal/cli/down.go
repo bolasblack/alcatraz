@@ -77,11 +77,14 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	platform := runtime.DetectPlatform(ctx, runtimeEnv)
 
+	// Create shared network env once for all network operations (AGD-029)
+	networkEnv := network.NewNetworkEnv(tfs, deps.CmdRunner, cwd, st.ProjectID, platform)
+	fw, _ := network.New(ctx, networkEnv)
+
 	// Cleanup firewall rules before stopping container (need container ID)
 	// See AGD-027 for design decisions
 	// Files removed via tfs, committed to real disk before nft cleanup commands run.
-	firewallEnv := network.NewNetworkEnv(tfs, deps.CmdRunner, cwd, platform)
-	if err := cleanupFirewall(ctx, firewallEnv, env, tfs, runtimeEnv, rt, st, out); err != nil {
+	if err := cleanupFirewall(ctx, fw, env, tfs, runtimeEnv, rt, st, out); err != nil {
 		util.ProgressStep(out, "Warning: firewall cleanup: %v\n", err)
 	}
 
@@ -94,7 +97,6 @@ func runDown(cmd *cobra.Command, args []string) error {
 	// Network cleanup
 	nh := network.NewNetworkHelper(cfg.Network, platform)
 	if nh != nil {
-		networkEnv := network.NewNetworkEnv(env.Fs, env.Cmd, cwd, platform)
 		if err := nh.Teardown(networkEnv, cwd); err != nil {
 			util.ProgressStep(out, "Warning: failed to cleanup network: %v\n", err)
 		}
@@ -151,10 +153,16 @@ func checkSyncConflictsBeforeDown(ctx context.Context, fs afero.Fs, syncEnv *syn
 
 // cleanupFirewall removes firewall rules for the container.
 // See AGD-027 for design decisions.
-func cleanupFirewall(ctx context.Context, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime, st *state.State, out io.Writer) error {
-	fw, fwType := network.New(ctx, networkEnv)
-	if fwType == network.TypeNone || fw == nil {
+func cleanupFirewall(ctx context.Context, fw network.Firewall, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime, st *state.State, out io.Writer) error {
+	if fw == nil {
 		return nil
+	}
+
+	// Clean up stale rule files before container-specific cleanup
+	if staleCount, err := fw.CleanupStaleFiles(); err != nil {
+		util.ProgressStep(out, "Warning: stale rule cleanup: %v\n", err)
+	} else if staleCount > 0 {
+		util.ProgressStep(out, "Cleaned up %d stale firewall rule file(s)\n", staleCount)
 	}
 
 	// Get container status to find the container ID

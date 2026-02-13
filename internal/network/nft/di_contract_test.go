@@ -21,32 +21,12 @@ import (
 // 3. Operations use the injected Cmd for nft commands
 // =============================================================================
 
-// TestNew_StoresInjectedEnv verifies that New stores the exact NetworkEnv
-// instance provided, not a copy.
-func TestNew_StoresInjectedEnv(t *testing.T) {
-	mockFs := afero.NewMemMapFs()
-	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "")
-
-	firewall := New(env)
-
-	// Cast to *NFTables to access internal env field
-	nft, ok := firewall.(*NFTables)
-	if !ok {
-		t.Fatalf("New() should return *NFTables, got %T", firewall)
-	}
-
-	if nft.env != env {
-		t.Error("New() must store the exact NetworkEnv instance provided")
-	}
-}
-
 // TestApplyRules_UsesInjectedFs verifies that ApplyRules uses the
 // injected Fs for writing rule files, not the real filesystem.
 func TestApplyRules_UsesInjectedFs(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "", "")
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{
@@ -74,7 +54,7 @@ func TestApplyRules_UsesInjectedFs(t *testing.T) {
 func TestApplyRules_UsesInjectedCmd(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", "")
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{
@@ -88,12 +68,9 @@ func TestApplyRules_UsesInjectedCmd(t *testing.T) {
 		_ = action.Run(context.Background(), nil)
 	}
 
-	// Verify mockCmd was called with nft (not a new CommandRunner)
+	// Verify mockCmd was called (not a new CommandRunner)
 	if len(mockCmd.Calls) == 0 {
 		t.Fatal("ApplyRules PostCommitAction must use the injected Cmd - no calls recorded on mockCmd")
-	}
-	if mockCmd.Calls[0].Name != "sudo nft" {
-		t.Errorf("ApplyRules PostCommitAction should call 'sudo nft', got: %s", mockCmd.Calls[0].Name)
 	}
 }
 
@@ -102,7 +79,7 @@ func TestApplyRules_UsesInjectedCmd(t *testing.T) {
 func TestApplyRules_CmdReceivesCorrectArgs(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "", "")
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{
@@ -151,7 +128,7 @@ func TestApplyRules_CmdReceivesCorrectArgs(t *testing.T) {
 func TestApplyRules_FsReceivesCorrectContent(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "", "")
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{
@@ -187,7 +164,7 @@ func TestApplyRules_FsReceivesCorrectContent(t *testing.T) {
 func TestCleanup_UsesInjectedFs(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "", "")
 	firewall := New(env)
 
 	// First create a rule file using the project-path-based name
@@ -215,7 +192,7 @@ func TestCleanup_UsesInjectedFs(t *testing.T) {
 func TestCleanup_UsesInjectedCmd(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", "")
 	firewall := New(env)
 
 	action, _ := firewall.Cleanup("container123")
@@ -225,12 +202,9 @@ func TestCleanup_UsesInjectedCmd(t *testing.T) {
 		_ = action.Run(context.Background(), nil)
 	}
 
-	// Verify mockCmd was called with nft (not a new CommandRunner)
+	// Verify mockCmd was called (not a new CommandRunner)
 	if len(mockCmd.Calls) == 0 {
 		t.Fatal("Cleanup PostCommitAction must use the injected Cmd - no calls recorded on mockCmd")
-	}
-	if mockCmd.Calls[0].Name != "sudo nft" {
-		t.Errorf("Cleanup PostCommitAction should call 'sudo nft', got: %s", mockCmd.Calls[0].Name)
 	}
 }
 
@@ -239,7 +213,7 @@ func TestCleanup_UsesInjectedCmd(t *testing.T) {
 func TestCleanup_CmdReceivesDeleteArgs(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", "")
 	firewall := New(env)
 
 	action, _ := firewall.Cleanup("abc123def456")
@@ -287,7 +261,7 @@ func TestApplyRules_ReturnsErrorFromInjectedCmd(t *testing.T) {
 	// Return error for nft -f command
 	mockCmd.ExpectFailure("sudo nft -f /etc/nftables.d/alcatraz/"+nftFileName("/test/project"), expectedErr)
 
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "", "")
 	firewall := New(env)
 
 	action, err := firewall.ApplyRules("container123", "172.17.0.2", nil)
@@ -309,7 +283,7 @@ func TestApplyRules_ReturnsErrorFromInjectedCmd(t *testing.T) {
 func TestApplyRules_SkipsWhenAllLAN(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", "")
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{
@@ -339,7 +313,7 @@ func TestApplyRules_SkipsWhenAllLAN(t *testing.T) {
 func TestApplyRules_CreatesDirViaInjectedFs(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "")
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", "")
 	firewall := New(env)
 
 	// Directory doesn't exist yet

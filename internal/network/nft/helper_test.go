@@ -23,7 +23,7 @@ func TestNewHelper_ReturnsFunctionalHelperForOrbStack(t *testing.T) {
 	assert.NotNil(t, helper, "NewHelper should return non-nil for darwin OrbStack platform")
 
 	// Verify the helper works through the NetworkHelper interface
-	env := shared.NewNetworkEnv(afero.NewMemMapFs(), util.NewMockCommandRunner(), "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(afero.NewMemMapFs(), util.NewMockCommandRunner(), "", "", runtime.PlatformMacOrbStack)
 	action, err := helper.Setup(env, "/project", nil)
 	assert.NoError(t, err, "Setup should succeed for OrbStack helper")
 	assert.NotNil(t, action, "Setup should return a PostCommitAction")
@@ -36,7 +36,7 @@ func TestNewHelper_ReturnsFunctionalHelperForDockerDesktop(t *testing.T) {
 	assert.NotNil(t, helper, "NewHelper should return non-nil for darwin Docker Desktop platform")
 
 	// Verify the helper works through the NetworkHelper interface
-	env := shared.NewNetworkEnv(afero.NewMemMapFs(), util.NewMockCommandRunner(), "", runtime.PlatformMacDockerDesktop)
+	env := shared.NewNetworkEnv(afero.NewMemMapFs(), util.NewMockCommandRunner(), "", "", runtime.PlatformMacDockerDesktop)
 	action, err := helper.Setup(env, "/project", nil)
 	assert.NoError(t, err, "Setup should succeed for Docker Desktop helper")
 	assert.NotNil(t, action, "Setup should return a PostCommitAction")
@@ -49,7 +49,7 @@ func TestNewHelper_ReturnsFunctionalHelperForLinux(t *testing.T) {
 	assert.NotNil(t, helper, "NewHelper should return non-nil for Linux platform")
 
 	// Verify the helper works through the NetworkHelper interface
-	env := shared.NewNetworkEnv(afero.NewMemMapFs(), util.NewMockCommandRunner(), "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(afero.NewMemMapFs(), util.NewMockCommandRunner(), "", "", runtime.PlatformLinux)
 	err := helper.Teardown(env, "/project")
 	assert.NoError(t, err, "Teardown should succeed for Linux helper")
 }

@@ -47,7 +47,7 @@ func TestLinuxSetup_ReturnsNoError(t *testing.T) {
 
 func TestLinuxSetup_IsNoOp(t *testing.T) {
 	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(afero.NewMemMapFs(), mockCmd, "/project", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(afero.NewMemMapFs(), mockCmd, "/project", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	_, err := h.Setup(env, "/project", nil)
@@ -70,7 +70,7 @@ func TestLinuxTeardown_ReturnsNoError(t *testing.T) {
 
 func TestLinuxTeardown_IsNoOp(t *testing.T) {
 	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(afero.NewMemMapFs(), mockCmd, "/project", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(afero.NewMemMapFs(), mockCmd, "/project", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	_ = h.Teardown(env, "/project")
@@ -83,7 +83,7 @@ func TestLinuxTeardown_IsNoOp(t *testing.T) {
 
 func TestLinuxHelperStatus_NotInstalledWhenDirMissing(t *testing.T) {
 	fs := afero.NewMemMapFs()
-	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	status := h.HelperStatus(context.Background(), env)
@@ -95,7 +95,7 @@ func TestLinuxHelperStatus_NotInstalledWhenDirExistsButNoInclude(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	require.NoError(t, fs.MkdirAll(alcatrazNftDirOnLinux, 0755))
 	require.NoError(t, afero.WriteFile(fs, nftablesConfPathOnLinux, []byte("#!/usr/sbin/nft -f\n"), 0644))
-	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	status := h.HelperStatus(context.Background(), env)
@@ -107,7 +107,7 @@ func TestLinuxHelperStatus_InstalledWhenDirAndIncludeExist(t *testing.T) {
 	require.NoError(t, fs.MkdirAll(alcatrazNftDirOnLinux, 0755))
 	content := "#!/usr/sbin/nft -f\n" + alcatrazIncludeLineOnLinux + "\n"
 	require.NoError(t, afero.WriteFile(fs, nftablesConfPathOnLinux, []byte(content), 0644))
-	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	status := h.HelperStatus(context.Background(), env)
@@ -118,7 +118,7 @@ func TestLinuxHelperStatus_InstalledWhenDirAndIncludeExist(t *testing.T) {
 func TestLinuxHelperStatus_NotInstalledWhenDirExistsButConfMissing(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	require.NoError(t, fs.MkdirAll(alcatrazNftDirOnLinux, 0755))
-	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	status := h.HelperStatus(context.Background(), env)
@@ -131,7 +131,7 @@ func TestLinuxHelperStatus_NotInstalledWhenDirExistsButConfMissing(t *testing.T)
 
 func TestLinuxDetailedStatus_EmptyWhenDirMissing(t *testing.T) {
 	fs := afero.NewMemMapFs()
-	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	info := h.DetailedStatus(env)
@@ -147,7 +147,7 @@ func TestLinuxDetailedStatus_ListsNftFiles(t *testing.T) {
 	require.NoError(t, afero.WriteFile(fs, filepath.Join(alcatrazNftDirOnLinux, "abc.nft"), []byte(ruleContent1), 0644))
 	require.NoError(t, afero.WriteFile(fs, filepath.Join(alcatrazNftDirOnLinux, "def.nft"), []byte(ruleContent2), 0644))
 
-	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	info := h.DetailedStatus(env)
@@ -167,7 +167,7 @@ func TestLinuxDetailedStatus_SkipsNonNftFiles(t *testing.T) {
 	require.NoError(t, afero.WriteFile(fs, filepath.Join(alcatrazNftDirOnLinux, "rules.nft"), []byte("content"), 0644))
 	require.NoError(t, afero.WriteFile(fs, filepath.Join(alcatrazNftDirOnLinux, "readme.txt"), []byte("text"), 0644))
 
-	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	info := h.DetailedStatus(env)
@@ -180,7 +180,7 @@ func TestLinuxDetailedStatus_SkipsDirectories(t *testing.T) {
 	require.NoError(t, fs.MkdirAll(filepath.Join(alcatrazNftDirOnLinux, "subdir.nft"), 0755))
 	require.NoError(t, afero.WriteFile(fs, filepath.Join(alcatrazNftDirOnLinux, "rules.nft"), []byte("content"), 0644))
 
-	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, util.NewMockCommandRunner(), "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	info := h.DetailedStatus(env)
@@ -194,7 +194,7 @@ func TestLinuxDetailedStatus_SkipsDirectories(t *testing.T) {
 func TestLinuxInstallHelper_CreatesDirectory(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	_, err := h.InstallHelper(env, nil)
@@ -208,7 +208,7 @@ func TestLinuxInstallHelper_AddsIncludeLine(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	require.NoError(t, afero.WriteFile(fs, nftablesConfPathOnLinux, []byte("#!/usr/sbin/nft -f\n"), 0644))
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	_, err := h.InstallHelper(env, nil)
@@ -225,7 +225,7 @@ func TestLinuxInstallHelper_SkipsIncludeLineIfAlreadyPresent(t *testing.T) {
 	existing := "#!/usr/sbin/nft -f\n" + alcatrazIncludeLineOnLinux + "\n"
 	require.NoError(t, afero.WriteFile(fs, nftablesConfPathOnLinux, []byte(existing), 0644))
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	_, err := h.InstallHelper(env, nil)
@@ -243,7 +243,7 @@ func TestLinuxInstallHelper_SkipsIncludeLineIfAlreadyPresent(t *testing.T) {
 func TestLinuxInstallHelper_ReturnsPostCommitAction(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	action, err := h.InstallHelper(env, nil)
@@ -255,7 +255,7 @@ func TestLinuxInstallHelper_ReturnsPostCommitAction(t *testing.T) {
 func TestLinuxInstallHelper_PostCommitReloadsNftables(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	action, err := h.InstallHelper(env, nil)
@@ -272,7 +272,7 @@ func TestLinuxInstallHelper_PostCommitReturnsErrorOnNftFailure(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	mockCmd.ExpectFailure("nft -f "+nftablesConfPathOnLinux, assert.AnError)
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	action, err := h.InstallHelper(env, nil)
@@ -286,7 +286,7 @@ func TestLinuxInstallHelper_PostCommitReturnsErrorOnNftFailure(t *testing.T) {
 func TestLinuxInstallHelper_AcceptsNilProgress(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	_, err := h.InstallHelper(env, nil)
@@ -303,7 +303,7 @@ func TestLinuxUninstallHelper_RemovesIncludeLine(t *testing.T) {
 	require.NoError(t, afero.WriteFile(fs, nftablesConfPathOnLinux, []byte(content), 0644))
 	require.NoError(t, fs.MkdirAll(alcatrazNftDirOnLinux, 0755))
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	_, err := h.UninstallHelper(env, nil)
@@ -321,7 +321,7 @@ func TestLinuxUninstallHelper_RemovesRuleFiles(t *testing.T) {
 	require.NoError(t, afero.WriteFile(fs, filepath.Join(alcatrazNftDirOnLinux, "abc.nft"), []byte("rules"), 0644))
 	require.NoError(t, afero.WriteFile(fs, filepath.Join(alcatrazNftDirOnLinux, "def.nft"), []byte("rules"), 0644))
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	_, err := h.UninstallHelper(env, nil)
@@ -334,7 +334,7 @@ func TestLinuxUninstallHelper_RemovesRuleFiles(t *testing.T) {
 func TestLinuxUninstallHelper_ReturnsPostCommitAction(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	action, err := h.UninstallHelper(env, nil)
@@ -348,7 +348,7 @@ func TestLinuxUninstallHelper_PostCommitDeletesTablesAndDir(t *testing.T) {
 	require.NoError(t, fs.MkdirAll(alcatrazNftDirOnLinux, 0755))
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	mockCmd.ExpectSuccess("nft list tables", []byte("table inet alca-abc123\ntable inet alca-def456\ntable inet myother\n"))
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	action, err := h.UninstallHelper(env, nil)
@@ -370,7 +370,7 @@ func TestLinuxUninstallHelper_PostCommitHandlesNoTables(t *testing.T) {
 	require.NoError(t, fs.MkdirAll(alcatrazNftDirOnLinux, 0755))
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	mockCmd.ExpectSuccess("nft list tables", []byte(""))
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	action, err := h.UninstallHelper(env, nil)
@@ -385,7 +385,7 @@ func TestLinuxUninstallHelper_PostCommitHandlesListTablesError(t *testing.T) {
 	require.NoError(t, fs.MkdirAll(alcatrazNftDirOnLinux, 0755))
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	mockCmd.ExpectFailure("nft list tables", assert.AnError)
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	action, err := h.UninstallHelper(env, nil)
@@ -401,7 +401,7 @@ func TestLinuxUninstallHelper_PostCommitHandlesListTablesError(t *testing.T) {
 func TestLinuxUninstallHelper_AcceptsNilProgress(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(fs, mockCmd, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
 	_, err := h.UninstallHelper(env, nil)

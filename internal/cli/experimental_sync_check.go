@@ -41,8 +41,18 @@ func runSyncCheck(cmd *cobra.Command, args []string) error {
 	deps := newCLIReadDeps()
 	env, runtimeEnv := deps.Env, deps.RuntimeEnv
 
+	cfg, rt, err := loadConfigAndRuntime(ctx, env, runtimeEnv, cwd)
+	if err != nil {
+		return err
+	}
+
 	st, err := loadRequiredState(env, cwd)
 	if err != nil {
+		return err
+	}
+
+	// Check if project directory has moved since container was created
+	if err := checkProjectPathConsistency(ctx, runtimeEnv, rt, st, cwd, cfg); err != nil {
 		return err
 	}
 

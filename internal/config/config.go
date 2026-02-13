@@ -374,6 +374,20 @@ type Config struct {
 	Caps           Caps
 }
 
+// HasMutagenSync returns true if the config has any sync excludes configured,
+// which indicates Mutagen is being used for file synchronization.
+func (c *Config) HasMutagenSync() bool {
+	if len(c.WorkdirExclude) > 0 {
+		return true
+	}
+	for _, m := range c.Mounts {
+		if len(m.Exclude) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // NormalizeRuntime returns the runtime type, defaulting to auto if empty.
 func (c *Config) NormalizeRuntime() RuntimeType {
 	if c.Runtime == "" {

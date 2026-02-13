@@ -81,7 +81,7 @@ func TestGenerateRulesetWithPriority(t *testing.T) {
 func TestApplyRulesOnDarwin_WritesPerContainerFile(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", "", runtime.PlatformMacOrbStack)
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{
@@ -109,7 +109,7 @@ func TestApplyRulesOnDarwin_TriggersReload(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, []byte("true\n"))
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", "", runtime.PlatformMacOrbStack)
 	firewall := New(env)
 
 	action, _ := firewall.ApplyRules("container123", "172.17.0.2", nil)
@@ -128,7 +128,7 @@ func TestApplyRulesOnDarwin_ReloadFailsWhenHelperNotInstalled(t *testing.T) {
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	// docker inspect fails → container not found
 	mockCmd.ExpectFailure("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, assert.AnError)
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", "", runtime.PlatformMacOrbStack)
 	firewall := New(env)
 
 	action, err := firewall.ApplyRules("container123", "172.17.0.2", nil)
@@ -151,7 +151,7 @@ func TestApplyRulesOnDarwin_ReloadFailsWhenHelperNotInstalled(t *testing.T) {
 func TestApplyRulesOnDarwin_WritesPerContainerRuleset(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", "", runtime.PlatformMacOrbStack)
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{
@@ -188,7 +188,7 @@ func TestCleanupOnDarwin_RemovesPerContainerFile(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, []byte("true\n"))
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", "", runtime.PlatformMacOrbStack)
 	firewall := New(env)
 
 	// Create the per-project rule file
@@ -220,7 +220,7 @@ func TestCleanupOnDarwin_RemovesPerContainerFile(t *testing.T) {
 func TestApplyRulesOnDarwin_SkipsWhenAllLAN(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", "", runtime.PlatformMacOrbStack)
 	firewall := New(env)
 
 	rules := []shared.LANAccessRule{

@@ -55,6 +55,11 @@ func runRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Check if project directory has moved since container was created
+	if err := checkProjectPathConsistency(ctx, runtimeEnv, rt, st, cwd, cfg); err != nil {
+		return err
+	}
+
 	// Check if container is running
 	status, err := rt.Status(ctx, runtimeEnv, cwd, st)
 	if err != nil {

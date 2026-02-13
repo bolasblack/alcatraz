@@ -91,7 +91,7 @@ func newNetworkHelperSetup(ctx context.Context) *networkHelperSetup {
 	if nh == nil {
 		return nil
 	}
-	networkEnv := network.NewNetworkEnv(deps.Env.Fs, deps.Env.Cmd, "", platform)
+	networkEnv := network.NewNetworkEnv(deps.Env.Fs, deps.Env.Cmd, "", "", platform)
 	return &networkHelperSetup{
 		deps:       deps,
 		platform:   platform,
@@ -199,7 +199,7 @@ func runNetworkHelperStatus(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	networkEnv := network.NewNetworkEnv(deps.Env.Fs, deps.Env.Cmd, "", platform)
+	networkEnv := network.NewNetworkEnv(deps.Env.Fs, deps.Env.Cmd, "", "", platform)
 
 	status := nh.HelperStatus(ctx, networkEnv)
 

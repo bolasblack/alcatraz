@@ -40,7 +40,7 @@ func TestNew(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test: depends on host platform and installed tools")
 	}
-	env := NewNetworkEnv(afero.NewOsFs(), util.NewCommandRunner(), "", "")
+	env := NewNetworkEnv(afero.NewOsFs(), util.NewCommandRunner(), "", "", "")
 	fw, fwType := New(context.Background(), env)
 
 	switch runtime.GOOS {
@@ -77,7 +77,7 @@ func TestNew(t *testing.T) {
 // =============================================================================
 
 func TestNewFirewallForType_NFTables(t *testing.T) {
-	env := NewNetworkEnv(afero.NewMemMapFs(), util.NewMockCommandRunner(), "", "")
+	env := NewNetworkEnv(afero.NewMemMapFs(), util.NewMockCommandRunner(), "", "", "")
 	fw := newFirewallForType(TypeNFTables, env)
 	if fw == nil {
 		t.Error("newFirewallForType(TypeNFTables) should return non-nil firewall")
@@ -85,7 +85,7 @@ func TestNewFirewallForType_NFTables(t *testing.T) {
 }
 
 func TestNewFirewallForType_None(t *testing.T) {
-	env := NewNetworkEnv(afero.NewMemMapFs(), util.NewMockCommandRunner(), "", "")
+	env := NewNetworkEnv(afero.NewMemMapFs(), util.NewMockCommandRunner(), "", "", "")
 	fw := newFirewallForType(TypeNone, env)
 	if fw != nil {
 		t.Errorf("newFirewallForType(TypeNone) should return nil, got %v", fw)
@@ -93,7 +93,7 @@ func TestNewFirewallForType_None(t *testing.T) {
 }
 
 func TestNewFirewallForType_UnknownType(t *testing.T) {
-	env := NewNetworkEnv(afero.NewMemMapFs(), util.NewMockCommandRunner(), "", "")
+	env := NewNetworkEnv(afero.NewMemMapFs(), util.NewMockCommandRunner(), "", "", "")
 	fw := newFirewallForType(Type(99), env)
 	if fw != nil {
 		t.Errorf("newFirewallForType(unknown) should return nil, got %v", fw)

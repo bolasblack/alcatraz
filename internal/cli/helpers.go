@@ -249,6 +249,50 @@ func newCLIReadDeps() cliReadDeps {
 	}
 }
 
+// checkProjectPathConsistency detects when a project directory has been moved
+// since the container was created. Returns an error with instructions if the
+// container's recorded path differs from the current working directory.
+func checkProjectPathConsistency(ctx context.Context, runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime, st *state.State, cwd string, cfg *config.Config) error {
+	if st == nil {
+		return nil
+	}
+
+	containers, err := rt.ListContainers(ctx, runtimeEnv)
+	if err != nil {
+		return fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	// Find the container matching this project
+	var found *runtime.ContainerInfo
+	for i := range containers {
+		if containers[i].ProjectID == st.ProjectID {
+			found = &containers[i]
+			break
+		}
+	}
+
+	// No container found — nothing to check
+	if found == nil {
+		return nil
+	}
+
+	// Paths match — all good
+	if found.ProjectPath == cwd {
+		return nil
+	}
+
+	msg := fmt.Sprintf("project directory has moved from %s to %s\n\n"+
+		"The container was created in a different directory. Run 'alca down' first, then 'alca up' to recreate.",
+		found.ProjectPath, cwd)
+
+	// Check if mutagen/sync might be active
+	if cfg != nil && cfg.HasMutagenSync() {
+		msg += "\n\nNote: the old directory may have been recreated by file sync (mutagen). Check and clean up if needed."
+	}
+
+	return errors.New(msg)
+}
+
 // progressFunc returns a progress callback that writes to the given writer.
 func progressFunc(w io.Writer) func(format string, args ...any) {
 	return func(format string, args ...any) {

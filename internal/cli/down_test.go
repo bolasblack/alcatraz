@@ -84,10 +84,11 @@ func TestCleanupFirewall_NoFirewallAvailable(t *testing.T) {
 	runtimeEnv := runtime.NewRuntimeEnv(cmd)
 	rt := &mockRuntime{}
 	st := &state.State{ContainerName: "alca-test"}
-	networkEnv := network.NewNetworkEnv(tfs, cmd, "/tmp/test", runtime.PlatformLinux)
+	networkEnv := network.NewNetworkEnv(tfs, cmd, "/tmp/test", "", runtime.PlatformLinux)
+	fw, _ := network.New(context.Background(), networkEnv)
 
 	var buf bytes.Buffer
-	err := cleanupFirewall(context.Background(), networkEnv, env, tfs, runtimeEnv, rt, st, &buf)
+	err := cleanupFirewall(context.Background(), fw, env, tfs, runtimeEnv, rt, st, &buf)
 
 	if err != nil {
 		t.Errorf("expected nil error when no firewall available, got: %v", err)
@@ -108,10 +109,11 @@ func TestCleanupFirewall_StatusError(t *testing.T) {
 		statusError: fmt.Errorf("container not reachable"),
 	}
 	st := &state.State{ContainerName: "alca-test"}
-	networkEnv := network.NewNetworkEnv(tfs, cmd, "/tmp/test", runtime.PlatformLinux)
+	networkEnv := network.NewNetworkEnv(tfs, cmd, "/tmp/test", "", runtime.PlatformLinux)
+	fw, _ := network.New(context.Background(), networkEnv)
 
 	var buf bytes.Buffer
-	err := cleanupFirewall(context.Background(), networkEnv, env, tfs, runtimeEnv, rt, st, &buf)
+	err := cleanupFirewall(context.Background(), fw, env, tfs, runtimeEnv, rt, st, &buf)
 
 	// Status error causes early return nil (not propagated)
 	if err != nil {
@@ -134,10 +136,11 @@ func TestCleanupFirewall_ContainerNotFound(t *testing.T) {
 		},
 	}
 	st := &state.State{ContainerName: "alca-test"}
-	networkEnv := network.NewNetworkEnv(tfs, cmd, "/tmp/test", runtime.PlatformLinux)
+	networkEnv := network.NewNetworkEnv(tfs, cmd, "/tmp/test", "", runtime.PlatformLinux)
+	fw, _ := network.New(context.Background(), networkEnv)
 
 	var buf bytes.Buffer
-	err := cleanupFirewall(context.Background(), networkEnv, env, tfs, runtimeEnv, rt, st, &buf)
+	err := cleanupFirewall(context.Background(), fw, env, tfs, runtimeEnv, rt, st, &buf)
 
 	// StateNotFound causes early return nil
 	if err != nil {

@@ -324,9 +324,10 @@ func TestIsDarwin_Linux(t *testing.T) {
 	env := shared.NewNetworkEnv(
 		afero.NewMemMapFs(),
 		util.NewMockCommandRunner(),
-		"/test",
-		runtime.PlatformLinux,
-	)
+		"/test", "",
+
+		runtime.PlatformLinux)
+
 	n := New(env).(*NFTables)
 	if n.isDarwin() {
 		t.Error("isDarwin() should return false for PlatformLinux")
@@ -337,9 +338,10 @@ func TestIsDarwin_MacOrbStack(t *testing.T) {
 	env := shared.NewNetworkEnv(
 		afero.NewMemMapFs(),
 		util.NewMockCommandRunner(),
-		"/test",
-		runtime.PlatformMacOrbStack,
-	)
+		"/test", "",
+
+		runtime.PlatformMacOrbStack)
+
 	n := New(env).(*NFTables)
 	if !n.isDarwin() {
 		t.Error("isDarwin() should return true for PlatformMacOrbStack")
@@ -350,9 +352,10 @@ func TestIsDarwin_MacDockerDesktop(t *testing.T) {
 	env := shared.NewNetworkEnv(
 		afero.NewMemMapFs(),
 		util.NewMockCommandRunner(),
-		"/test",
-		runtime.PlatformMacDockerDesktop,
-	)
+		"/test", "",
+
+		runtime.PlatformMacDockerDesktop)
+
 	n := New(env).(*NFTables)
 	if !n.isDarwin() {
 		t.Error("isDarwin() should return true for PlatformMacDockerDesktop")
@@ -548,9 +551,10 @@ func TestNew_VMHelperEnvPreConstructedOnDarwin(t *testing.T) {
 			env := shared.NewNetworkEnv(
 				afero.NewMemMapFs(),
 				util.NewMockCommandRunner(),
-				"/test",
-				platform,
-			)
+				"/test", "",
+
+				platform)
+
 			n := New(env).(*NFTables)
 
 			if n.vmEnv == nil {
@@ -564,9 +568,10 @@ func TestNew_VMHelperEnvNilOnLinux(t *testing.T) {
 	env := shared.NewNetworkEnv(
 		afero.NewMemMapFs(),
 		util.NewMockCommandRunner(),
-		"/test",
-		runtime.PlatformLinux,
-	)
+		"/test", "",
+
+		runtime.PlatformLinux)
+
 	n := New(env).(*NFTables)
 
 	if n.vmEnv != nil {
@@ -578,9 +583,10 @@ func TestNew_VMHelperEnvNilForEmptyPlatform(t *testing.T) {
 	env := shared.NewNetworkEnv(
 		afero.NewMemMapFs(),
 		util.NewMockCommandRunner(),
-		"/test",
-		"",
-	)
+		"/test", "",
+
+		"")
+
 	n := New(env).(*NFTables)
 
 	if n.vmEnv != nil {
@@ -783,7 +789,7 @@ func TestParseTableName(t *testing.T) {
 func TestCleanupStaleFiles(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", "", runtime.PlatformLinux)
 	n := New(env).(*NFTables)
 
 	dir := nftDirOnLinux()
@@ -836,7 +842,7 @@ func TestCleanupStaleFiles(t *testing.T) {
 func TestCleanupStaleFiles_StateJsonMissing(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", "", runtime.PlatformLinux)
 	n := New(env).(*NFTables)
 
 	dir := nftDirOnLinux()
@@ -860,7 +866,7 @@ func TestCleanupStaleFiles_StateJsonMissing(t *testing.T) {
 func TestCleanupStaleFiles_ProjectIDMismatch(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", "", runtime.PlatformLinux)
 	n := New(env).(*NFTables)
 
 	dir := nftDirOnLinux()
@@ -885,7 +891,7 @@ func TestCleanupStaleFiles_ProjectIDMismatch(t *testing.T) {
 func TestCleanupStaleFiles_OldFormatNoProjectID(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", "", runtime.PlatformLinux)
 	n := New(env).(*NFTables)
 
 	dir := nftDirOnLinux()
@@ -911,7 +917,7 @@ func TestCleanupStaleFiles_OldFormatNoProjectID(t *testing.T) {
 func TestCleanupStaleFiles_EmptyDir(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test", "", runtime.PlatformLinux)
 	n := New(env).(*NFTables)
 
 	// Directory doesn't exist — should return 0 with no error

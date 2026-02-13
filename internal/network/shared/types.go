@@ -12,7 +12,7 @@ import (
 
 // NetworkEnv provides dependency injection for filesystem and command execution.
 type NetworkEnv struct {
-	Fs         afero.Fs                // Filesystem abstraction
+	Fs         afero.Fs                // Filesystem abstraction (may be transactional for staged writes)
 	Cmd        util.CommandRunner      // Command execution abstraction
 	ProjectDir string                  // Project directory path
 	ProjectID  string                  // Project UUID for staleness verification (AGD-014)
@@ -20,11 +20,12 @@ type NetworkEnv struct {
 }
 
 // NewNetworkEnv creates a NetworkEnv with externally provided dependencies.
-func NewNetworkEnv(fs afero.Fs, cmd util.CommandRunner, projectDir string, rt runtime.RuntimePlatform) *NetworkEnv {
+func NewNetworkEnv(fs afero.Fs, cmd util.CommandRunner, projectDir string, projectID string, rt runtime.RuntimePlatform) *NetworkEnv {
 	return &NetworkEnv{
 		Fs:         fs,
 		Cmd:        cmd,
 		ProjectDir: projectDir,
+		ProjectID:  projectID,
 		Runtime:    rt,
 	}
 }
@@ -32,8 +33,9 @@ func NewNetworkEnv(fs afero.Fs, cmd util.CommandRunner, projectDir string, rt ru
 // NewTestNetworkEnv returns a NetworkEnv configured for testing with in-memory filesystem
 // and a mock command runner.
 func NewTestNetworkEnv() *NetworkEnv {
+	fs := afero.NewMemMapFs()
 	return &NetworkEnv{
-		Fs:  afero.NewMemMapFs(),
+		Fs:  fs,
 		Cmd: util.NewMockCommandRunner(),
 	}
 }

@@ -45,7 +45,7 @@ func TestNewDarwinHelper_UsesPlatformForRuleset(t *testing.T) {
 	// the Docker Desktop priority (filter - 1) rather than OrbStack (filter - 2).
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "/project", runtime.PlatformMacDockerDesktop)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/project", "", runtime.PlatformMacDockerDesktop)
 	firewall := New(env)
 
 	_, err := firewall.ApplyRules("container1", "172.17.0.2", nil)
@@ -101,7 +101,7 @@ func TestDarwinHelperStatus_InstalledWhenContainerRunning(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, []byte("true\n"))
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
 	status := helper.HelperStatus(context.Background(), env)
@@ -113,7 +113,7 @@ func TestDarwinHelperStatus_NotInstalledWhenContainerNotRunning(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, []byte("false\n"))
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
 	status := helper.HelperStatus(context.Background(), env)
@@ -125,7 +125,7 @@ func TestDarwinHelperStatus_NotInstalledWhenDockerFails(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
 	mockCmd.ExpectFailure("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, assert.AnError)
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
 	status := helper.HelperStatus(context.Background(), env)
@@ -137,7 +137,7 @@ func TestDarwinHelperStatus_NeedsUpdateWhenScriptDiffers(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, []byte("true\n"))
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	// Write an old entry script so NeedsUpdate returns true
 	home, _ := os.UserHomeDir()
@@ -156,7 +156,7 @@ func TestDarwinHelperStatus_NoUpdateNeededWhenNotInstalled(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
 	mockCmd.ExpectFailure("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, assert.AnError)
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
 	status := helper.HelperStatus(context.Background(), env)
@@ -179,7 +179,7 @@ func TestDarwinDetailedStatus_ReturnsEmptyWhenNoFiles(t *testing.T) {
 func TestDarwinDetailedStatus_ListsNftFiles(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	nftDir, err := nftDirOnDarwin()
 	require.NoError(t, err)
@@ -196,7 +196,7 @@ func TestDarwinDetailedStatus_ListsNftFiles(t *testing.T) {
 func TestDarwinDetailedStatus_SkipsNonNftFiles(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	nftDir, err := nftDirOnDarwin()
 	require.NoError(t, err)
@@ -214,7 +214,7 @@ func TestDarwinDetailedStatus_SkipsNonNftFiles(t *testing.T) {
 func TestDarwinDetailedStatus_SkipsDirectories(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	nftDir, err := nftDirOnDarwin()
 	require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestDarwinDetailedStatus_SkipsDirectories(t *testing.T) {
 func TestDarwinDetailedStatus_ReadsFileContent(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	nftDir, err := nftDirOnDarwin()
 	require.NoError(t, err)
@@ -251,7 +251,7 @@ func TestDarwinDetailedStatus_ReadsFileContent(t *testing.T) {
 func TestDarwinInstallHelper_CreatesNftDirectory(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
 	_, err := helper.InstallHelper(env, nil)
@@ -265,7 +265,7 @@ func TestDarwinInstallHelper_CreatesNftDirectory(t *testing.T) {
 func TestDarwinInstallHelper_ReturnsPostCommitAction(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
 	action, err := helper.InstallHelper(env, nil)
@@ -279,7 +279,7 @@ func TestDarwinInstallHelper_PostCommitCallsVMHelperInstall(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, []byte("true\n"))
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
 	action, err := helper.InstallHelper(env, nil)
@@ -294,7 +294,7 @@ func TestDarwinInstallHelper_PostCommitCallsVMHelperInstall(t *testing.T) {
 func TestDarwinInstallHelper_AcceptsNilProgress(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
 	_, err := helper.InstallHelper(env, nil)
@@ -304,7 +304,7 @@ func TestDarwinInstallHelper_AcceptsNilProgress(t *testing.T) {
 func TestDarwinInstallHelper_CallsProgressFunc(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	called := false
 	progress := func(format string, args ...any) {
@@ -323,7 +323,7 @@ func TestDarwinInstallHelper_CallsProgressFunc(t *testing.T) {
 func TestDarwinUninstallHelper_ReturnsPostCommitAction(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
 	action, err := helper.UninstallHelper(env, nil)
@@ -336,7 +336,7 @@ func TestDarwinUninstallHelper_ReturnsPostCommitAction(t *testing.T) {
 func TestDarwinUninstallHelper_PostCommitCallsVMHelperUninstall(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
 	action, err := helper.UninstallHelper(env, nil)
@@ -351,7 +351,7 @@ func TestDarwinUninstallHelper_PostCommitCallsVMHelperUninstall(t *testing.T) {
 func TestDarwinUninstallHelper_AcceptsNilProgress(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	env := shared.NewNetworkEnv(mockFs, mockCmd, "", runtime.PlatformMacOrbStack)
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "", "", runtime.PlatformMacOrbStack)
 
 	helper := newTestDarwinHelper(t)
 	_, err := helper.UninstallHelper(env, nil)
@@ -374,7 +374,8 @@ func newTestDarwinNetworkEnv() *shared.NetworkEnv {
 	return shared.NewNetworkEnv(
 		afero.NewMemMapFs(),
 		util.NewMockCommandRunner(),
-		"",
-		runtime.PlatformMacOrbStack,
-	)
+		"", "",
+
+		runtime.PlatformMacOrbStack)
+
 }
