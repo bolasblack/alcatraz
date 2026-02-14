@@ -9,7 +9,14 @@ Set up a secure sandbox for your AI code agent in under 5 minutes. After this gu
 
 ## Installation
 
-### Go Install
+### Homebrew
+
+```bash
+brew tap bolasblack/alcatraz https://github.com/bolasblack/alcatraz
+brew install alca
+```
+
+### Go
 
 ```bash
 go install github.com/bolasblack/alcatraz/cmd/alca@latest
@@ -21,18 +28,27 @@ go install github.com/bolasblack/alcatraz/cmd/alca@latest
 nix profile install github:bolasblack/alcatraz
 ```
 
-### Build from Source
+Or use in flake:
 
-```bash
-git clone https://github.com/bolasblack/alcatraz.git
-cd alcatraz
-make build
+```nix
+{
+  inputs.alcatraz.url = "github:bolasblack/alcatraz";
+}
 ```
 
-The binary is created at `out/bin/alca`. Add it to your PATH:
+### mise
+
+Add to your project `.mise.toml`:
+
+```toml
+[tools]
+"go:github.com/bolasblack/alcatraz/cmd/alca" = "latest"
+```
+
+Or install globally:
 
 ```bash
-export PATH="$PWD/out/bin:$PATH"
+mise use -g "go:github.com/bolasblack/alcatraz/cmd/alca@latest"
 ```
 
 ## Basic Commands

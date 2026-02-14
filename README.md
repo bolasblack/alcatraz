@@ -58,7 +58,7 @@ alca down
 ### Homebrew
 
 ```bash
-brew tap bolasblack/alcatraz
+brew tap bolasblack/alcatraz https://github.com/bolasblack/alcatraz
 brew install alca
 ```
 

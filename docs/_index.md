@@ -25,8 +25,9 @@ Alcatraz wraps your agent in a configurable container with file and network isol
 ## Quick Start
 
 ```bash
-# Install
-go install github.com/bolasblack/alcatraz/cmd/alca@latest
+# Install (see Quickstart for all options: Go, Nix, mise)
+brew tap bolasblack/alcatraz https://github.com/bolasblack/alcatraz
+brew install alca
 
 # Initialize in your project
 cd my-project
@@ -36,6 +37,8 @@ alca init
 alca up
 alca run make build
 ```
+
+See the [Quickstart guide]({{< relref "quickstart" >}}) for all installation methods and detailed setup instructions.
 
 ## Documentation
 

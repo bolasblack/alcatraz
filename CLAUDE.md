@@ -33,13 +33,19 @@ See [.agents/CLAUDE.md](.agents/CLAUDE.md) for the Agent Centric framework.
 
 When creating or updating AGD files, **always load the `/agent-centric` skill first**. This ensures proper validation, indexing, and relationship maintenance.
 
-## Config Changes Checklist
+## Documentation
+
+### Config Changes Checklist
 
 When modifying config-related code (`internal/config/`):
 
 1. **Update documentation**: `docs/config/` - add/update field descriptions, examples
 2. **Regenerate schema**: Run `make schema` to update `alca-config.schema.json` for editor autocomplete
 3. **Create AGD if needed**: Record significant config design decisions
+
+### Installation
+
+Installation instructions appear in `README.md`, `docs/quickstart.md`, and `docs/_index.md`. These must be kept in sync — when updating installation methods in any one of these files, update the others to match.
 
 ## Code Patterns
 
