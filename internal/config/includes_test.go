@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -9,6 +10,9 @@ import (
 
 	"github.com/bolasblack/alcatraz/internal/util"
 )
+
+// noExpandEnv is an identity function used in tests where env var expansion is not needed.
+var noExpandEnv = func(s string) string { return s }
 
 func TestLoadWithIncludes_SimpleInclude(t *testing.T) {
 	env, memFs := newTestEnv(t)
@@ -34,7 +38,7 @@ image = "main:latest"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -86,7 +90,7 @@ workdir = "/main"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -129,7 +133,7 @@ image = "main:latest"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -163,7 +167,7 @@ image = "b:latest"
 		t.Fatalf("failed to write b file: %v", err)
 	}
 
-	_, err := LoadWithIncludes(env, aPath)
+	_, err := LoadWithIncludes(env, aPath, noExpandEnv)
 	if err == nil {
 		t.Error("expected circular reference error, got nil")
 	}
@@ -204,7 +208,7 @@ image = "c:latest"
 		t.Fatalf("failed to write c file: %v", err)
 	}
 
-	_, err := LoadWithIncludes(env, aPath)
+	_, err := LoadWithIncludes(env, aPath, noExpandEnv)
 	if err == nil {
 		t.Error("expected circular reference error for nested cycle, got nil")
 	}
@@ -227,7 +231,7 @@ image = "main:latest"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	_, err := LoadWithIncludes(env, mainPath)
+	_, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err == nil {
 		t.Error("expected error for missing include file, got nil")
 	}
@@ -252,7 +256,7 @@ image = "main:latest"
 	}
 
 	// Empty glob is OK - should not error
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("expected empty glob to succeed, got error: %v", err)
 	}
@@ -293,7 +297,7 @@ SHARED_VAR = "main_shared"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -378,98 +382,6 @@ func TestParseEnvValue(t *testing.T) {
 	}
 }
 
-func TestIsGlobPattern(t *testing.T) {
-	tests := []struct {
-		pattern string
-		want    bool
-	}{
-		{"file.toml", false},
-		{"/path/to/file.toml", false},
-		{"*.toml", true},
-		{"file?.toml", true},
-		{"[abc].toml", true},
-		{".alca.*.toml", true},
-		{"**/*.toml", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.pattern, func(t *testing.T) {
-			got := isGlobPattern(tt.pattern)
-			if got != tt.want {
-				t.Errorf("isGlobPattern(%q) = %v, want %v", tt.pattern, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestExpandGlob(t *testing.T) {
-	env, memFs := newTestEnv(t)
-	baseDir := "/test"
-
-	// Create test files
-	files := []string{"a.toml", "b.toml", "c.txt"}
-	for _, f := range files {
-		path := baseDir + "/" + f
-		if err := afero.WriteFile(memFs, path, []byte("test"), 0644); err != nil {
-			t.Fatalf("failed to create test file: %v", err)
-		}
-	}
-
-	t.Run("literal path exists", func(t *testing.T) {
-		path := baseDir + "/a.toml"
-		matches, err := expandGlob(env, path)
-		if err != nil {
-			t.Fatalf("expandGlob() error = %v", err)
-		}
-		if len(matches) != 1 || matches[0] != path {
-			t.Errorf("expandGlob() = %v, want [%s]", matches, path)
-		}
-	})
-
-	t.Run("literal path not exists", func(t *testing.T) {
-		path := baseDir + "/nonexistent.toml"
-		_, err := expandGlob(env, path)
-		if err == nil {
-			t.Error("expected error for nonexistent literal path")
-		}
-	})
-
-	t.Run("glob pattern matches", func(t *testing.T) {
-		pattern := baseDir + "/*.toml"
-		matches, err := expandGlob(env, pattern)
-		if err != nil {
-			t.Fatalf("expandGlob() error = %v", err)
-		}
-		if len(matches) != 2 {
-			t.Errorf("expected 2 matches, got %d: %v", len(matches), matches)
-		}
-	})
-
-	t.Run("glob pattern no matches", func(t *testing.T) {
-		pattern := baseDir + "/*.json"
-		matches, err := expandGlob(env, pattern)
-		if err != nil {
-			t.Fatalf("expandGlob() error = %v", err)
-		}
-		if len(matches) != 0 {
-			t.Errorf("expected 0 matches, got %d: %v", len(matches), matches)
-		}
-	})
-
-	t.Run("results are sorted", func(t *testing.T) {
-		pattern := baseDir + "/*.toml"
-		matches, err := expandGlob(env, pattern)
-		if err != nil {
-			t.Fatalf("expandGlob() error = %v", err)
-		}
-		for i := 1; i < len(matches); i++ {
-			if matches[i] < matches[i-1] {
-				t.Errorf("matches not sorted: %v", matches)
-			}
-		}
-	})
-}
-
 // --- Extends tests (AGD-033): declaring file wins over extended files ---
 
 func TestLoadWithIncludes_SimpleExtends(t *testing.T) {
@@ -493,7 +405,7 @@ image = "main:latest"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -538,7 +450,7 @@ image = "main:latest"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -574,7 +486,7 @@ image = "main:latest"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -616,7 +528,7 @@ image = "b:latest"
 		t.Fatalf("failed to write b file: %v", err)
 	}
 
-	_, err := LoadWithIncludes(env, aPath)
+	_, err := LoadWithIncludes(env, aPath, noExpandEnv)
 	if err == nil {
 		t.Error("expected circular reference error, got nil")
 	}
@@ -659,7 +571,7 @@ up = "base"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -692,7 +604,7 @@ image = "main:latest"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -725,7 +637,7 @@ runtime = "docker"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -784,7 +696,7 @@ up = "self-up"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -836,7 +748,7 @@ func TestLoadWithIncludes_ExtendsArrayPriority(t *testing.T) {
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -870,7 +782,7 @@ func TestLoadWithIncludes_IncludesArrayPriority(t *testing.T) {
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	cfg, err := LoadWithIncludes(env, mainPath)
+	cfg, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadWithIncludes failed: %v", err)
 	}
@@ -1067,7 +979,7 @@ append = true
 
 	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
 
-	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	cfg, err := LoadConfig(env, "/project/.alca.toml", noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
@@ -1103,7 +1015,7 @@ append = true
 
 	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
 
-	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	cfg, err := LoadConfig(env, "/project/.alca.toml", noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
@@ -1139,7 +1051,7 @@ command = "bash"
 
 	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
 
-	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	cfg, err := LoadConfig(env, "/project/.alca.toml", noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
@@ -1316,6 +1228,45 @@ func TestMergeConfigs_LANAccessEmptyOverlay(t *testing.T) {
 	}
 }
 
+// TestMergeConfigs_WorkdirExcludeReplaces verifies that WorkdirExclude uses
+// replacement semantics (overlay replaces base entirely), not append.
+func TestMergeConfigs_WorkdirExcludeReplaces(t *testing.T) {
+	base := Config{
+		WorkdirExclude: []string{"/base-exclude"},
+	}
+	overlay := Config{
+		WorkdirExclude: []string{"/overlay-exclude"},
+	}
+
+	result := mergeConfigs(base, overlay)
+
+	// Overlay replaces base entirely (not appended)
+	if len(result.WorkdirExclude) != 1 {
+		t.Fatalf("expected 1 WorkdirExclude entry, got %d: %v", len(result.WorkdirExclude), result.WorkdirExclude)
+	}
+	if result.WorkdirExclude[0] != "/overlay-exclude" {
+		t.Errorf("expected WorkdirExclude[0]='/overlay-exclude', got %q", result.WorkdirExclude[0])
+	}
+}
+
+// TestMergeConfigs_WorkdirExcludeEmptyOverlayPreservesBase verifies that an
+// empty overlay WorkdirExclude preserves the base value.
+func TestMergeConfigs_WorkdirExcludeEmptyOverlayPreservesBase(t *testing.T) {
+	base := Config{
+		WorkdirExclude: []string{"/base-exclude"},
+	}
+	overlay := Config{}
+
+	result := mergeConfigs(base, overlay)
+
+	if len(result.WorkdirExclude) != 1 {
+		t.Fatalf("expected 1 WorkdirExclude entry, got %d: %v", len(result.WorkdirExclude), result.WorkdirExclude)
+	}
+	if result.WorkdirExclude[0] != "/base-exclude" {
+		t.Errorf("expected WorkdirExclude[0]='/base-exclude', got %q", result.WorkdirExclude[0])
+	}
+}
+
 // TestLoadConfig_LANAccessFromInclude tests the full TOML loading path:
 // main config has empty lan-access=[], included config has rules.
 // This is an integration test matching the real user scenario.
@@ -1341,7 +1292,7 @@ lan-access = ["192.168.1.2:10000"]
 
 	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
 
-	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	cfg, err := LoadConfig(env, "/project/.alca.toml", noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
@@ -1367,7 +1318,7 @@ caps = ["SETUID", "SETGID"]
 
 	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
 
-	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	cfg, err := LoadConfig(env, "/project/.alca.toml", noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
@@ -1376,25 +1327,11 @@ caps = ["SETUID", "SETGID"]
 	expectedDrop := []string{"ALL"}
 	expectedAdd := []string{"CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL", "SETUID", "SETGID"}
 
-	if len(cfg.Caps.Drop) != len(expectedDrop) {
+	if !slices.Equal(cfg.Caps.Drop, expectedDrop) {
 		t.Errorf("expected Drop %v, got %v", expectedDrop, cfg.Caps.Drop)
 	}
-	if len(cfg.Caps.Add) != len(expectedAdd) {
+	if !slices.Equal(cfg.Caps.Add, expectedAdd) {
 		t.Errorf("expected Add %v, got %v", expectedAdd, cfg.Caps.Add)
-	}
-
-	// Verify all expected caps are present
-	for _, expected := range expectedAdd {
-		found := false
-		for _, actual := range cfg.Caps.Add {
-			if actual == expected {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("expected cap %q in Add, got %v", expected, cfg.Caps.Add)
-		}
 	}
 }
 
@@ -1413,7 +1350,7 @@ add = ["SYS_ADMIN"]
 
 	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
 
-	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	cfg, err := LoadConfig(env, "/project/.alca.toml", noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
@@ -1439,7 +1376,7 @@ caps = { add = ["CHOWN", "FOWNER"] }
 
 	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
 
-	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	cfg, err := LoadConfig(env, "/project/.alca.toml", noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
@@ -1464,7 +1401,7 @@ image = "test:latest"
 
 	env := &util.Env{Fs: fs, Cmd: util.NewMockCommandRunner()}
 
-	cfg, err := LoadConfig(env, "/project/.alca.toml")
+	cfg, err := LoadConfig(env, "/project/.alca.toml", noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
@@ -1473,10 +1410,188 @@ image = "test:latest"
 	expectedDrop := []string{"ALL"}
 	expectedAdd := []string{"CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL", "SETUID", "SETGID"}
 
-	if len(cfg.Caps.Drop) != len(expectedDrop) {
+	if !slices.Equal(cfg.Caps.Drop, expectedDrop) {
 		t.Errorf("expected Drop %v, got %v", expectedDrop, cfg.Caps.Drop)
 	}
-	if len(cfg.Caps.Add) != len(expectedAdd) {
+	if !slices.Equal(cfg.Caps.Add, expectedAdd) {
 		t.Errorf("expected Add %v, got %v", expectedAdd, cfg.Caps.Add)
+	}
+}
+
+// --- Env var expansion in includes/extends paths ---
+
+func TestLoadWithIncludes_EnvVarInExtends(t *testing.T) {
+	env, memFs := newTestEnv(t)
+
+	// Custom expandEnv to replace ${TEST_DIR} with a known path
+	expandEnv := func(s string) string {
+		return strings.ReplaceAll(s, "${TEST_DIR}", "/test/envdir")
+	}
+
+	// Create the base config at the env-expanded path
+	baseContent := `
+image = "base:latest"
+workdir = "/base"
+`
+	if err := afero.WriteFile(memFs, "/test/envdir/base.toml", []byte(baseContent), 0644); err != nil {
+		t.Fatalf("failed to write base file: %v", err)
+	}
+
+	// Create main config that extends using env var
+	mainContent := `
+extends = ["${TEST_DIR}/base.toml"]
+image = "main:latest"
+`
+	mainPath := "/test/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	cfg, err := LoadWithIncludes(env, mainPath, expandEnv)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes failed: %v", err)
+	}
+
+	// Declaring file (main) wins over extended file for image
+	if cfg.Image != "main:latest" {
+		t.Errorf("expected image 'main:latest', got %q", cfg.Image)
+	}
+	// Base's workdir inherited (main doesn't set it)
+	if cfg.Workdir != "/base" {
+		t.Errorf("expected workdir '/base', got %q", cfg.Workdir)
+	}
+}
+
+func TestLoadWithIncludes_EnvVarInIncludes(t *testing.T) {
+	env, memFs := newTestEnv(t)
+
+	expandEnv := func(s string) string {
+		return strings.ReplaceAll(s, "${TEST_DIR}", "/test/envdir")
+	}
+
+	// Create override config at the env-expanded path
+	overrideContent := `
+image = "override:latest"
+`
+	if err := afero.WriteFile(memFs, "/test/envdir/override.toml", []byte(overrideContent), 0644); err != nil {
+		t.Fatalf("failed to write override file: %v", err)
+	}
+
+	// Create main config that includes using env var
+	mainContent := `
+includes = ["${TEST_DIR}/override.toml"]
+image = "main:latest"
+`
+	mainPath := "/test/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	cfg, err := LoadWithIncludes(env, mainPath, expandEnv)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes failed: %v", err)
+	}
+
+	// Included file wins over declaring file
+	if cfg.Image != "override:latest" {
+		t.Errorf("expected image 'override:latest', got %q", cfg.Image)
+	}
+}
+
+func TestLoadWithIncludes_EnvVarWithGlob(t *testing.T) {
+	env, memFs := newTestEnv(t)
+
+	expandEnv := func(s string) string {
+		return strings.ReplaceAll(s, "${TEST_DIR}", "/test/envdir")
+	}
+
+	// Create multiple files matching the glob pattern
+	for i, name := range []string{"a.toml", "b.toml"} {
+		content := `mounts = ["/mount` + string(rune('a'+i)) + `:/mount` + string(rune('a'+i)) + `"]`
+		if err := afero.WriteFile(memFs, "/test/envdir/"+name, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write %s: %v", name, err)
+		}
+	}
+
+	// Create main config with env var + glob combined
+	mainContent := `
+includes = ["${TEST_DIR}/*.toml"]
+image = "main:latest"
+`
+	mainPath := "/test/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	cfg, err := LoadWithIncludes(env, mainPath, expandEnv)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes failed: %v", err)
+	}
+
+	// Both glob-matched files should contribute their mounts
+	if len(cfg.Mounts) != 2 {
+		t.Errorf("expected 2 mounts from env+glob, got %d: %v", len(cfg.Mounts), cfg.Mounts)
+	}
+}
+
+func TestLoadWithIncludes_UndefinedEnvVar(t *testing.T) {
+	env, memFs := newTestEnv(t)
+
+	// expandEnv that expands undefined vars to empty string (like os.ExpandEnv)
+	expandEnv := func(s string) string {
+		return strings.ReplaceAll(s, "${UNDEFINED_VAR}", "")
+	}
+
+	// Create main config referencing undefined env var
+	mainContent := `
+extends = ["${UNDEFINED_VAR}/base.toml"]
+image = "main:latest"
+`
+	mainPath := "/test/.alca.toml"
+	if err := afero.WriteFile(memFs, mainPath, []byte(mainContent), 0644); err != nil {
+		t.Fatalf("failed to write main file: %v", err)
+	}
+
+	// Should fail because the expanded path "/base.toml" doesn't exist
+	_, err := LoadWithIncludes(env, mainPath, expandEnv)
+	if err == nil {
+		t.Error("expected error for undefined env var path, got nil")
+	}
+}
+
+func TestLoadWithIncludes_CircularReferenceWithEnvVars(t *testing.T) {
+	env, memFs := newTestEnv(t)
+
+	expandEnv := func(s string) string {
+		s = strings.ReplaceAll(s, "${DIR_A}", "/test")
+		s = strings.ReplaceAll(s, "${DIR_B}", "/test")
+		return s
+	}
+
+	// Create circular reference via env-expanded paths: a -> b -> a
+	aContent := `
+includes = ["${DIR_B}/.alca.b.toml"]
+image = "a:latest"
+`
+	aPath := "/test/.alca.a.toml"
+	if err := afero.WriteFile(memFs, aPath, []byte(aContent), 0644); err != nil {
+		t.Fatalf("failed to write a file: %v", err)
+	}
+
+	bContent := `
+includes = ["${DIR_A}/.alca.a.toml"]
+image = "b:latest"
+`
+	bPath := "/test/.alca.b.toml"
+	if err := afero.WriteFile(memFs, bPath, []byte(bContent), 0644); err != nil {
+		t.Fatalf("failed to write b file: %v", err)
+	}
+
+	_, err := LoadWithIncludes(env, aPath, expandEnv)
+	if err == nil {
+		t.Error("expected circular reference error, got nil")
+	}
+	if !strings.Contains(err.Error(), "circular") {
+		t.Errorf("expected error to mention 'circular', got: %v", err)
 	}
 }

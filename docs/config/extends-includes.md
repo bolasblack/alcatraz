@@ -69,6 +69,7 @@ image = "myapp:latest"
 
 ## Path Resolution
 
+- Environment variables (`${VAR}`) are expanded first
 - Paths are resolved **relative to the declaring file's directory** (not the current working directory)
 - Absolute paths are also supported
 
@@ -83,6 +84,20 @@ includes = [".alca.*.toml"]  # Includes .alca.dev.toml, .alca.local.toml, etc.
 - Supported patterns: `*`, `?`, `[...]`
 - Empty glob results are OK (no error if no files match)
 - Literal paths (without glob characters) must exist or will error
+
+## Environment Variables
+
+Paths in `extends` and `includes` support `${VAR}` environment variable expansion:
+
+```toml
+extends = ["${HOME}/.alca/base.toml"]
+includes = ["${ALCA_CONF_DIR}/overrides/*.toml"]
+```
+
+- Both `$VAR` and `${VAR}` syntax are supported
+- Expansion happens before path resolution and glob matching
+- Undefined variables expand to an empty string (which typically causes a "file not found" error for literal paths, or matches nothing for globs)
+- Works with both relative and absolute paths
 
 ## Merge Behavior
 

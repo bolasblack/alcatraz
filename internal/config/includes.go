@@ -5,7 +5,6 @@ package config
 import (
 	"fmt"
 	"path/filepath"
-	"sort"
 
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/spf13/afero"
@@ -15,8 +14,9 @@ import (
 
 // LoadWithIncludes loads config with extends/includes support.
 // It processes extends and includes recursively, merging configs per AGD-033 priority rules.
-func LoadWithIncludes(env *util.Env, path string) (Config, error) {
-	return loadWithIncludes(env, path, make(map[string]bool))
+// expandEnv expands ${VAR} references in include/extend paths (use os.ExpandEnv for production).
+func LoadWithIncludes(env *util.Env, path string, expandEnv func(string) string) (Config, error) {
+	return loadWithIncludes(env, path, expandEnv, make(map[string]bool))
 }
 
 // loadWithIncludes is the internal recursive implementation.
@@ -25,7 +25,7 @@ func LoadWithIncludes(env *util.Env, path string) (Config, error) {
 //  2. Process extends files (they become the base)
 //  3. Convert current file to Config, merge: current overlays extends result
 //  4. Process includes files (they overlay current)
-func loadWithIncludes(env *util.Env, path string, visited map[string]bool) (Config, error) {
+func loadWithIncludes(env *util.Env, path string, expandEnv func(string) string, visited map[string]bool) (Config, error) {
 	absPath, err := validateAndMarkVisited(path, visited)
 	if err != nil {
 		return Config{}, err
@@ -39,7 +39,7 @@ func loadWithIncludes(env *util.Env, path string, visited map[string]bool) (Conf
 	baseDir := filepath.Dir(absPath)
 
 	// Step 1: Process extends (current file wins over extended files)
-	extendsResult, err := processExtends(env, raw.Extends, baseDir, visited)
+	extendsResult, err := processExtends(env, raw.Extends, baseDir, expandEnv, visited)
 	if err != nil {
 		return Config{}, err
 	}
@@ -59,7 +59,7 @@ func loadWithIncludes(env *util.Env, path string, visited map[string]bool) (Conf
 	// Fold includes one-by-one onto currentConfig so each append sees
 	// the accumulated result (not just other includes merged together).
 	if len(raw.Includes) > 0 {
-		includeConfigs, err := loadFileRefs(env, raw.Includes, baseDir, visited)
+		includeConfigs, err := loadFileRefs(env, raw.Includes, baseDir, expandEnv, visited)
 		if err != nil {
 			return Config{}, err
 		}
@@ -99,8 +99,8 @@ func readRawConfig(env *util.Env, path string) (RawConfig, error) {
 
 // processExtends loads and merges extends refs with first-entry-wins priority.
 // Fold right-to-left: start from last, each earlier entry is overlay (wins).
-func processExtends(env *util.Env, refs []string, baseDir string, visited map[string]bool) (Config, error) {
-	configs, err := loadFileRefs(env, refs, baseDir, visited)
+func processExtends(env *util.Env, refs []string, baseDir string, expandEnv func(string) string, visited map[string]bool) (Config, error) {
+	configs, err := loadFileRefs(env, refs, baseDir, expandEnv, visited)
 	if err != nil {
 		return Config{}, err
 	}
@@ -112,21 +112,17 @@ func processExtends(env *util.Env, refs []string, baseDir string, visited map[st
 }
 
 // loadFileRefs loads all referenced configs, expanding globs and resolving recursively.
-func loadFileRefs(env *util.Env, refs []string, baseDir string, visited map[string]bool) ([]Config, error) {
+func loadFileRefs(env *util.Env, refs []string, baseDir string, expandEnv func(string) string, visited map[string]bool) ([]Config, error) {
 	var configs []Config
-	for _, pattern := range refs {
-		resolved := pattern
-		if !filepath.IsAbs(pattern) {
-			resolved = filepath.Join(baseDir, pattern)
-		}
-
-		files, err := expandGlob(env, resolved)
+	for _, rawPath := range refs {
+		ref := NewConfigFileRef(baseDir, rawPath)
+		files, err := ref.Expand(expandEnv, env.Fs)
 		if err != nil {
-			return nil, fmt.Errorf("failed to expand glob %s: %w", pattern, err)
+			return nil, fmt.Errorf("failed to expand ref %s: %w", rawPath, err)
 		}
 
 		for _, file := range files {
-			cfg, err := loadWithIncludes(env, file, visited)
+			cfg, err := loadWithIncludes(env, file, expandEnv, visited)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load referenced config %s: %w", file, err)
 			}
@@ -377,39 +373,6 @@ func parseEnvValue(val any) (EnvValue, error) {
 	default:
 		return EnvValue{}, fmt.Errorf("invalid type: %T", val)
 	}
-}
-
-// isGlobPattern checks if the pattern contains glob special characters.
-func isGlobPattern(pattern string) bool {
-	for _, c := range pattern {
-		switch c {
-		case '*', '?', '[':
-			return true
-		}
-	}
-	return false
-}
-
-// expandGlob expands a glob pattern and returns sorted matched files.
-// For literal paths (no glob characters), returns error if file doesn't exist.
-// For glob patterns, returns empty slice if no files match.
-func expandGlob(env *util.Env, pattern string) ([]string, error) {
-	if !isGlobPattern(pattern) {
-		// Literal path - must exist
-		if _, err := env.Fs.Stat(pattern); err != nil {
-			return nil, err
-		}
-		return []string{pattern}, nil
-	}
-
-	// Glob pattern - empty result is OK
-	matches, err := afero.Glob(env.Fs, pattern)
-	if err != nil {
-		return nil, err
-	}
-	// Sort for deterministic order
-	sort.Strings(matches)
-	return matches, nil
 }
 
 // mergeConfigs merges overlay config into base config.

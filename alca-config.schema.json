@@ -30,14 +30,14 @@
             "type": "string"
           },
           "type": "array",
-          "description": "Config files to extend (declaring file overrides extended files)"
+          "description": "Config files to extend (declaring file overrides extended files). Paths support ${VAR} environment variable expansion and glob patterns."
         },
         "includes": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "Config files to include (included files override declaring file)"
+          "description": "Config files to include (included files override declaring file). Paths support ${VAR} environment variable expansion and glob patterns."
         },
         "image": {
           "type": "string",

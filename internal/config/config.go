@@ -543,8 +543,8 @@ func (RawMountSlice) JSONSchema() *jsonschema.Schema {
 // to their validated, strongly-typed counterparts (Config, []MountConfig, EnvValue, Caps)
 // during parsing in rawToConfig(). See also: RawMountSlice, RawEnvValueMap, RawCaps.
 type RawConfig struct {
-	Extends        []string       `toml:"extends,omitempty" json:"extends,omitempty" jsonschema:"description=Config files to extend (declaring file overrides extended files)"`
-	Includes       []string       `toml:"includes,omitempty" json:"includes,omitempty" jsonschema:"description=Config files to include (included files override declaring file)"`
+	Extends        []string       `toml:"extends,omitempty" json:"extends,omitempty" jsonschema:"description=Config files to extend (declaring file overrides extended files). Paths support ${VAR} environment variable expansion and glob patterns."`
+	Includes       []string       `toml:"includes,omitempty" json:"includes,omitempty" jsonschema:"description=Config files to include (included files override declaring file). Paths support ${VAR} environment variable expansion and glob patterns."`
 	Image          string         `toml:"image" json:"image" jsonschema:"description=Container image to use"`
 	Workdir        string         `toml:"workdir,omitempty" json:"workdir,omitempty" jsonschema:"description=Working directory inside container"`
 	WorkdirExclude []string       `toml:"workdir_exclude,omitempty" json:"workdir_exclude,omitempty" jsonschema:"description=Patterns to exclude from workdir mount (requires Mutagen)"`
@@ -561,8 +561,9 @@ type RawConfig struct {
 // Supports includes directive for composable configuration.
 // Applies defaults for missing fields: runtime defaults to "auto", workdir to "/workspace".
 // Normalizes workdir into Mounts[0] with any excludes.
-func LoadConfig(env *util.Env, path string) (Config, error) {
-	cfg, err := LoadWithIncludes(env, path)
+// expandEnv expands ${VAR} references in include/extend paths (use os.ExpandEnv for production).
+func LoadConfig(env *util.Env, path string, expandEnv func(string) string) (Config, error) {
+	cfg, err := LoadWithIncludes(env, path, expandEnv)
 	if err != nil {
 		return Config{}, err
 	}

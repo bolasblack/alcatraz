@@ -32,8 +32,3 @@ func NewTestEnv() *Env {
 		Cmd: NewMockCommandRunner(),
 	}
 }
-
-// WithCommandRunner returns a copy with the given command runner.
-func (e *Env) WithCommandRunner(cmd CommandRunner) *Env {
-	return &Env{Fs: e.Fs, Cmd: cmd}
-}

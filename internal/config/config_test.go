@@ -33,7 +33,7 @@ enter = "bash"
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	cfg, err := LoadConfig(env, path)
+	cfg, err := LoadConfig(env, path, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
@@ -64,7 +64,7 @@ enter = "bash"
 
 func TestLoadConfigNotFound(t *testing.T) {
 	env, _ := newTestEnv(t)
-	_, err := LoadConfig(env, "/nonexistent/path/.alca.toml")
+	_, err := LoadConfig(env, "/nonexistent/path/.alca.toml", noExpandEnv)
 	if err == nil {
 		t.Error("expected error for nonexistent file, got nil")
 	}
@@ -88,7 +88,7 @@ override_on_enter = true
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	cfg, err := LoadConfig(env, path)
+	cfg, err := LoadConfig(env, path, noExpandEnv)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
@@ -622,7 +622,7 @@ mounts = ["/host:/container", "/data:/data:ro"]
 			t.Fatalf("failed to write test file: %v", err)
 		}
 
-		cfg, err := LoadConfig(env, path)
+		cfg, err := LoadConfig(env, path, noExpandEnv)
 		if err != nil {
 			t.Fatalf("LoadConfig failed: %v", err)
 		}
@@ -659,7 +659,7 @@ exclude = ["**/.env.prod", "**/secrets/"]
 			t.Fatalf("failed to write test file: %v", err)
 		}
 
-		cfg, err := LoadConfig(env, path)
+		cfg, err := LoadConfig(env, path, noExpandEnv)
 		if err != nil {
 			t.Fatalf("LoadConfig failed: %v", err)
 		}
@@ -710,7 +710,7 @@ exclude = ["*.tmp"]
 			t.Fatalf("failed to write test file: %v", err)
 		}
 
-		cfg, err := LoadConfig(env, path)
+		cfg, err := LoadConfig(env, path, noExpandEnv)
 		if err != nil {
 			t.Fatalf("LoadConfig failed: %v", err)
 		}
@@ -771,7 +771,7 @@ workdir_exclude = ["node_modules", ".git", "dist"]
 			t.Fatalf("failed to write test file: %v", err)
 		}
 
-		cfg, err := LoadConfig(env, path)
+		cfg, err := LoadConfig(env, path, noExpandEnv)
 		if err != nil {
 			t.Fatalf("LoadConfig failed: %v", err)
 		}
@@ -806,7 +806,7 @@ workdir = "/app"
 			t.Fatalf("failed to write test file: %v", err)
 		}
 
-		cfg, err := LoadConfig(env, path)
+		cfg, err := LoadConfig(env, path, noExpandEnv)
 		if err != nil {
 			t.Fatalf("LoadConfig failed: %v", err)
 		}
@@ -839,7 +839,7 @@ target = "/workspace"
 			t.Fatalf("failed to write test file: %v", err)
 		}
 
-		_, err := LoadConfig(env, path)
+		_, err := LoadConfig(env, path, noExpandEnv)
 		if err == nil {
 			t.Fatal("expected error for mount target conflicting with workdir")
 		}
@@ -858,7 +858,7 @@ image = "ubuntu:latest"
 			t.Fatalf("failed to write test file: %v", err)
 		}
 
-		cfg, err := LoadConfig(env, path)
+		cfg, err := LoadConfig(env, path, noExpandEnv)
 		if err != nil {
 			t.Fatalf("LoadConfig failed: %v", err)
 		}
