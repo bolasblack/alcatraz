@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -12,7 +13,7 @@ import (
 )
 
 // noExpandEnv is an identity function used in tests where env var expansion is not needed.
-var noExpandEnv = func(s string) string { return s }
+var noExpandEnv = func(s string) (string, error) { return s, nil }
 
 func TestLoadWithIncludes_SimpleInclude(t *testing.T) {
 	env, memFs := newTestEnv(t)
@@ -1424,8 +1425,8 @@ func TestLoadWithIncludes_EnvVarInExtends(t *testing.T) {
 	env, memFs := newTestEnv(t)
 
 	// Custom expandEnv to replace ${TEST_DIR} with a known path
-	expandEnv := func(s string) string {
-		return strings.ReplaceAll(s, "${TEST_DIR}", "/test/envdir")
+	expandEnv := func(s string) (string, error) {
+		return strings.ReplaceAll(s, "${TEST_DIR}", "/test/envdir"), nil
 	}
 
 	// Create the base config at the env-expanded path
@@ -1465,8 +1466,8 @@ image = "main:latest"
 func TestLoadWithIncludes_EnvVarInIncludes(t *testing.T) {
 	env, memFs := newTestEnv(t)
 
-	expandEnv := func(s string) string {
-		return strings.ReplaceAll(s, "${TEST_DIR}", "/test/envdir")
+	expandEnv := func(s string) (string, error) {
+		return strings.ReplaceAll(s, "${TEST_DIR}", "/test/envdir"), nil
 	}
 
 	// Create override config at the env-expanded path
@@ -1501,8 +1502,8 @@ image = "main:latest"
 func TestLoadWithIncludes_EnvVarWithGlob(t *testing.T) {
 	env, memFs := newTestEnv(t)
 
-	expandEnv := func(s string) string {
-		return strings.ReplaceAll(s, "${TEST_DIR}", "/test/envdir")
+	expandEnv := func(s string) (string, error) {
+		return strings.ReplaceAll(s, "${TEST_DIR}", "/test/envdir"), nil
 	}
 
 	// Create multiple files matching the glob pattern
@@ -1537,9 +1538,12 @@ image = "main:latest"
 func TestLoadWithIncludes_UndefinedEnvVar(t *testing.T) {
 	env, memFs := newTestEnv(t)
 
-	// expandEnv that expands undefined vars to empty string (like os.ExpandEnv)
-	expandEnv := func(s string) string {
-		return strings.ReplaceAll(s, "${UNDEFINED_VAR}", "")
+	// expandEnv that returns error for undefined vars
+	expandEnv := func(s string) (string, error) {
+		if strings.Contains(s, "${UNDEFINED_VAR}") {
+			return "", fmt.Errorf("undefined environment variable: $UNDEFINED_VAR")
+		}
+		return s, nil
 	}
 
 	// Create main config referencing undefined env var
@@ -1552,20 +1556,23 @@ image = "main:latest"
 		t.Fatalf("failed to write main file: %v", err)
 	}
 
-	// Should fail because the expanded path "/base.toml" doesn't exist
+	// Should fail with undefined environment variable error
 	_, err := LoadWithIncludes(env, mainPath, expandEnv)
 	if err == nil {
 		t.Error("expected error for undefined env var path, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "undefined environment variable") {
+		t.Errorf("expected 'undefined environment variable' error, got: %v", err)
 	}
 }
 
 func TestLoadWithIncludes_CircularReferenceWithEnvVars(t *testing.T) {
 	env, memFs := newTestEnv(t)
 
-	expandEnv := func(s string) string {
+	expandEnv := func(s string) (string, error) {
 		s = strings.ReplaceAll(s, "${DIR_A}", "/test")
 		s = strings.ReplaceAll(s, "${DIR_B}", "/test")
-		return s
+		return s, nil
 	}
 
 	// Create circular reference via env-expanded paths: a -> b -> a

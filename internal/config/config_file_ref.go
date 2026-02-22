@@ -1,7 +1,6 @@
 package config
 
 import (
-	"path/filepath"
 	"sort"
 
 	"github.com/spf13/afero"
@@ -10,36 +9,35 @@ import (
 // ConfigFileRef is a raw config file reference (extends/includes entry).
 // It may contain env vars (${VAR}), relative paths, and glob patterns.
 type ConfigFileRef struct {
-	ParentDir string // directory of the declaring config file
-	path      string // raw path from TOML (unexported)
+	FromConfigFilePath string // full path of the declaring config file
+	path               string // raw path (unexported)
 }
 
-// NewConfigFileRef creates a ConfigFileRef with the given parent directory and raw path.
-func NewConfigFileRef(parentDir, path string) ConfigFileRef {
-	return ConfigFileRef{ParentDir: parentDir, path: path}
+// NewConfigFileRef creates a ConfigFileRef with the given config file path and raw path.
+func NewConfigFileRef(fromConfigFilePath, path string) ConfigFileRef {
+	return ConfigFileRef{FromConfigFilePath: fromConfigFilePath, path: path}
 }
 
 // Expand resolves env vars, relative paths, and globs. Returns resolved absolute paths.
-func (r ConfigFileRef) Expand(getenv func(string) string, fs afero.Fs) ([]string, error) {
-	// 1. Expand env vars
-	pattern := getenv(r.path)
-
-	// 2. Resolve relative paths
-	if !filepath.IsAbs(pattern) {
-		pattern = filepath.Join(r.ParentDir, pattern)
+func (r ConfigFileRef) Expand(expandEnv func(string) (string, error), fs afero.Fs) ([]string, error) {
+	// Delegate env expansion + path resolution to FileRef
+	ref := NewFileRef(r.FromConfigFilePath, r.path)
+	resolved, err := ref.Expand(expandEnv)
+	if err != nil {
+		return nil, err
 	}
 
-	// 3. Glob expansion
-	if !isGlobPattern(pattern) {
+	// Glob expansion
+	if !isGlobPattern(resolved) {
 		// Literal path - must exist
-		if _, err := fs.Stat(pattern); err != nil {
+		if _, err := fs.Stat(resolved); err != nil {
 			return nil, err
 		}
-		return []string{pattern}, nil
+		return []string{resolved}, nil
 	}
 
 	// Glob pattern - empty result is OK
-	matches, err := afero.Glob(fs, pattern)
+	matches, err := afero.Glob(fs, resolved)
 	if err != nil {
 		return nil, err
 	}

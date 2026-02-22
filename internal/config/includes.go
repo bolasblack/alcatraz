@@ -15,7 +15,7 @@ import (
 // LoadWithIncludes loads config with extends/includes support.
 // It processes extends and includes recursively, merging configs per AGD-033 priority rules.
 // expandEnv expands ${VAR} references in include/extend paths (use os.ExpandEnv for production).
-func LoadWithIncludes(env *util.Env, path string, expandEnv func(string) string) (Config, error) {
+func LoadWithIncludes(env *util.Env, path string, expandEnv func(string) (string, error)) (Config, error) {
 	return loadWithIncludes(env, path, expandEnv, make(map[string]bool))
 }
 
@@ -25,7 +25,7 @@ func LoadWithIncludes(env *util.Env, path string, expandEnv func(string) string)
 //  2. Process extends files (they become the base)
 //  3. Convert current file to Config, merge: current overlays extends result
 //  4. Process includes files (they overlay current)
-func loadWithIncludes(env *util.Env, path string, expandEnv func(string) string, visited map[string]bool) (Config, error) {
+func loadWithIncludes(env *util.Env, path string, expandEnv func(string) (string, error), visited map[string]bool) (Config, error) {
 	absPath, err := validateAndMarkVisited(path, visited)
 	if err != nil {
 		return Config{}, err
@@ -36,16 +36,14 @@ func loadWithIncludes(env *util.Env, path string, expandEnv func(string) string,
 		return Config{}, err
 	}
 
-	baseDir := filepath.Dir(absPath)
-
 	// Step 1: Process extends (current file wins over extended files)
-	extendsResult, err := processExtends(env, raw.Extends, baseDir, expandEnv, visited)
+	extendsResult, err := processExtends(env, raw.Extends, absPath, expandEnv, visited)
 	if err != nil {
 		return Config{}, err
 	}
 
 	// Step 2: Convert current file
-	currentConfig, err := rawToConfig(raw)
+	currentConfig, err := rawToConfig(raw, expandEnv)
 	if err != nil {
 		return Config{}, fmt.Errorf("failed to convert config %s: %w", path, err)
 	}
@@ -59,7 +57,7 @@ func loadWithIncludes(env *util.Env, path string, expandEnv func(string) string,
 	// Fold includes one-by-one onto currentConfig so each append sees
 	// the accumulated result (not just other includes merged together).
 	if len(raw.Includes) > 0 {
-		includeConfigs, err := loadFileRefs(env, raw.Includes, baseDir, expandEnv, visited)
+		includeConfigs, err := loadFileRefs(env, raw.Includes, absPath, expandEnv, visited)
 		if err != nil {
 			return Config{}, err
 		}
@@ -99,8 +97,8 @@ func readRawConfig(env *util.Env, path string) (RawConfig, error) {
 
 // processExtends loads and merges extends refs with first-entry-wins priority.
 // Fold right-to-left: start from last, each earlier entry is overlay (wins).
-func processExtends(env *util.Env, refs []string, baseDir string, expandEnv func(string) string, visited map[string]bool) (Config, error) {
-	configs, err := loadFileRefs(env, refs, baseDir, expandEnv, visited)
+func processExtends(env *util.Env, refs []string, configFilePath string, expandEnv func(string) (string, error), visited map[string]bool) (Config, error) {
+	configs, err := loadFileRefs(env, refs, configFilePath, expandEnv, visited)
 	if err != nil {
 		return Config{}, err
 	}
@@ -112,10 +110,10 @@ func processExtends(env *util.Env, refs []string, baseDir string, expandEnv func
 }
 
 // loadFileRefs loads all referenced configs, expanding globs and resolving recursively.
-func loadFileRefs(env *util.Env, refs []string, baseDir string, expandEnv func(string) string, visited map[string]bool) ([]Config, error) {
+func loadFileRefs(env *util.Env, refs []string, configFilePath string, expandEnv func(string) (string, error), visited map[string]bool) ([]Config, error) {
 	var configs []Config
 	for _, rawPath := range refs {
-		ref := NewConfigFileRef(baseDir, rawPath)
+		ref := NewConfigFileRef(configFilePath, rawPath)
 		files, err := ref.Expand(expandEnv, env.Fs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand ref %s: %w", rawPath, err)
@@ -133,7 +131,8 @@ func loadFileRefs(env *util.Env, refs []string, baseDir string, expandEnv func(s
 }
 
 // rawToConfig converts RawConfig to Config without applying defaults.
-func rawToConfig(raw RawConfig) (Config, error) {
+// expandEnv expands ${VAR} references in mount source paths (not target).
+func rawToConfig(raw RawConfig, expandEnv func(string) (string, error)) (Config, error) {
 	// Mirror type ensures all RawConfig fields are explicitly handled (AGD-015).
 	type rawConfigFields struct {
 		Extends        []string
@@ -162,7 +161,7 @@ func rawToConfig(raw RawConfig) (Config, error) {
 	}
 
 	// Convert raw mounts to MountConfig
-	mounts, err := parseMounts(raw.Mounts)
+	mounts, err := parseMounts(raw.Mounts, expandEnv)
 	if err != nil {
 		return Config{}, err
 	}
@@ -290,69 +289,6 @@ func parseCaps(val any) (Caps, error) {
 	default:
 		return Caps{}, fmt.Errorf("caps: expected array or object, got %T", val)
 	}
-}
-
-// parseMounts converts raw mount values to MountConfig slice.
-// Accepts both string format ("source:target[:ro]") and object format.
-func parseMounts(raw []any) ([]MountConfig, error) {
-	if len(raw) == 0 {
-		return nil, nil
-	}
-
-	mounts := make([]MountConfig, 0, len(raw))
-	for i, val := range raw {
-		m, err := parseMountValue(val)
-		if err != nil {
-			return nil, fmt.Errorf("mount[%d]: %w", i, err)
-		}
-		mounts = append(mounts, m)
-	}
-	return mounts, nil
-}
-
-// parseMountValue converts a single raw mount value to MountConfig.
-func parseMountValue(val any) (MountConfig, error) {
-	switch v := val.(type) {
-	case string:
-		return ParseMount(v)
-	case map[string]any:
-		return parseMountObject(v)
-	default:
-		return MountConfig{}, fmt.Errorf("invalid type: %T", val)
-	}
-}
-
-// parseMountObject parses a mount object with source, target, readonly, exclude fields.
-func parseMountObject(m map[string]any) (MountConfig, error) {
-	var mc MountConfig
-
-	source, ok := m["source"].(string)
-	if !ok || source == "" {
-		return MountConfig{}, fmt.Errorf("mount source is required")
-	}
-	mc.Source = source
-
-	target, ok := m["target"].(string)
-	if !ok || target == "" {
-		return MountConfig{}, fmt.Errorf("mount target is required")
-	}
-	mc.Target = target
-
-	if readonly, ok := m["readonly"].(bool); ok {
-		mc.Readonly = readonly
-	}
-
-	if exclude, ok := m["exclude"].([]any); ok {
-		for i, e := range exclude {
-			s, ok := e.(string)
-			if !ok {
-				return MountConfig{}, fmt.Errorf("exclude[%d]: expected string, got %T", i, e)
-			}
-			mc.Exclude = append(mc.Exclude, s)
-		}
-	}
-
-	return mc, nil
 }
 
 // parseEnvValue converts a raw value to EnvValue.

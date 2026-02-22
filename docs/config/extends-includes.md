@@ -96,7 +96,7 @@ includes = ["${ALCA_CONF_DIR}/overrides/*.toml"]
 
 - Both `$VAR` and `${VAR}` syntax are supported
 - Expansion happens before path resolution and glob matching
-- Undefined variables expand to an empty string (which typically causes a "file not found" error for literal paths, or matches nothing for globs)
+- Undefined variables cause an error (e.g., `undefined environment variable: $ALCA_CONF_DIR`)
 - Works with both relative and absolute paths
 
 ## Merge Behavior

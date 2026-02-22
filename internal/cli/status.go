@@ -49,7 +49,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println("")
 
 	// Load config
-	cfg, err := config.LoadConfig(env, configPath, os.ExpandEnv)
+	cfg, err := config.LoadConfig(env, configPath, config.StrictExpandEnv)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}

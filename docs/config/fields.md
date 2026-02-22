@@ -202,6 +202,23 @@ exclude = [
 | `readonly` | bool   | No       | `false` | Read-only mount          |
 | `exclude`  | array  | No       | `[]`    | Glob patterns to exclude |
 
+### Environment Variables
+
+Mount source paths support `${VAR}` environment variable expansion:
+
+```toml
+mounts = ["${HOME}/data:/data"]
+
+[[mounts]]
+source = "${PROJECT_ROOT}/configs"
+target = "/configs"
+```
+
+- Both `$VAR` and `${VAR}` syntax are supported
+- **Source paths only** — target paths are container-internal and are not expanded
+- Expansion happens before path resolution
+- Undefined variables cause an error (e.g., `undefined environment variable: $PROJECT_ROOT`)
+
 ### Exclude Patterns
 
 Exclude patterns follow gitignore-like syntax (Mutagen ignore format):

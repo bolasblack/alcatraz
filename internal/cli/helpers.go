@@ -30,7 +30,7 @@ const (
 // Returns the config and config path, or an error with user-friendly message.
 func loadConfigFromCwd(env *util.Env, cwd string) (*config.Config, string, error) {
 	configPath := filepath.Join(cwd, ConfigFilename)
-	cfg, err := config.LoadConfig(env, configPath, os.ExpandEnv)
+	cfg, err := config.LoadConfig(env, configPath, config.StrictExpandEnv)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, configPath, errors.New(ErrMsgConfigNotFound)
@@ -44,7 +44,7 @@ func loadConfigFromCwd(env *util.Env, cwd string) (*config.Config, string, error
 // Use this for commands that can work without a config file.
 func loadConfigOptional(env *util.Env, cwd string) (*config.Config, string) {
 	configPath := filepath.Join(cwd, ConfigFilename)
-	cfg, _ := config.LoadConfig(env, configPath, os.ExpandEnv)
+	cfg, _ := config.LoadConfig(env, configPath, config.StrictExpandEnv)
 	return &cfg, configPath
 }
 
