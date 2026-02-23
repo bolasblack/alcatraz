@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -11,11 +12,11 @@ import (
 
 func TestParseMount(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		want     MountConfig
-		wantErr  bool
-		errMatch string
+		name      string
+		input     string
+		want      MountConfig
+		wantErr   bool
+		wantErrIs error
 	}{
 		{
 			name:  "simple mount",
@@ -33,48 +34,51 @@ func TestParseMount(t *testing.T) {
 			want:  MountConfig{Source: "./cache", Target: "/root/.cache"},
 		},
 		{
-			name:     "too few parts",
-			input:    "/host",
-			wantErr:  true,
-			errMatch: "invalid mount format",
+			name:      "too few parts",
+			input:     "/host",
+			wantErr:   true,
+			wantErrIs: ErrInvalidMountFormat,
 		},
 		{
-			name:     "too many parts",
-			input:    "/a:/b:/c:/d",
-			wantErr:  true,
-			errMatch: "invalid mount format",
+			name:      "too many parts",
+			input:     "/a:/b:/c:/d",
+			wantErr:   true,
+			wantErrIs: ErrInvalidMountFormat,
 		},
 		{
-			name:     "invalid option",
-			input:    "/host:/container:rw",
-			wantErr:  true,
-			errMatch: "invalid mount option",
+			name:      "invalid option",
+			input:     "/host:/container:rw",
+			wantErr:   true,
+			wantErrIs: ErrInvalidMountOption,
 		},
 		{
-			name:     "empty source",
-			input:    ":/container",
-			wantErr:  true,
-			errMatch: "source cannot be empty",
+			name:      "empty source",
+			input:     ":/container",
+			wantErr:   true,
+			wantErrIs: ErrMountSourceEmpty,
 		},
 		{
-			name:     "empty target",
-			input:    "/host:",
-			wantErr:  true,
-			errMatch: "target cannot be empty",
+			name:      "empty target",
+			input:     "/host:",
+			wantErr:   true,
+			wantErrIs: ErrMountTargetEmpty,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ParseMount(tt.input)
+			if tt.wantErrIs != nil {
+				if !errors.Is(err, tt.wantErrIs) {
+					t.Errorf("ParseMount() error = %v, want errors.Is %v", err, tt.wantErrIs)
+				}
+				return
+			}
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseMount() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if err != nil {
-				if tt.errMatch != "" && !strings.Contains(err.Error(), tt.errMatch) {
-					t.Errorf("ParseMount() error = %v, want error containing %q", err, tt.errMatch)
-				}
 				return
 			}
 			if !got.Equals(tt.want) {
@@ -522,11 +526,8 @@ func TestParseMounts_NoEnvVarsUnchanged(t *testing.T) {
 
 func TestParseMountValue_InvalidType(t *testing.T) {
 	_, err := parseMountValue(42, noExpandEnv)
-	if err == nil {
-		t.Fatal("expected error for invalid type, got nil")
-	}
-	if !strings.Contains(err.Error(), "invalid type") {
-		t.Errorf("expected error containing 'invalid type', got %q", err.Error())
+	if !errors.Is(err, ErrInvalidType) {
+		t.Fatalf("expected ErrInvalidType, got %q", err.Error())
 	}
 }
 

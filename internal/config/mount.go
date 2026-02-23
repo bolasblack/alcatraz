@@ -48,7 +48,7 @@ func (m *MountConfig) UnmarshalJSON(data []byte) error {
 func ParseMount(s string) (MountConfig, error) {
 	parts := strings.Split(s, ":")
 	if len(parts) < 2 || len(parts) > 3 {
-		return MountConfig{}, fmt.Errorf("invalid mount format %q: expected source:target[:ro]", s)
+		return MountConfig{}, fmt.Errorf("invalid mount format %q: expected source:target[:ro]: %w", s, ErrInvalidMountFormat)
 	}
 
 	m := MountConfig{
@@ -60,15 +60,15 @@ func ParseMount(s string) (MountConfig, error) {
 		if parts[2] == "ro" {
 			m.Readonly = true
 		} else {
-			return MountConfig{}, fmt.Errorf("invalid mount option %q: expected 'ro'", parts[2])
+			return MountConfig{}, fmt.Errorf("invalid mount option %q: expected 'ro': %w", parts[2], ErrInvalidMountOption)
 		}
 	}
 
 	if m.Source == "" {
-		return MountConfig{}, fmt.Errorf("mount source cannot be empty")
+		return MountConfig{}, fmt.Errorf("mount source cannot be empty: %w", ErrMountSourceEmpty)
 	}
 	if m.Target == "" {
-		return MountConfig{}, fmt.Errorf("mount target cannot be empty")
+		return MountConfig{}, fmt.Errorf("mount target cannot be empty: %w", ErrMountTargetEmpty)
 	}
 
 	return m, nil
@@ -220,7 +220,7 @@ func parseMountValue(val any, expandEnv func(string) (string, error)) (MountConf
 	case map[string]any:
 		return parseMountObject(v, expandEnv)
 	default:
-		return MountConfig{}, fmt.Errorf("invalid type: %T", val)
+		return MountConfig{}, fmt.Errorf("invalid type: %T: %w", val, ErrInvalidType)
 	}
 }
 

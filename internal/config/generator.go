@@ -187,56 +187,6 @@ func configToRaw(c Config) RawConfig {
 	}
 	_ = configFields(c)
 
-	var envs RawEnvValueMap
-	if len(c.Envs) > 0 {
-		envs = make(RawEnvValueMap)
-		for k, v := range c.Envs {
-			if !v.OverrideOnEnter {
-				envs[k] = v.Value // simple string
-			} else {
-				envs[k] = v // full struct
-			}
-		}
-	}
-
-	// Convert MountConfig to raw format
-	// Use string format for simple mounts, object format for mounts with excludes
-	var mounts RawMountSlice
-	if len(c.Mounts) > 0 {
-		mounts = make(RawMountSlice, len(c.Mounts))
-		for i, m := range c.Mounts {
-			if m.CanBeSimpleString() {
-				// Use simple string format
-				mounts[i] = m.String()
-			} else {
-				// Use object format for mounts with excludes
-				mounts[i] = mountConfigToMap(m)
-			}
-		}
-	}
-
-	// Convert Caps to raw format (object mode for explicit control)
-	var caps RawCaps
-	if len(c.Caps.Drop) > 0 || len(c.Caps.Add) > 0 {
-		capsMap := make(map[string]any)
-		if len(c.Caps.Drop) > 0 {
-			drop := make([]any, len(c.Caps.Drop))
-			for i, d := range c.Caps.Drop {
-				drop[i] = d
-			}
-			capsMap["drop"] = drop
-		}
-		if len(c.Caps.Add) > 0 {
-			add := make([]any, len(c.Caps.Add))
-			for i, a := range c.Caps.Add {
-				add[i] = a
-			}
-			capsMap["add"] = add
-		}
-		caps = capsMap
-	}
-
-	// Convert Commands to RawCommands (use simple string format when no append)
 	var commands RawCommands
 	if c.Commands.Up.Command != "" {
 		commands.Up = commandValueToRaw(c.Commands.Up)
@@ -251,12 +201,69 @@ func configToRaw(c Config) RawConfig {
 		WorkdirExclude: c.WorkdirExclude,
 		Runtime:        c.Runtime,
 		Commands:       commands,
-		Mounts:         mounts,
+		Mounts:         mountsToRaw(c.Mounts),
 		Resources:      c.Resources,
-		Envs:           envs,
+		Envs:           envsToRaw(c.Envs),
 		Network:        c.Network,
-		Caps:           caps,
+		Caps:           capsToRaw(c.Caps),
 	}
+}
+
+// envsToRaw converts EnvValue map to raw format for TOML serialization.
+// Simple values use string format; values with OverrideOnEnter use full struct.
+func envsToRaw(envs map[string]EnvValue) RawEnvValueMap {
+	if len(envs) == 0 {
+		return nil
+	}
+	raw := make(RawEnvValueMap, len(envs))
+	for k, v := range envs {
+		if !v.OverrideOnEnter {
+			raw[k] = v.Value
+		} else {
+			raw[k] = v
+		}
+	}
+	return raw
+}
+
+// mountsToRaw converts MountConfig slice to raw format for TOML serialization.
+// Simple mounts use string format; mounts with excludes use object format.
+func mountsToRaw(mounts []MountConfig) RawMountSlice {
+	if len(mounts) == 0 {
+		return nil
+	}
+	raw := make(RawMountSlice, len(mounts))
+	for i, m := range mounts {
+		if m.CanBeSimpleString() {
+			raw[i] = m.String()
+		} else {
+			raw[i] = mountConfigToMap(m)
+		}
+	}
+	return raw
+}
+
+// capsToRaw converts Caps to raw format (object mode) for TOML serialization.
+func capsToRaw(caps Caps) RawCaps {
+	if len(caps.Drop) == 0 && len(caps.Add) == 0 {
+		return nil
+	}
+	capsMap := make(map[string]any)
+	if len(caps.Drop) > 0 {
+		drop := make([]any, len(caps.Drop))
+		for i, d := range caps.Drop {
+			drop[i] = d
+		}
+		capsMap["drop"] = drop
+	}
+	if len(caps.Add) > 0 {
+		add := make([]any, len(caps.Add))
+		for i, a := range caps.Add {
+			add[i] = a
+		}
+		capsMap["add"] = add
+	}
+	return capsMap
 }
 
 // commandValueToRaw converts CommandValue to raw format for TOML serialization.

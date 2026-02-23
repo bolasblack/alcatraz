@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -72,15 +73,12 @@ func TestFileRef_Expand(t *testing.T) {
 
 func TestFileRef_Expand_ErrorPropagation(t *testing.T) {
 	expandEnv := func(s string) (string, error) {
-		return "", fmt.Errorf("undefined environment variable: $MISSING")
+		return "", fmt.Errorf("undefined environment variable: $MISSING: %w", ErrUndefinedEnvVar)
 	}
 
 	ref := NewFileRef("/base/dir/config.toml", "${MISSING}/file.toml")
 	_, err := ref.Expand(expandEnv)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "undefined environment variable: $MISSING") {
-		t.Errorf("expected error containing 'undefined environment variable: $MISSING', got: %v", err)
+	if !errors.Is(err, ErrUndefinedEnvVar) {
+		t.Fatalf("expected ErrUndefinedEnvVar, got: %v", err)
 	}
 }

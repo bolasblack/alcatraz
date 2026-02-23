@@ -4,7 +4,9 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/spf13/afero"
@@ -76,7 +78,7 @@ func validateAndMarkVisited(path string, visited map[string]bool) (string, error
 		return "", fmt.Errorf("failed to resolve path %s: %w", path, err)
 	}
 	if visited[absPath] {
-		return "", fmt.Errorf("circular reference detected: %s", path)
+		return "", fmt.Errorf("circular reference detected: %s: %w", path, ErrCircularReference)
 	}
 	visited[absPath] = true
 	return absPath, nil
@@ -226,7 +228,7 @@ func parseCommandValue(val any) (CommandValue, error) {
 //   - object with drop/add: full control mode (use as-is)
 //
 // See AGD-026 for design rationale.
-func parseCaps(val any) (Caps, error) {
+func parseCaps(val any) (caps Caps, err error) {
 	if val == nil {
 		// No caps field - return empty, defaults applied in LoadConfig
 		return Caps{}, nil
@@ -235,26 +237,14 @@ func parseCaps(val any) (Caps, error) {
 	switch v := val.(type) {
 	case []any:
 		// Array mode (additive): user specifies additional caps beyond defaults
-		userCaps := make([]string, 0, len(v))
-		for i, item := range v {
-			s, ok := item.(string)
-			if !ok {
-				return Caps{}, fmt.Errorf("caps[%d]: expected string, got %T", i, item)
-			}
-			userCaps = append(userCaps, s)
+		userCaps, err := toStringSlice(v, "caps")
+		if err != nil {
+			return Caps{}, err
 		}
-		// Additive mode: drop ALL, add defaults + user caps
+		// Additive mode: drop ALL, add defaults + user caps (deduped)
 		add := append([]string{}, DefaultCaps...)
 		for _, cap := range userCaps {
-			// Avoid duplicates with defaults
-			isDuplicate := false
-			for _, def := range DefaultCaps {
-				if cap == def {
-					isDuplicate = true
-					break
-				}
-			}
-			if !isDuplicate {
+			if !slices.Contains(DefaultCaps, cap) {
 				add = append(add, cap)
 			}
 		}
@@ -267,21 +257,15 @@ func parseCaps(val any) (Caps, error) {
 		// Object mode (full control): user specifies exact drop/add lists
 		var caps Caps
 		if drop, ok := v["drop"].([]any); ok {
-			for i, item := range drop {
-				s, ok := item.(string)
-				if !ok {
-					return Caps{}, fmt.Errorf("caps.drop[%d]: expected string, got %T", i, item)
-				}
-				caps.Drop = append(caps.Drop, s)
+			caps.Drop, err = toStringSlice(drop, "caps.drop")
+			if err != nil {
+				return Caps{}, err
 			}
 		}
 		if add, ok := v["add"].([]any); ok {
-			for i, item := range add {
-				s, ok := item.(string)
-				if !ok {
-					return Caps{}, fmt.Errorf("caps.add[%d]: expected string, got %T", i, item)
-				}
-				caps.Add = append(caps.Add, s)
+			caps.Add, err = toStringSlice(add, "caps.add")
+			if err != nil {
+				return Caps{}, err
 			}
 		}
 		return caps, nil
@@ -307,7 +291,7 @@ func parseEnvValue(val any) (EnvValue, error) {
 		}
 		return env, nil
 	default:
-		return EnvValue{}, fmt.Errorf("invalid type: %T", val)
+		return EnvValue{}, fmt.Errorf("invalid type: %T: %w", val, ErrInvalidType)
 	}
 }
 
@@ -334,6 +318,11 @@ func mergeConfigs(base, overlay Config) Config {
 	_ = configFields(overlay)
 
 	result := base
+
+	// Clone reference types from base to avoid aliasing mutations.
+	result.Envs = maps.Clone(base.Envs)
+	result.Mounts = slices.Clone(base.Mounts)
+	result.Network.LANAccess = slices.Clone(base.Network.LANAccess)
 
 	// Simple fields: overlay wins if non-empty
 	if overlay.Image != "" {
@@ -385,6 +374,19 @@ func mergeConfigs(base, overlay Config) Config {
 	}
 
 	return result
+}
+
+// toStringSlice converts []any to []string with error context.
+func toStringSlice(items []any, context string) ([]string, error) {
+	result := make([]string, 0, len(items))
+	for i, item := range items {
+		s, ok := item.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s[%d]: expected string, got %T", context, i, item)
+		}
+		result = append(result, s)
+	}
+	return result, nil
 }
 
 // mergeCommandValue merges two CommandValues with append support.

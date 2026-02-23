@@ -185,6 +185,15 @@ func (m *MockCommandRunner) SudoRunScriptQuiet(_ context.Context, script string)
 	return nil
 }
 
+// CallKeys returns all called command keys for debugging.
+func (m *MockCommandRunner) CallKeys() []string {
+	keys := make([]string, len(m.Calls))
+	for i, call := range m.Calls {
+		keys[i] = call.Key
+	}
+	return keys
+}
+
 // Called returns true if the command was called at least once.
 func (m *MockCommandRunner) Called(cmd string) bool {
 	for _, call := range m.Calls {
@@ -223,11 +232,28 @@ func (m *MockCommandRunner) AssertNotCalled(t *testing.T, cmd string) {
 	}
 }
 
-// CallKeys returns all called command keys for debugging.
-func (m *MockCommandRunner) CallKeys() []string {
-	keys := make([]string, len(m.Calls))
-	for i, call := range m.Calls {
-		keys[i] = call.Key
+// AssertAllExpectationsMet fails the test if any expected commands were set up
+// but never called. Call this at the end of each test to ensure no git operations
+// were silently skipped.
+func (m *MockCommandRunner) AssertAllExpectationsMet(t *testing.T) {
+	t.Helper()
+
+	called := make(map[string]bool)
+	for _, c := range m.Calls {
+		called[c.Key] = true
 	}
-	return keys
+
+	// Check commands map: any entry not consumed?
+	for key := range m.commands {
+		if !called[key] {
+			t.Errorf("expected command was set up but never called: %s", key)
+		}
+	}
+
+	// Check commandSequences: any remaining entries in queues?
+	for key, seq := range m.commandSequences {
+		if len(seq) > 0 {
+			t.Errorf("expected command sequence has %d unconsumed entries: %s", len(seq), key)
+		}
+	}
 }

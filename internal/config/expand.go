@@ -18,7 +18,7 @@ func StrictExpandEnv(s string) (string, error) {
 		return val
 	})
 	if len(undefined) > 0 {
-		return "", fmt.Errorf("undefined environment variable: %s", strings.Join(undefined, ", "))
+		return "", fmt.Errorf("undefined environment variable: %s: %w", strings.Join(undefined, ", "), ErrUndefinedEnvVar)
 	}
 	return expanded, nil
 }

@@ -1,7 +1,7 @@
 package config
 
 import (
-	"strings"
+	"errors"
 	"testing"
 )
 
@@ -20,14 +20,8 @@ func TestStrictExpandEnv(t *testing.T) {
 
 	t.Run("undefined var returns error containing var name", func(t *testing.T) {
 		_, err := StrictExpandEnv("${STRICT_TEST_UNDEFINED_XYZ}")
-		if err == nil {
-			t.Fatal("expected error for undefined var, got nil")
-		}
-		if !strings.Contains(err.Error(), "$STRICT_TEST_UNDEFINED_XYZ") {
-			t.Errorf("expected error to contain '$STRICT_TEST_UNDEFINED_XYZ', got: %v", err)
-		}
-		if !strings.Contains(err.Error(), "undefined environment variable") {
-			t.Errorf("expected error to contain 'undefined environment variable', got: %v", err)
+		if !errors.Is(err, ErrUndefinedEnvVar) {
+			t.Fatalf("expected ErrUndefinedEnvVar, got: %v", err)
 		}
 	})
 
@@ -35,11 +29,8 @@ func TestStrictExpandEnv(t *testing.T) {
 		t.Setenv("STRICT_TEST_DEFINED", "ok")
 
 		_, err := StrictExpandEnv("${STRICT_TEST_DEFINED}/${STRICT_TEST_MISSING_ABC}")
-		if err == nil {
-			t.Fatal("expected error for undefined var, got nil")
-		}
-		if !strings.Contains(err.Error(), "$STRICT_TEST_MISSING_ABC") {
-			t.Errorf("expected error to contain '$STRICT_TEST_MISSING_ABC', got: %v", err)
+		if !errors.Is(err, ErrUndefinedEnvVar) {
+			t.Fatalf("expected ErrUndefinedEnvVar, got: %v", err)
 		}
 	})
 

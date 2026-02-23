@@ -1,7 +1,7 @@
 package config
 
 import (
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -290,11 +290,8 @@ func TestConfigValidateEnvs(t *testing.T) {
 			},
 		}
 		err := cfg.ValidateEnvs()
-		if err == nil {
-			t.Error("expected error for invalid env")
-		}
-		if !strings.Contains(err.Error(), "BAD") {
-			t.Errorf("expected error to mention 'BAD', got %v", err)
+		if !errors.Is(err, ErrInvalidEnvSyntax) {
+			t.Fatalf("expected ErrInvalidEnvSyntax, got %v", err)
 		}
 	})
 }
@@ -437,11 +434,8 @@ target = "/workspace"
 		}
 
 		_, err := LoadConfig(env, path, noExpandEnv)
-		if err == nil {
-			t.Fatal("expected error for mount target conflicting with workdir")
-		}
-		if !strings.Contains(err.Error(), "conflicts with workdir") {
-			t.Errorf("expected error about workdir conflict, got: %v", err)
+		if !errors.Is(err, ErrWorkdirConflict) {
+			t.Fatalf("expected ErrWorkdirConflict, got: %v", err)
 		}
 	})
 

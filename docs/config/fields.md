@@ -219,6 +219,8 @@ target = "/configs"
 - Expansion happens before path resolution
 - Undefined variables cause an error (e.g., `undefined environment variable: $PROJECT_ROOT`)
 
+Environment variable expansion is also supported in [`extends` and `includes`]({{< relref "extends-includes" >}}#environment-variables) paths and in [`envs`](#variable-expansion) values. In all cases, expansion happens early — before path resolution, glob matching, or config merging.
+
 ### Exclude Patterns
 
 Exclude patterns follow gitignore-like syntax (Mutagen ignore format):

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -169,11 +170,8 @@ image = "b:latest"
 	}
 
 	_, err := LoadWithIncludes(env, aPath, noExpandEnv)
-	if err == nil {
-		t.Error("expected circular reference error, got nil")
-	}
-	if !strings.Contains(err.Error(), "circular") {
-		t.Errorf("expected error to mention 'circular', got: %v", err)
+	if !errors.Is(err, ErrCircularReference) {
+		t.Fatalf("expected ErrCircularReference, got: %v", err)
 	}
 }
 
@@ -210,11 +208,8 @@ image = "c:latest"
 	}
 
 	_, err := LoadWithIncludes(env, aPath, noExpandEnv)
-	if err == nil {
-		t.Error("expected circular reference error for nested cycle, got nil")
-	}
-	if !strings.Contains(err.Error(), "circular") {
-		t.Errorf("expected error to mention 'circular', got: %v", err)
+	if !errors.Is(err, ErrCircularReference) {
+		t.Fatalf("expected ErrCircularReference, got: %v", err)
 	}
 }
 
@@ -234,11 +229,10 @@ image = "main:latest"
 
 	_, err := LoadWithIncludes(env, mainPath, noExpandEnv)
 	if err == nil {
-		t.Error("expected error for missing include file, got nil")
+		t.Fatal("expected error for missing include file, got nil")
 	}
-	// Verify error message contains the file path
 	if !strings.Contains(err.Error(), ".alca.nonexistent.toml") {
-		t.Errorf("expected error to contain file path '.alca.nonexistent.toml', got: %v", err)
+		t.Errorf("expected error to reference missing file, got: %v", err)
 	}
 }
 
@@ -530,11 +524,8 @@ image = "b:latest"
 	}
 
 	_, err := LoadWithIncludes(env, aPath, noExpandEnv)
-	if err == nil {
-		t.Error("expected circular reference error, got nil")
-	}
-	if !strings.Contains(err.Error(), "circular") {
-		t.Errorf("expected error to mention 'circular', got: %v", err)
+	if !errors.Is(err, ErrCircularReference) {
+		t.Fatalf("expected ErrCircularReference, got: %v", err)
 	}
 }
 
@@ -1268,6 +1259,69 @@ func TestMergeConfigs_WorkdirExcludeEmptyOverlayPreservesBase(t *testing.T) {
 	}
 }
 
+func TestMergeConfigs_NoAliasingOfBaseEnvs(t *testing.T) {
+	base := Config{
+		Envs: map[string]EnvValue{
+			"KEY1": {Value: "val1"},
+		},
+	}
+	overlay := Config{
+		Envs: map[string]EnvValue{
+			"KEY2": {Value: "val2"},
+		},
+	}
+
+	_ = mergeConfigs(base, overlay)
+
+	// base.Envs must NOT have been mutated by the merge.
+	if _, exists := base.Envs["KEY2"]; exists {
+		t.Error("mergeConfigs mutated base.Envs — map aliasing bug")
+	}
+	if len(base.Envs) != 1 {
+		t.Errorf("expected base.Envs to have 1 entry, got %d", len(base.Envs))
+	}
+}
+
+func TestMergeConfigs_NoAliasingOfBaseMounts(t *testing.T) {
+	base := Config{
+		Mounts: []MountConfig{
+			{Source: "/base", Target: "/base"},
+		},
+	}
+	overlay := Config{
+		Mounts: []MountConfig{
+			{Source: "/overlay", Target: "/overlay"},
+		},
+	}
+
+	_ = mergeConfigs(base, overlay)
+
+	// base.Mounts must NOT have been extended by the merge.
+	if len(base.Mounts) != 1 {
+		t.Errorf("mergeConfigs mutated base.Mounts — slice aliasing bug: got %d entries", len(base.Mounts))
+	}
+}
+
+func TestMergeConfigs_NoAliasingOfBaseLANAccess(t *testing.T) {
+	base := Config{
+		Network: Network{
+			LANAccess: []string{"192.168.1.0/24"},
+		},
+	}
+	overlay := Config{
+		Network: Network{
+			LANAccess: []string{"10.0.0.0/8"},
+		},
+	}
+
+	_ = mergeConfigs(base, overlay)
+
+	// base.Network.LANAccess must NOT have been extended by the merge.
+	if len(base.Network.LANAccess) != 1 {
+		t.Errorf("mergeConfigs mutated base.Network.LANAccess — slice aliasing bug: got %d entries", len(base.Network.LANAccess))
+	}
+}
+
 // TestLoadConfig_LANAccessFromInclude tests the full TOML loading path:
 // main config has empty lan-access=[], included config has rules.
 // This is an integration test matching the real user scenario.
@@ -1541,7 +1595,7 @@ func TestLoadWithIncludes_UndefinedEnvVar(t *testing.T) {
 	// expandEnv that returns error for undefined vars
 	expandEnv := func(s string) (string, error) {
 		if strings.Contains(s, "${UNDEFINED_VAR}") {
-			return "", fmt.Errorf("undefined environment variable: $UNDEFINED_VAR")
+			return "", fmt.Errorf("undefined environment variable: $UNDEFINED_VAR: %w", ErrUndefinedEnvVar)
 		}
 		return s, nil
 	}
@@ -1558,11 +1612,8 @@ image = "main:latest"
 
 	// Should fail with undefined environment variable error
 	_, err := LoadWithIncludes(env, mainPath, expandEnv)
-	if err == nil {
-		t.Error("expected error for undefined env var path, got nil")
-	}
-	if err != nil && !strings.Contains(err.Error(), "undefined environment variable") {
-		t.Errorf("expected 'undefined environment variable' error, got: %v", err)
+	if !errors.Is(err, ErrUndefinedEnvVar) {
+		t.Fatalf("expected ErrUndefinedEnvVar, got: %v", err)
 	}
 }
 
@@ -1595,10 +1646,7 @@ image = "b:latest"
 	}
 
 	_, err := LoadWithIncludes(env, aPath, expandEnv)
-	if err == nil {
-		t.Error("expected circular reference error, got nil")
-	}
-	if !strings.Contains(err.Error(), "circular") {
-		t.Errorf("expected error to mention 'circular', got: %v", err)
+	if !errors.Is(err, ErrCircularReference) {
+		t.Fatalf("expected ErrCircularReference, got: %v", err)
 	}
 }

@@ -121,3 +121,8 @@ Tests exist to discover bugs — mismatches between implementation and expectati
 - **Write expected behavior first**, run the test, then fix the implementation if it fails
 - **Test behavior, not implementation**: test inputs/outputs from the caller's perspective. If a test breaks when you refactor internals without changing behavior, it's a bad test
 - **No implementation mirroring**: don't assert concrete types, internal field values, or call sequences. Test through interfaces
+- **Assert error types, not strings**: use `errors.Is(err, ErrSomething)` instead of string matching on error messages. Define sentinel errors for domain concepts
+- **Mock CommandRunner assertions**:
+  - `defer cmd.AssertAllExpectationsMet(t)` — always add this when using `ExpectSuccess`. Verifies all expected commands were called (nothing was skipped). Uses `t.Errorf` internally so it's safe with `defer`
+  - `AssertCalled` — only use when checking something beyond expectations (e.g., dynamic commands not set up via `ExpectSuccess`). Redundant when `AssertAllExpectationsMet` is present since it already guarantees all expected commands ran
+  - `AssertNotCalled` — use to verify a command was NOT called (e.g., cache reuse skips fetch, pinned commit skips network). This checks absence, which `AssertAllExpectationsMet` does not cover

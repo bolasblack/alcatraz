@@ -59,6 +59,24 @@ Three non-negotiable rules for good tests:
 - Public functions/methods without tests?
 - Obvious scenarios not covered?
 
+### 8. Error Assertion Quality
+
+Error path tests should verify **which** error occurred, not just **that** an error occurred.
+
+- Never use `strings.Contains(err.Error(), ...)` or any string comparison on `.Error()` to identify **which error** occurred — use `errors.Is` or `errors.As` instead
+- **Exception**: String checks on error messages are acceptable when verifying **diagnostic details** (e.g., that the error includes the relevant file path, parameter name, invalid value, or other context that helps users debug) rather than identifying the error type. The test should still assert `err != nil` first, and the string check should validate supplementary info, not substitute for a missing sentinel.
+- When a test checks `err == nil` or `err != nil` on an error path, ask two questions: (1) does the function already expose a sentinel error? If yes, the test should use `errors.Is`. (2) If not, should it? Most distinguishable error conditions deserve a sentinel — suggest adding one rather than accepting a bare nil check.
+- Happy-path `err != nil` is fine — when testing success behavior, a nil check is sufficient
+
+Examples:
+- **Bad**: `if !strings.Contains(err.Error(), "not found") { ... }` — using string match to identify error type
+- **Bad**: `if err == nil { t.Fatal("expected error") }` — when a sentinel like `ErrNotFound` exists
+- **Good**: `if !errors.Is(err, ErrNotFound) { t.Fatalf("expected ErrNotFound, got %v", err) }`
+- **OK**: `if err != nil { t.Fatalf("unexpected error: %v", err) }` — happy-path guard
+- **OK**: `if !strings.Contains(err.Error(), "config.toml") { ... }` — after `err != nil` guard, verifying the error includes relevant diagnostic details (file path, parameter name, invalid value, etc.)
+
 ## Version History
 
+- v1.1.1 (2026-02-23): §8 exception: string checks on error messages are OK for verifying diagnostic details (file path, parameter name, invalid value, etc.), not for identifying error types
+- v1.1.0 (2025-02-23): Add error assertion quality criterion (§8)
 - v1.0.0 (2025-02-09): Initial version

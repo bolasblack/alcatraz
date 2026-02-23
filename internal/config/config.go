@@ -99,7 +99,7 @@ func (e *EnvValue) Validate() error {
 		return nil // Static value, always valid
 	}
 	if !envVarPattern.MatchString(e.Value) {
-		return fmt.Errorf("invalid env value %q: only simple ${VAR} syntax supported", e.Value)
+		return fmt.Errorf("invalid env value %q: only simple ${VAR} syntax supported: %w", e.Value, ErrInvalidEnvSyntax)
 	}
 	return nil
 }
@@ -411,7 +411,7 @@ func LoadConfig(env *util.Env, path string, expandEnv func(string) (string, erro
 	// Check for mount target conflicts with workdir
 	for _, mount := range cfg.Mounts {
 		if mount.Target == cfg.Workdir {
-			return Config{}, fmt.Errorf("mount target %q conflicts with workdir; use workdir_exclude instead of a separate mount", cfg.Workdir)
+			return Config{}, fmt.Errorf("mount target %q conflicts with workdir; use workdir_exclude instead of a separate mount: %w", cfg.Workdir, ErrWorkdirConflict)
 		}
 	}
 
