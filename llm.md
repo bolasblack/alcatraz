@@ -1,0 +1,38 @@
+# Alcatraz
+
+> Alcatraz is a local sandbox tool for running AI code agents safely in containers with file and network isolation.
+
+Alcatraz (CLI: `alca`) lets you run AI coding agents like Claude Code, Codex, or Gemini CLI unrestricted but safely. You define your sandbox in a `.alca.toml` config file — specifying the container image, file exclusion patterns, network rules, and mounts — then `alca init && alca up` builds and starts an isolated container. Inside, agents can operate without permission guardrails while sensitive files (SSH keys, cloud credentials) stay hidden via exclusion patterns and LAN access is blocked by automated nftables firewall rules. Alcatraz auto-detects Docker, OrbStack, or Podman as the container runtime.
+
+## Getting Started
+
+- [README](https://github.com/bolasblack/alcatraz/blob/master/README.md): Project overview, installation methods, and basic usage
+- [Quickstart](./quickstart.md): Get a sandbox running in minutes
+- [Documentation Index](./_index.md): Full documentation table of contents
+
+## Configuration
+
+- [Config Fields](./config/fields.md): Complete reference for all `.alca.toml` fields (image, workdir, mounts, envs, resources, caps)
+- [Extends & Includes](./config/extends-includes.md): Config composition via inheritance and override layers
+- [Presets](./config/presets.md): Shared config fetched from git repositories via `alca init git+<url>`
+- [Network Config](./config/network.md): LAN access control and network isolation setup
+- [Config Overview](./config/_index.md): Configuration concepts and structure
+
+## Commands
+
+- [alca init](./commands/alca_init.md): Initialize `.alca.toml` config; optionally fetch git presets
+- [alca up](./commands/alca_up.md): Start the sandbox container
+- [alca down](./commands/alca_down.md): Stop and remove the container
+- [alca run](./commands/alca_run.md): Execute a command inside the sandbox
+- [alca status](./commands/alca_status.md): Show container status and detect config drift
+- [alca list](./commands/alca_list.md): List all Alcatraz containers across projects
+- [alca cleanup](./commands/alca_cleanup.md): Remove orphaned containers
+- [alca network-helper](./commands/alca_network-helper.md): Install, uninstall, or check the network isolation helper
+- [alca experimental reload](./commands/alca_experimental_reload.md): Reload sandbox config without full rebuild
+- [alca experimental sync](./commands/alca_experimental_sync.md): Check for or resolve file sync conflicts
+
+## Optional
+
+- [Runtimes](./runtimes.md): Details on Docker, OrbStack, and Podman support
+- [Sync Conflicts](./sync-conflicts.md): How to detect and resolve Mutagen file sync conflicts
+- [Command Reference](./commands/_index.md): Index of all CLI commands and subcommands
