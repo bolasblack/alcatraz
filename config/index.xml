@@ -65,4 +65,25 @@
  &lt;/tbody&gt;
 &lt;/table&gt;
 &lt;h2 id="why-nftables-inside-the-vm"&gt;Why nftables Inside the VM?&lt;a class="anchor" href="#why-nftables-inside-the-vm"&gt;#&lt;/a&gt;&lt;/h2&gt;
-&lt;p&gt;On macOS, both Docker Desktop and OrbStack run containers inside a Linux VM. Container network traffic does not pass through macOS kernel network interfaces — instead it is handled entirely in userspace:&lt;/p&gt;</description></item></channel></rss>
+&lt;p&gt;On macOS, both Docker Desktop and OrbStack run containers inside a Linux VM. Container network traffic does not pass through macOS kernel network interfaces — instead it is handled entirely in userspace:&lt;/p&gt;</description></item><item><title>Presets</title><link>https://bolasblack.github.io/alcatraz/config/presets/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://bolasblack.github.io/alcatraz/config/presets/</guid><description>&lt;h1 id="presets"&gt;Presets&lt;a class="anchor" href="#presets"&gt;#&lt;/a&gt;&lt;/h1&gt;
+&lt;p&gt;Presets are shared configuration files fetched from git repositories. They let teams maintain common &lt;code&gt;.alca.*.toml&lt;/code&gt; files in a central repo and distribute them across projects using &lt;code&gt;alca init&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;Downloaded preset files are regular local files — reference them via &lt;a href="https://bolasblack.github.io/alcatraz/config/extends-includes/"&gt;&lt;code&gt;extends&lt;/code&gt; or &lt;code&gt;includes&lt;/code&gt;&lt;/a&gt; in your &lt;code&gt;.alca.toml&lt;/code&gt;.&lt;/p&gt;
+&lt;h2 id="usage"&gt;Usage&lt;a class="anchor" href="#usage"&gt;#&lt;/a&gt;&lt;/h2&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#272822;background-color:#fafafa;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75715e"&gt;# Fetch presets from a shared repo&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca init git+https://github.com/myorg/alca-presets
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75715e"&gt;# Scan a subdirectory&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca init git+https://github.com/myorg/alca-presets#:backend
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75715e"&gt;# Pin to a specific commit&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca init git+https://github.com/myorg/alca-presets#a1b2c3d
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75715e"&gt;# Both subdirectory and commit&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca init git+https://github.com/myorg/alca-presets#a1b2c3d:backend
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75715e"&gt;# SSH&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca init git+ssh://git@github.com/myorg/private-presets.git#:backend
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75715e"&gt;# Update all presets to latest&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca init --update&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id="url-format"&gt;URL Format&lt;a class="anchor" href="#url-format"&gt;#&lt;/a&gt;&lt;/h2&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#272822;background-color:#fafafa;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"&gt;&lt;code class="language-fallback" data-lang="fallback"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;git+&amp;lt;clone-url&amp;gt;[#[commit-hash]:[dir-path]]&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;The &lt;code&gt;&amp;lt;clone-url&amp;gt;&lt;/code&gt; is a standard git clone URL (the same URL you&amp;rsquo;d pass to &lt;code&gt;git clone&lt;/code&gt;), prefixed with &lt;code&gt;git+&lt;/code&gt;. Both with and without &lt;code&gt;.git&lt;/code&gt; suffix are supported.&lt;/p&gt;</description></item></channel></rss>
