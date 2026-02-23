@@ -22,6 +22,12 @@ params:
   BookRepo: https://github.com/bolasblack/alcatraz
   BookEditPath: edit/master/docs
 
+menu:
+  after:
+    - name: llms.txt
+      url: https://bolasblack.github.io/alcatraz/llms.txt
+      weight: 1
+
 markup:
   highlight:
     noClasses: true

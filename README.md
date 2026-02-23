@@ -2,6 +2,8 @@
 
 Run code agents unrestricted, but fearlessly.
 
+[Documentation](https://bolasblack.github.io/alcatraz/) · [llms.txt](https://bolasblack.github.io/alcatraz/llms.txt)
+
 Alcatraz wraps your AI code agent in a sandbox with file, network, and capability isolation — so you can skip the guardrails without the danger.
 
 ## Why Alcatraz?

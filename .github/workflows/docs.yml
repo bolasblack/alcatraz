@@ -29,6 +29,15 @@ jobs:
       - name: Build docs site
         run: make docs-html
 
+      - name: Publish raw markdown files and llms.txt
+        run: |
+          find docs -name '*.md' | while read f; do
+            dest=".hugo/output/${f#docs/}"
+            mkdir -p "$(dirname "$dest")"
+            cp "$f" "$dest"
+          done
+          awk 'BEGIN{fm=0} /^---$/{fm++;next} fm<2{if(fm==0)print;next} {print}' docs/llm.md > .hugo/output/llms.txt
+
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
