@@ -1,3 +1,9 @@
+---
+build:
+  list: never
+  render: never
+---
+
 # Alcatraz
 
 > Alcatraz is a local sandbox tool for running AI code agents safely in containers with file and network isolation.
