@@ -37,3 +37,4 @@ decisions/AGD-031_mutagen-sync-conflict-notification.md: #cli, #file-isolation, 
 decisions/AGD-032_context-threading-convention.md: #patterns
 decisions/AGD-033_extends-includes-directives.md: #config
 decisions/AGD-034_command-append.md: #config
+decisions/AGD-035_git-preset-support.md: #config, #cli

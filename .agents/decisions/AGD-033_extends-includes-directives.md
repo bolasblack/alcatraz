@@ -1,10 +1,12 @@
 ---
-title: "Extends/Includes Directives"
-description: "Split includes into extends/includes with different merge directions"
+title: Extends/Includes Directives
+description: Split includes into extends/includes with different merge directions
 tags: config
 obsoletes: AGD-022
 updates: AGD-009
+updated_by: AGD-035
 ---
+
 
 ## Context
 

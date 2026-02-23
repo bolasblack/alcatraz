@@ -22,3 +22,5 @@ decisions/AGD-032_context-threading-convention.md -(u)-> decisions/AGD-029_env-d
 decisions/AGD-033_extends-includes-directives.md -(o)-> decisions/AGD-022_config-includes-support.md
 decisions/AGD-033_extends-includes-directives.md -(u)-> decisions/AGD-009_cli-design.md
 decisions/AGD-034_command-append.md -(u)-> decisions/AGD-009_cli-design.md
+decisions/AGD-035_git-preset-support.md -(u)-> decisions/AGD-009_cli-design.md
+decisions/AGD-035_git-preset-support.md -(u)-> decisions/AGD-033_extends-includes-directives.md
