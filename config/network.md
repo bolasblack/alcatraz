@@ -38,7 +38,36 @@ lan-access = ["*"]
 - **Type**: array of strings
 - **Required**: No
 - **Default**: `[]` (no LAN access)
-- **Valid values**: `"*"` (allow all LAN access)
+- **Valid values**: `"*"` (allow all LAN access), or specific host rules (see below)
+
+### Token Expansion
+
+The `lan-access` field supports special `${alca:<NAME>}` tokens that are resolved at runtime. Currently, only `HOST_IP` is supported:
+
+```toml
+[network]
+# Allow access to host port 8080
+lan-access = ["*://${alca:HOST_IP}:8080"]
+```
+
+#### `${alca:HOST_IP}`
+
+Resolves to the container host's gateway IP address at runtime:
+
+- **Docker**: Bridge network gateway (e.g., `172.17.0.1`)
+- **Podman**: Bridge network gateway
+- **OrbStack**: Bridge network gateway
+
+This token allows your config to work across different environments without hardcoding the host IP. The IP varies by container runtime and network configuration, so using `${alca:HOST_IP}` makes your configuration portable.
+
+**Example**: Accessing a local development server running on port 8080:
+
+```toml
+[network]
+lan-access = ["*://${alca:HOST_IP}:8080"]
+```
+
+This expands at runtime to the actual host gateway IP and allows the container to connect to port 8080 on the host machine.
 
 ## Platform Behavior
 
