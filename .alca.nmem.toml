@@ -1,0 +1,13 @@
+#:schema https://raw.githubusercontent.com/bolasblack/alcatraz/refs/heads/master/alca-config.schema.json
+
+mounts = [
+  "${HOME}/ai-now:/root/ai-now",
+]
+
+[envs]
+NMEM_API_URL = "http://host.docker.internal:14242"
+
+[network]
+lan-access = [
+  '${alca:HOST_IP}:14242',
+]

@@ -27,6 +27,9 @@ const (
 	TemplateDebian Template = "debian"
 )
 
+// LLMsComment is the TOML comment that points LLMs to the project's llms.txt.
+const LLMsComment = "# llms.txt: https://bolasblack.github.io/alcatraz/llms.txt\n"
+
 // SchemaComment is the TOML comment that references the JSON Schema for editor autocomplete.
 const SchemaComment = "#:schema https://raw.githubusercontent.com/bolasblack/alcatraz/refs/heads/master/alca-config.schema.json\n\n"
 
@@ -78,7 +81,7 @@ func generateConfigContent(tc TemplateConfig) (string, error) {
 		content = insertUpComment(content, tc.UpComment)
 	}
 
-	return SchemaComment + content, nil
+	return LLMsComment + SchemaComment + content, nil
 }
 
 // GetTemplateConfig returns the TemplateConfig for a given template.
