@@ -13,4 +13,6 @@ var (
 	ErrMountSourceEmpty   = errors.New("mount source empty")
 	ErrMountTargetEmpty   = errors.New("mount target empty")
 	ErrInvalidType        = errors.New("invalid type")
+	ErrUnknownAlcaToken   = errors.New("unknown alca token")
+	ErrInvalidAlcaToken   = errors.New("invalid alca token")
 )

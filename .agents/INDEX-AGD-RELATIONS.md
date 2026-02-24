@@ -24,3 +24,4 @@ decisions/AGD-033_extends-includes-directives.md -(u)-> decisions/AGD-009_cli-de
 decisions/AGD-034_command-append.md -(u)-> decisions/AGD-009_cli-design.md
 decisions/AGD-035_git-preset-support.md -(u)-> decisions/AGD-009_cli-design.md
 decisions/AGD-035_git-preset-support.md -(u)-> decisions/AGD-033_extends-includes-directives.md
+decisions/AGD-036_lan-access-token-expansion.md -(u)-> decisions/AGD-028_lan-access-syntax.md

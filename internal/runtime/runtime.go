@@ -99,4 +99,8 @@ type Runtime interface {
 	// GetContainerIP returns the IP address of a running container.
 	// Used by firewall rules to restrict container network access.
 	GetContainerIP(ctx context.Context, env *RuntimeEnv, containerName string) (string, error)
+
+	// GetHostIP returns the IP address at which the host machine is reachable
+	// from inside containers. Used to resolve ${alca:HOST_IP} tokens.
+	GetHostIP(ctx context.Context, env *RuntimeEnv) (string, error)
 }

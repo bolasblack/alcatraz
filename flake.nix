@@ -108,7 +108,7 @@
             traceroute
             tcpdump
             gnugrep
-            python3Minimal
+            python312
             nodejs-slim
             tmux
             mise

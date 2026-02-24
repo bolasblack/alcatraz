@@ -290,7 +290,7 @@ func checkProjectPathConsistency(ctx context.Context, runtimeEnv *runtime.Runtim
 		msg += "\n\nNote: the old directory may have been recreated by file sync (mutagen). Check and clean up if needed."
 	}
 
-	return errors.New(msg)
+	return fmt.Errorf("%s: %w", msg, errProjectPathMismatch)
 }
 
 // progressFunc returns a progress callback that writes to the given writer.

@@ -132,7 +132,7 @@ cpus = 2
 | `commands.enter`     | Command to run on `alca run`                                                                            |
 | `resources.memory`   | Memory limit (e.g. `4g`, `512m`)                                                                        |
 | `resources.cpus`     | Number of CPUs to allocate                                                                              |
-| `network.lan-access` | LAN access for containers (`["*"]` to allow all)                                                        |
+| `network.lan-access` | LAN access for containers; supports `${alca:HOST_IP}` token for host gateway IP ([details](docs/config/network.md)) |
 | `extends`/`includes` | Compose config files ([details](docs/config/extends-includes.md))                                       |
 
 See the [full configuration reference](docs/config/fields.md) for all options.

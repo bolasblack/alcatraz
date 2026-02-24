@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"strings"
 	"testing"
 
@@ -217,39 +216,15 @@ func TestProgressFunc(t *testing.T) {
 
 // pathCheckMockRuntime implements runtime.Runtime for testing checkProjectPathConsistency.
 type pathCheckMockRuntime struct {
+	runtime.StubRuntime
 	containers []runtime.ContainerInfo
 	listErr    error
 }
 
 var _ runtime.Runtime = (*pathCheckMockRuntime)(nil)
 
-func (m *pathCheckMockRuntime) Name() string { return "MockRuntime" }
-func (m *pathCheckMockRuntime) Available(_ context.Context, _ *runtime.RuntimeEnv) bool {
-	return true
-}
-func (m *pathCheckMockRuntime) Down(_ context.Context, _ *runtime.RuntimeEnv, _ string, _ *state.State) error {
-	return nil
-}
-func (m *pathCheckMockRuntime) Up(_ context.Context, _ *runtime.RuntimeEnv, _ *config.Config, _ string, _ *state.State, _ io.Writer) error {
-	return nil
-}
-func (m *pathCheckMockRuntime) Exec(_ context.Context, _ *runtime.RuntimeEnv, _ *config.Config, _ string, _ *state.State, _ []string) error {
-	return nil
-}
-func (m *pathCheckMockRuntime) Reload(_ context.Context, _ *runtime.RuntimeEnv, _ *config.Config, _ string, _ *state.State) error {
-	return nil
-}
 func (m *pathCheckMockRuntime) ListContainers(_ context.Context, _ *runtime.RuntimeEnv) ([]runtime.ContainerInfo, error) {
 	return m.containers, m.listErr
-}
-func (m *pathCheckMockRuntime) RemoveContainer(_ context.Context, _ *runtime.RuntimeEnv, _ string) error {
-	return nil
-}
-func (m *pathCheckMockRuntime) GetContainerIP(_ context.Context, _ *runtime.RuntimeEnv, _ string) (string, error) {
-	return "", nil
-}
-func (m *pathCheckMockRuntime) Status(_ context.Context, _ *runtime.RuntimeEnv, _ string, _ *state.State) (runtime.ContainerStatus, error) {
-	return runtime.ContainerStatus{}, nil
 }
 
 func TestCheckProjectPathConsistency(t *testing.T) {
@@ -280,8 +255,8 @@ func TestCheckProjectPathConsistency(t *testing.T) {
 		st := &state.State{ProjectID: projectID}
 
 		err := checkProjectPathConsistency(ctx, runtimeEnv, rt, st, "/home/user/new-path", nil)
-		if err == nil {
-			t.Fatal("expected error, got nil")
+		if !errors.Is(err, errProjectPathMismatch) {
+			t.Fatalf("expected errProjectPathMismatch, got: %v", err)
 		}
 		if !strings.Contains(err.Error(), "/home/user/old-path") {
 			t.Errorf("error should mention old path, got: %v", err)
@@ -329,8 +304,8 @@ func TestCheckProjectPathConsistency(t *testing.T) {
 		}
 
 		err := checkProjectPathConsistency(ctx, runtimeEnv, rt, st, "/home/user/new-path", cfg)
-		if err == nil {
-			t.Fatal("expected error, got nil")
+		if !errors.Is(err, errProjectPathMismatch) {
+			t.Fatalf("expected errProjectPathMismatch, got: %v", err)
 		}
 		if !strings.Contains(err.Error(), "mutagen") {
 			t.Errorf("error should mention mutagen, got: %v", err)
@@ -351,8 +326,8 @@ func TestCheckProjectPathConsistency(t *testing.T) {
 		}
 
 		err := checkProjectPathConsistency(ctx, runtimeEnv, rt, st, "/home/user/new-path", cfg)
-		if err == nil {
-			t.Fatal("expected error, got nil")
+		if !errors.Is(err, errProjectPathMismatch) {
+			t.Fatalf("expected errProjectPathMismatch, got: %v", err)
 		}
 		if !strings.Contains(err.Error(), "mutagen") {
 			t.Errorf("error should mention mutagen, got: %v", err)
@@ -369,8 +344,8 @@ func TestCheckProjectPathConsistency(t *testing.T) {
 		cfg := &config.Config{}
 
 		err := checkProjectPathConsistency(ctx, runtimeEnv, rt, st, "/home/user/new-path", cfg)
-		if err == nil {
-			t.Fatal("expected error, got nil")
+		if !errors.Is(err, errProjectPathMismatch) {
+			t.Fatalf("expected errProjectPathMismatch, got: %v", err)
 		}
 		if strings.Contains(err.Error(), "mutagen") {
 			t.Errorf("error should NOT mention mutagen, got: %v", err)

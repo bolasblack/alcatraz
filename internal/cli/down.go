@@ -122,7 +122,7 @@ func guardSyncConflicts(ctx context.Context, fs afero.Fs, syncEnv *sync.SyncEnv,
 	conflicts := checkSyncConflictsBeforeDown(ctx, fs, syncEnv, projectRoot, projectID)
 	if len(conflicts) > 0 {
 		sync.RenderBanner(conflicts, w)
-		return fmt.Errorf("resolve sync conflicts before stopping the container, or use --force to skip this check")
+		return fmt.Errorf("resolve sync conflicts before stopping the container, or use --force to skip this check: %w", errSyncConflicts)
 	}
 	return nil
 }

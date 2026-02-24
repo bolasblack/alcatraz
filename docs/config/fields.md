@@ -457,13 +457,30 @@ Control container access to your local network (LAN).
 
 ```toml
 [network]
-lan-access = ["*"]
+lan-access = ["*://${alca:HOST_IP}:8080"]
 ```
 
 - **Type**: array of strings
 - **Required**: No
 - **Default**: `[]` (no LAN access — containers can reach the internet but not local machines)
-- **Valid values**: `"*"` (allow all LAN access)
+- **Valid values**:
+  - `"*"` — allow all LAN access
+  - Specific host rules with optional token expansion (see below)
+
+### Token Expansion
+
+The `lan-access` field supports special `${alca:<NAME>}` tokens that are resolved at runtime:
+
+- `${alca:HOST_IP}` — Resolves to the container host's gateway IP address. Currently the only supported token.
+
+**Example**: Access a local dev server on the host:
+
+```toml
+[network]
+lan-access = ["*://${alca:HOST_IP}:8080"]
+```
+
+The `${alca:HOST_IP}` token expands to the actual host gateway IP at runtime (Docker: `172.17.0.1`, Podman: bridge gateway, etc.), making your config portable across different environments without hardcoding IP addresses.
 
 See [Network Configuration]({{< relref "network" >}}) for platform behavior, the network helper, and why nftables inside the VM is necessary on macOS.
 

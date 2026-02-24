@@ -1,4 +1,5 @@
-#:schema ./alca-config.schema.json
+#:schema ./alca-config.schema.jsonc
+# llms.txt: https://bolasblack.github.io/alcatraz/llms.txt
 
 includes = ['./.alca.*.toml']
 image = "nixos/nix"

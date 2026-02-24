@@ -137,6 +137,10 @@ Index files are auto-generated. Search them with `grep`, do not read entirely.
 
 **Always confirm with user before adding new tags to config.json.** Do not add tags without explicit approval.
 
+### AGD Content Scope
+
+AGDs record **decisions and rationale**, not implementation details. Do not include code snippets, struct definitions, function signatures, or concrete API designs. Those belong in the code itself. Focus on *what* was decided and *why*, not *how* it's implemented.
+
 ### AGD vs References
 
 - **AGD** (`decisions/`): Only record **decisions**, not documentation

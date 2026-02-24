@@ -142,12 +142,20 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// Files written via tfs, committed to real disk before nft loads them.
 	fw, fwType := network.New(ctx, networkEnv)
 
-	if err := setupFirewall(ctx, fw, fwType, networkEnv, env, tfs, runtimeEnv, cfg.Network, rt, st, nh, out); err != nil {
-		if errors.Is(err, errSkipFirewall) {
+	expandedNet, fwErr := setupFirewall(ctx, fw, fwType, networkEnv, env, tfs, runtimeEnv, cfg.Network, rt, st, nh, out)
+	if fwErr != nil {
+		if errors.Is(fwErr, errSkipFirewall) {
 			// User declined helper install — already messaged, not an error
 		} else {
 			// Firewall errors are warnings, not fatal - container is already running
-			util.ProgressStep(out, "Warning: %v\n", err)
+			util.ProgressStep(out, "Warning: %v\n", fwErr)
+		}
+	} else {
+		// Persist expanded network config (tokens resolved to IPs) to state.
+		// Always runs on success — even after rebuild, because UpdateConfig saves
+		// raw tokens and we need the resolved values in state.
+		if err := saveNetworkState(ctx, env, tfs, cwd, expandedNet, st, out); err != nil {
+			return err
 		}
 	}
 
@@ -265,7 +273,11 @@ func setupNetwork(ctx context.Context, nh network.NetworkHelper, networkEnv *net
 // - A firewall backend is available (nftables on Linux, nftables via VM on macOS)
 // - lan-access is NOT ["*"] (user wants network isolation)
 // See AGD-027 for design decisions.
-func setupFirewall(ctx context.Context, fw network.Firewall, fwType network.Type, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, netCfg config.Network, rt runtime.Runtime, st *state.State, nh network.NetworkHelper, out io.Writer) error {
+//
+// On success, returns a Network with expanded LANAccess (alca tokens resolved to IPs).
+// The caller should persist this expanded config — not the raw cfg.Network — so that
+// state reflects what was actually applied.
+func setupFirewall(ctx context.Context, fw network.Firewall, fwType network.Type, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, netCfg config.Network, rt runtime.Runtime, st *state.State, nh network.NetworkHelper, out io.Writer) (config.Network, error) {
 	// Clean up stale rule files unconditionally — must run even when
 	// HasAllLAN or TypeNone would cause early returns below.
 	if fw != nil {
@@ -276,21 +288,29 @@ func setupFirewall(ctx context.Context, fw network.Firewall, fwType network.Type
 		}
 	}
 
-	// Parse lan-access rules
-	rules, err := network.ParseLANAccessRules(netCfg.LANAccess)
+	// Expand alca tokens in lan-access rules before parsing (AGD-036)
+	expandedLANAccess, err := expandAlcaTokensInRules(ctx, runtimeEnv, rt, netCfg.LANAccess)
 	if err != nil {
-		return fmt.Errorf("invalid lan-access configuration: %w", err)
+		return config.Network{}, fmt.Errorf("expanding lan-access tokens: %w", err)
+	}
+
+	expandedNet := config.Network{LANAccess: expandedLANAccess}
+
+	// Parse lan-access rules
+	rules, err := network.ParseLANAccessRules(expandedLANAccess)
+	if err != nil {
+		return config.Network{}, fmt.Errorf("invalid lan-access configuration: %w", err)
 	}
 
 	// lan-access = ["*"] means allow all, no firewall needed
 	if network.HasAllLAN(rules) {
-		return nil
+		return expandedNet, nil
 	}
 
 	// The network helper must be installed for nft reload.
 	// If setupNetwork didn't run (e.g. lan-access is empty), the helper may not be installed.
 	if err := ensureNetworkHelper(ctx, nh, networkEnv, env, tfs, out); err != nil {
-		return err
+		return config.Network{}, err
 	}
 
 	if fwType == network.TypeNone {
@@ -307,23 +327,23 @@ On Linux, install nftables:
   3. Restart Alcatraz
 
 `)
-		return nil
+		return expandedNet, nil
 	}
 
 	if fw == nil {
-		return nil
+		return expandedNet, nil
 	}
 
 	// Get container status to find the container name
 	status, err := rt.Status(ctx, runtimeEnv, "", st)
 	if err != nil || status.State != runtime.StateRunning {
-		return fmt.Errorf("container not running, cannot apply firewall rules")
+		return config.Network{}, fmt.Errorf("container not running, cannot apply firewall rules")
 	}
 
 	// Get container IP
 	containerIP, err := rt.GetContainerIP(ctx, runtimeEnv, status.Name)
 	if err != nil {
-		return fmt.Errorf("failed to get container IP: %w", err)
+		return config.Network{}, fmt.Errorf("failed to get container IP: %w", err)
 	}
 
 	util.ProgressStep(out, "Applying network isolation rules...\n")
@@ -331,23 +351,23 @@ On Linux, install nftables:
 	// Apply firewall rules with lan-access allowlist (writes files via tfs)
 	action, err := fw.ApplyRules(status.ID, containerIP, rules)
 	if err != nil {
-		return fmt.Errorf("failed to apply firewall rules: %w", err)
+		return config.Network{}, fmt.Errorf("failed to apply firewall rules: %w", err)
 	}
 
 	// Commit tfs to write files to real disk
 	if err := commitIfNeeded(ctx, env, tfs, out, "Writing firewall rules"); err != nil {
-		return fmt.Errorf("commit firewall files: %w", err)
+		return config.Network{}, fmt.Errorf("commit firewall files: %w", err)
 	}
 
 	// Run post-commit action (nft -f or reload)
 	if action != nil && action.Run != nil {
 		if err := action.Run(ctx, nil); err != nil {
-			return fmt.Errorf("load firewall rules: %w", err)
+			return config.Network{}, fmt.Errorf("load firewall rules: %w", err)
 		}
 	}
 
 	util.ProgressStep(out, "Network isolation enabled\n")
-	return nil
+	return expandedNet, nil
 }
 
 // ensureNetworkHelper checks if the network helper is installed and prompts to install if needed.
@@ -389,5 +409,40 @@ func ensureNetworkHelper(ctx context.Context, nh network.NetworkHelper, networkE
 	return nil
 }
 
-// errSkipFirewall is a sentinel error used to skip firewall setup without reporting an error.
-var errSkipFirewall = errors.New("skip firewall")
+// expandAlcaTokensInRules expands ${alca:...} tokens in lan-access rule strings.
+// Resolves HOST_IP once (cached) via rt.GetHostIP, then expands all rules.
+// Rules without alca tokens are passed through unchanged.
+func expandAlcaTokensInRules(ctx context.Context, runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime, rules []string) ([]string, error) {
+	// Cache resolved values so each token is resolved at most once
+	var hostIP string
+	var hostIPErr error
+	var hostIPResolved bool
+
+	resolver := func(name string) (string, error) {
+		if name != "HOST_IP" {
+			return "", fmt.Errorf("unhandled alca token %q", name)
+		}
+		if !hostIPResolved {
+			hostIP, hostIPErr = rt.GetHostIP(ctx, runtimeEnv)
+			hostIPResolved = true
+		}
+		return hostIP, hostIPErr
+	}
+
+	return config.ExpandAlcaTokensInStrings(rules, resolver)
+}
+
+// saveNetworkState selectively persists the network config section to state.
+// Only updates Network — preserves drift signals for image, mounts, etc.
+// LANAccess is excluded from drift detection in compareConfigs, so without this
+// the state becomes stale when only Network.LANAccess changes.
+func saveNetworkState(ctx context.Context, env *util.Env, tfs *transact.TransactFs, cwd string, netCfg config.Network, st *state.State, out io.Writer) error {
+	st.Config.Network = netCfg
+	if err := state.Save(env, cwd, st); err != nil {
+		return fmt.Errorf("failed to save network state: %w", err)
+	}
+	if err := commitWithSudo(ctx, env, tfs, out, ""); err != nil {
+		return fmt.Errorf("failed to save network state: %w", err)
+	}
+	return nil
+}

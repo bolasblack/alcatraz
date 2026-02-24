@@ -3,15 +3,14 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/spf13/afero"
 
-	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/network"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
@@ -42,35 +41,13 @@ func (m *mockSyncSessionClient) FlushSyncSession(_ context.Context, _ string) er
 
 // mockRuntime implements runtime.Runtime for testing cleanupFirewall.
 type mockRuntime struct {
+	runtime.StubRuntime
 	statusResult runtime.ContainerStatus
 	statusError  error
 }
 
 var _ runtime.Runtime = (*mockRuntime)(nil)
 
-func (m *mockRuntime) Name() string                                            { return "MockRuntime" }
-func (m *mockRuntime) Available(_ context.Context, _ *runtime.RuntimeEnv) bool { return true }
-func (m *mockRuntime) Down(_ context.Context, _ *runtime.RuntimeEnv, _ string, _ *state.State) error {
-	return nil
-}
-func (m *mockRuntime) Up(_ context.Context, _ *runtime.RuntimeEnv, _ *config.Config, _ string, _ *state.State, _ io.Writer) error {
-	return nil
-}
-func (m *mockRuntime) Exec(_ context.Context, _ *runtime.RuntimeEnv, _ *config.Config, _ string, _ *state.State, _ []string) error {
-	return nil
-}
-func (m *mockRuntime) Reload(_ context.Context, _ *runtime.RuntimeEnv, _ *config.Config, _ string, _ *state.State) error {
-	return nil
-}
-func (m *mockRuntime) ListContainers(_ context.Context, _ *runtime.RuntimeEnv) ([]runtime.ContainerInfo, error) {
-	return nil, nil
-}
-func (m *mockRuntime) RemoveContainer(_ context.Context, _ *runtime.RuntimeEnv, _ string) error {
-	return nil
-}
-func (m *mockRuntime) GetContainerIP(_ context.Context, _ *runtime.RuntimeEnv, _ string) (string, error) {
-	return "", nil
-}
 func (m *mockRuntime) Status(_ context.Context, _ *runtime.RuntimeEnv, _ string, _ *state.State) (runtime.ContainerStatus, error) {
 	return m.statusResult, m.statusError
 }
@@ -98,6 +75,7 @@ func TestCleanupFirewall_StatusError(t *testing.T) {
 	cmd := util.NewMockCommandRunner()
 	cmd.ExpectSuccess("which nft", []byte("/usr/sbin/nft"))
 	cmd.ExpectSuccess("nft list tables", []byte(""))
+	defer cmd.AssertAllExpectationsMet(t)
 
 	fs := afero.NewMemMapFs()
 	tfs := transact.New(transact.WithActualFs(fs))
@@ -123,6 +101,7 @@ func TestCleanupFirewall_ContainerNotFound(t *testing.T) {
 	cmd := util.NewMockCommandRunner()
 	cmd.ExpectSuccess("which nft", []byte("/usr/sbin/nft"))
 	cmd.ExpectSuccess("nft list tables", []byte(""))
+	defer cmd.AssertAllExpectationsMet(t)
 
 	fs := afero.NewMemMapFs()
 	tfs := transact.New(transact.WithActualFs(fs))
@@ -164,11 +143,8 @@ func TestGuardSyncConflicts_BlocksWhenConflictsExist(t *testing.T) {
 	var buf bytes.Buffer
 	err := guardSyncConflicts(context.Background(), fs, nil, projectRoot, "test-id", false, &buf)
 
-	if err == nil {
-		t.Fatal("expected error when conflicts exist, got nil")
-	}
-	if !strings.Contains(err.Error(), "resolve sync conflicts") {
-		t.Errorf("unexpected error message: %v", err)
+	if !errors.Is(err, errSyncConflicts) {
+		t.Fatalf("expected errSyncConflicts, got: %v", err)
 	}
 	if !strings.Contains(buf.String(), "sync") {
 		t.Errorf("expected banner output, got: %q", buf.String())

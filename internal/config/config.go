@@ -415,6 +415,13 @@ func LoadConfig(env *util.Env, path string, expandEnv func(string) (string, erro
 		}
 	}
 
+	// Validate alca tokens in lan-access rules (AGD-036)
+	for _, rule := range cfg.Network.LANAccess {
+		if err := ValidateAlcaTokens(rule); err != nil {
+			return Config{}, fmt.Errorf("lan-access %q: %w", rule, err)
+		}
+	}
+
 	// Apply default caps if not specified (AGD-026)
 	// Empty Caps means no caps field was in config - apply secure defaults
 	if len(cfg.Caps.Drop) == 0 && len(cfg.Caps.Add) == 0 {

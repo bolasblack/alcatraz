@@ -3,7 +3,9 @@ title: LAN Access Configuration Syntax
 description: Define granular lan-access rules with IP, port, and protocol support
 tags: config, network-isolation, security
 updates: AGD-027
+updated_by: AGD-036
 ---
+
 
 
 ## Context
