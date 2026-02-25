@@ -64,7 +64,7 @@ exclude = ["node_modules", ".git"]
 
 **Note**: You cannot add a mount targeting the same path as `workdir`. If you need to exclude subdirectories from syncing, use `workdir_exclude` instead of creating a separate mount.
 
-> When using `workdir_exclude`, Alcatraz monitors for sync conflicts (simultaneous edits on both sides). See [Sync Conflicts]({{< relref "sync-conflicts" >}}) for detection and resolution.
+> When using `workdir_exclude`, Alcatraz monitors for sync conflicts (simultaneous edits on both sides). See [Sync Conflicts](../sync-conflicts.md) for detection and resolution.
 
 ## runtime
 
@@ -219,7 +219,7 @@ target = "/configs"
 - Expansion happens before path resolution
 - Undefined variables cause an error (e.g., `undefined environment variable: $PROJECT_ROOT`)
 
-Environment variable expansion is also supported in [`extends` and `includes`]({{< relref "extends-includes" >}}#environment-variables) paths and in [`envs`](#variable-expansion) values. In all cases, expansion happens early — before path resolution, glob matching, or config merging.
+Environment variable expansion is also supported in [`extends` and `includes`](./extends-includes.md#environment-variables) paths and in [`envs`](#variable-expansion) values. In all cases, expansion happens early — before path resolution, glob matching, or config merging.
 
 ### Exclude Patterns
 
@@ -449,7 +449,7 @@ includes = [".alca.local.toml"]
 - **Default**: `[]`
 - **Notes**: Paths are resolved relative to the declaring file's directory. Supports glob patterns (`*.toml`). Included files' values win over the declaring file.
 
-See [Extends & Includes]({{< relref "extends-includes" >}}) for full documentation including three-layer merge, processing order, and migration guide.
+See [Extends & Includes](./extends-includes.md) for full documentation including three-layer merge, processing order, and migration guide.
 
 ## network.lan-access
 
@@ -482,7 +482,7 @@ lan-access = ["*://${alca:HOST_IP}:8080"]
 
 The `${alca:HOST_IP}` token expands to the actual host gateway IP at runtime (Docker: `172.17.0.1`, Podman: bridge gateway, etc.), making your config portable across different environments without hardcoding IP addresses.
 
-See [Network Configuration]({{< relref "network" >}}) for platform behavior, the network helper, and why nftables inside the VM is necessary on macOS.
+See [Network Configuration](./network.md) for platform behavior, the network helper, and why nftables inside the VM is necessary on macOS.
 
 ## Runtime-Specific Notes
 

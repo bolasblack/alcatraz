@@ -7,7 +7,7 @@ weight: 2.3
 
 Presets are shared configuration files fetched from git repositories. They let teams maintain common `.alca.*.toml` files in a central repo and distribute them across projects using `alca init`.
 
-Downloaded preset files are regular local files — reference them via [`extends` or `includes`]({{< relref "extends-includes" >}}) in your `.alca.toml`.
+Downloaded preset files are regular local files — reference them via [`extends` or `includes`](./extends-includes.md) in your `.alca.toml`.
 
 ## Usage
 

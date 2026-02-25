@@ -16,6 +16,7 @@ enableRobotsTXT: true
 enableGitInfo: true
 
 params:
+  BookPortableLinks: error
   BookSection: /
   BookToC: true
   BookMenuBundle: /menu

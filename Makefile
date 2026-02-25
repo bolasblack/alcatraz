@@ -141,7 +141,22 @@ schema:
 	go run ./cmd/genschema alca-config.schema.json
 
 # ========= Release =========
-.PHONY: release-patch release-minor release-major
+.PHONY: release-notes release-patch release-minor release-major
+
+DOCS_BASE_URL := https://bolasblack.github.io/alcatraz
+
+# Generate release notes from docs/changelogs/<VERSION>.md
+# Strips YAML frontmatter and rewrites relative .md links to absolute docs URLs.
+# Usage: make release-notes VERSION=v0.2.0
+release-notes:
+	@if [ -z "$(VERSION)" ]; then echo "Usage: make release-notes VERSION=v0.2.0"; exit 1; fi
+	@CHANGELOG="docs/changelogs/$(VERSION).md"; \
+	if [ ! -f "$$CHANGELOG" ]; then echo "Changelog not found: $$CHANGELOG"; exit 1; fi; \
+	sed '/^---$$/,/^---$$/d' "$$CHANGELOG" \
+		| sed 's|\.\./\([^)]*\)\.md|$(DOCS_BASE_URL)/\1/|g' \
+		| sed 's|/_index/|/|g' \
+		> $(OUT_DIR)/release-notes.md
+	@echo "Generated $(OUT_DIR)/release-notes.md"
 
 release-patch:
 	@if ! command -v svu >/dev/null 2>&1; then echo "svu not found. Install: mise install"; exit 1; fi

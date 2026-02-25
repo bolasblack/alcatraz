@@ -22,10 +22,13 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Generate release notes
+        run: make release-notes VERSION=${GITHUB_REF_NAME}
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean
+          args: release --clean --release-notes out/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

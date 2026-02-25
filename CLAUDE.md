@@ -11,6 +11,7 @@
 - `make docs-completions` — generate shell completions (bash/zsh/fish) to `out/completions/`
 - `make vendor` — update vendor directory
 - `make vendor-hash-update` - update vendor hash in `flake.nix`
+- `make release-notes VERSION=v0.2.0` — generate `out/release-notes.md` from `docs/changelogs/<VERSION>.md` with absolute URLs for GitHub Releases
 - `make release-patch` — tag and push a patch release (triggers goreleaser via GitHub Actions)
 - `make release-minor` — tag and push a minor release
 - `make release-major` — tag and push a major release
@@ -42,6 +43,24 @@ When modifying config-related code (`internal/config/`):
 1. **Update documentation**: `docs/config/` - add/update field descriptions, examples
 2. **Regenerate schema**: Run `make schema` to update `alca-config.schema.json` for editor autocomplete
 3. **Create AGD if needed**: Record significant config design decisions
+
+### Changelogs
+
+Changelogs live in `docs/changelogs/v<VERSION>.md` and follow [Common Changelog](https://common-changelog.org/) conventions. They are served on the docs site via Hugo and converted to GitHub Release notes via `make release-notes`.
+
+**Content guidelines:**
+
+- **User-facing changes only** — no internal refactoring, test infrastructure, or code reorganization
+- **Code examples where applicable** — copy-pasteable CLI commands or TOML config snippets so users know how to use it
+- **Link to documentation** — each feature entry should link to the relevant docs page for users who want to dive deeper
+- **Imperative mood, self-describing entries** — each line should make sense without its category heading
+
+**Format guidelines:**
+
+- Categories in order: Changed, Added, Removed, Fixed (only include categories that have entries)
+- Use portable markdown links (`../config/fields.md`) — Hugo resolves them via `BookPortableLinks`
+- `make release-notes VERSION=v0.2.0` rewrites links to absolute URLs for GitHub Releases
+- Use negative `weight` in frontmatter so newer versions sort first (e.g., `-20` for v0.2.0, `-30` for v0.3.0)
 
 ### Installation
 

@@ -38,37 +38,37 @@ alca up
 alca run make build
 ```
 
-See the [Quickstart guide]({{< relref "quickstart" >}}) for all installation methods and detailed setup instructions.
+See the [Quickstart guide](./quickstart.md) for all installation methods and detailed setup instructions.
 
 ## Documentation
 
 {{% columns %}}
 
-- ### [Quickstart]({{< relref "quickstart" >}})
+- ### [Quickstart](./quickstart.md)
 
   Get started in under 5 minutes. Installation, basic commands, and your first container.
 
-- ### [Configuration]({{< relref "config" >}})
+- ### [Configuration](./config/_index.md)
   Complete `.alca.toml` reference. Images, mounts, commands, and resource limits.
 
 {{% /columns %}}
 {{% columns %}}
 
-- ### [Runtimes]({{< relref "runtimes" >}})
+- ### [Runtimes](./runtimes.md)
 
   Docker and Podman (Linux-only). Platform differences and troubleshooting.
 
-- ### [Commands]({{< relref "commands" >}})
+- ### [Commands](./commands/_index.md)
   CLI reference for all `alca` commands and flags.
 
 {{% /columns %}}
 {{% columns %}}
 
-- ### [Network]({{< relref "config/network" >}})
+- ### [Network](./config/network.md)
 
   Network isolation and LAN access. Platform-specific firewall setup and troubleshooting.
 
-- ### [Sync Conflicts]({{< relref "sync-conflicts" >}})
+- ### [Sync Conflicts](./sync-conflicts.md)
 
   Detect and resolve file sync conflicts when using selective file mounting.
 
