@@ -277,5 +277,5 @@ Rebuild container with new configuration? [y/N]
 
 - See `alca --help` for all available commands
 - Check `alca <command> --help` for command-specific options
-- Review the [Configuration Reference]({{< relref "config" >}}) for all options
-- If using `workdir_exclude` or `mounts.exclude`, see [Sync Conflicts]({{< relref "sync-conflicts" >}}) for conflict detection and resolution
+- Review the [Configuration Reference](./config/_index.md) for all options
+- If using `workdir_exclude` or `mounts.exclude`, see [Sync Conflicts](./sync-conflicts.md) for conflict detection and resolution

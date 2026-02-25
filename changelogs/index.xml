@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Changelogs on Alcatraz</title><link>https://bolasblack.github.io/alcatraz/changelogs/</link><description>Recent content in Changelogs on Alcatraz</description><generator>Hugo</generator><language>en</language><atom:link href="https://bolasblack.github.io/alcatraz/changelogs/index.xml" rel="self" type="application/rss+xml"/><item><title>v0.2.0</title><link>https://bolasblack.github.io/alcatraz/changelogs/v0.2.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://bolasblack.github.io/alcatraz/changelogs/v0.2.0/</guid><description>&lt;h2 id="020---2026-02-24"&gt;&lt;a href="https://github.com/bolasblack/alcatraz/releases/tag/v0.2.0"&gt;0.2.0&lt;/a&gt; - 2026-02-24&lt;a class="anchor" href="#020---2026-02-24"&gt;#&lt;/a&gt;&lt;/h2&gt;
+&lt;h3 id="added"&gt;Added&lt;a class="anchor" href="#added"&gt;#&lt;/a&gt;&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;Support fetching config presets from git repos via &lt;code&gt;alca init git+&amp;lt;url&amp;gt;&lt;/code&gt; (&lt;a href="https://github.com/bolasblack/alcatraz/commit/30ae5f0"&gt;&lt;code&gt;30ae5f0&lt;/code&gt;&lt;/a&gt;)&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#272822;background-color:#fafafa;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75715e"&gt;# Fetch presets from a repo&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca init git+https://github.com/myorg/alca-presets
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75715e"&gt;# Fetch from a subdirectory, pinned to a specific commit&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca init git+https://github.com/myorg/alca-presets#a1b2c3d:backend&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;An interactive prompt lets you pick which &lt;code&gt;.alca.*.toml&lt;/code&gt; files to download. Each downloaded file includes a source comment for traceability. See &lt;a href="https://bolasblack.github.io/alcatraz/config/presets/"&gt;Presets&lt;/a&gt;.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Support refreshing managed preset files via &lt;code&gt;alca init --update&lt;/code&gt; (&lt;a href="https://github.com/bolasblack/alcatraz/commit/30ae5f0"&gt;&lt;code&gt;30ae5f0&lt;/code&gt;&lt;/a&gt;)&lt;/p&gt;
+&lt;p&gt;Re-fetches all preset files that have a source comment, updating them to the latest version from their origin repos. See &lt;a href="https://bolasblack.github.io/alcatraz/config/presets/"&gt;Presets&lt;/a&gt;.&lt;/p&gt;</description></item><item><title>v0.1.0</title><link>https://bolasblack.github.io/alcatraz/changelogs/v0.1.0/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://bolasblack.github.io/alcatraz/changelogs/v0.1.0/</guid><description>&lt;h2 id="010---2026-02-13"&gt;&lt;a href="https://github.com/bolasblack/alcatraz/releases/tag/v0.1.0"&gt;0.1.0&lt;/a&gt; - 2026-02-13&lt;a class="anchor" href="#010---2026-02-13"&gt;#&lt;/a&gt;&lt;/h2&gt;
+&lt;p&gt;&lt;em&gt;Initial release.&lt;/em&gt;&lt;/p&gt;
+&lt;h3 id="added"&gt;Added&lt;a class="anchor" href="#added"&gt;#&lt;/a&gt;&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Core CLI commands&lt;/strong&gt;: &lt;code&gt;alca init&lt;/code&gt;, &lt;code&gt;alca up&lt;/code&gt;, &lt;code&gt;alca down&lt;/code&gt;, &lt;code&gt;alca run&lt;/code&gt;, &lt;code&gt;alca status&lt;/code&gt;, &lt;code&gt;alca list&lt;/code&gt;, &lt;code&gt;alca cleanup&lt;/code&gt;&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#272822;background-color:#fafafa;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#111"&gt;cd&lt;/span&gt; my-project
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca init &lt;span style="color:#75715e"&gt;# generate .alca.toml (interactive nix/debian template)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca up &lt;span style="color:#75715e"&gt;# start the sandbox container&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca run make build &lt;span style="color:#75715e"&gt;# run a command inside the container&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca status &lt;span style="color:#75715e"&gt;# show container state and config drift&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;alca down &lt;span style="color:#75715e"&gt;# stop the container&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;See &lt;a href="https://bolasblack.github.io/alcatraz/quickstart/"&gt;Quickstart&lt;/a&gt; for a full walkthrough.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Multi-runtime support&lt;/strong&gt; with auto-detection: Docker, OrbStack, and Podman (Linux-only)&lt;/p&gt;</description></item></channel></rss>

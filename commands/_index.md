@@ -1,5 +1,5 @@
 ---
 title: Command Reference
-weight: 99
+weight: 89
 bookCollapseSection: true
 ---
