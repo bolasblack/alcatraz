@@ -26,10 +26,10 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats: ['tar.gz']
     format_overrides:
       - goos: windows
-        format: zip
+        formats: ['zip']
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - src: out/man/*.1
@@ -44,7 +44,7 @@ checksum:
 release:
   draft: true
 
-brews:
+homebrew_formulas:
   - name: alca
     repository:
       owner: bolasblack
