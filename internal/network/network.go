@@ -8,7 +8,6 @@ package network
 
 import (
 	"context"
-	"runtime"
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/network/nft"
@@ -61,25 +60,24 @@ var (
 	HasAllLAN           = shared.HasAllLAN
 )
 
-// Detect returns the available firewall type for the current platform.
-func Detect(ctx context.Context, cmd util.CommandRunner) Type {
-	switch runtime.GOOS {
-	case "darwin":
+// Detect returns the available firewall type for the given platform.
+// Uses the injected RuntimePlatform for cross-platform testability (AGD-029).
+func Detect(ctx context.Context, cmd util.CommandRunner, platform alcaruntime.RuntimePlatform) Type {
+	if alcaruntime.IsDarwin(platform) {
 		return TypeNFTables
-	case "linux":
+	}
+	if platform == alcaruntime.PlatformLinux {
 		if commandExists(ctx, cmd, "nft") && nftablesWorking(ctx, cmd) {
 			return TypeNFTables
 		}
-		return TypeNone
-	default:
-		return TypeNone
 	}
+	return TypeNone
 }
 
 // New creates a Firewall implementation based on the detected type.
 // Returns nil if no firewall is available.
 func New(ctx context.Context, env *NetworkEnv) (Firewall, Type) {
-	t := Detect(ctx, env.Cmd)
+	t := Detect(ctx, env.Cmd, env.Runtime)
 	return newFirewallForType(t, env), t
 }
 

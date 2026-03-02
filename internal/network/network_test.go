@@ -2,7 +2,7 @@ package network
 
 import (
 	"context"
-	"runtime"
+	"fmt"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -12,63 +12,117 @@ import (
 	"github.com/bolasblack/alcatraz/internal/util"
 )
 
-func TestDetect(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration test: depends on host platform and installed tools")
-	}
-	fwType := Detect(context.Background(), util.NewCommandRunner())
+// =============================================================================
+// Detect tests — cross-platform via injected RuntimePlatform
+// =============================================================================
 
-	switch runtime.GOOS {
-	case "darwin":
-		if fwType != TypeNFTables {
-			t.Errorf("Detect() on darwin should return TypeNFTables, got %v", fwType)
-		}
-	case "linux":
-		// On Linux, result depends on whether nft is available
-		// Just verify it returns a valid type
-		if fwType != TypeNFTables && fwType != TypeNone {
-			t.Errorf("Detect() on linux should return TypeNFTables or TypeNone, got %v", fwType)
-		}
-	default:
-		if fwType != TypeNone {
-			t.Errorf("Detect() on %s should return TypeNone, got %v", runtime.GOOS, fwType)
-		}
+func TestDetect_LinuxWithNft(t *testing.T) {
+	cmd := util.NewMockCommandRunner()
+	cmd.ExpectSuccess("which nft", []byte("/usr/sbin/nft"))
+	cmd.ExpectSuccess("nft list tables", []byte(""))
+	defer cmd.AssertAllExpectationsMet(t)
+
+	fwType := Detect(context.Background(), cmd, alcaruntime.PlatformLinux)
+	if fwType != TypeNFTables {
+		t.Errorf("Detect(PlatformLinux, nft available) should return TypeNFTables, got %v", fwType)
 	}
 }
 
-func TestNew(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration test: depends on host platform and installed tools")
+func TestDetect_LinuxWithoutNft(t *testing.T) {
+	cmd := util.NewMockCommandRunner()
+	cmd.ExpectFailure("which nft", fmt.Errorf("not found"))
+
+	fwType := Detect(context.Background(), cmd, alcaruntime.PlatformLinux)
+	if fwType != TypeNone {
+		t.Errorf("Detect(PlatformLinux, nft unavailable) should return TypeNone, got %v", fwType)
 	}
-	env := NewNetworkEnv(afero.NewOsFs(), util.NewCommandRunner(), "", "", "")
+}
+
+func TestDetect_LinuxNftNotWorking(t *testing.T) {
+	cmd := util.NewMockCommandRunner()
+	cmd.ExpectSuccess("which nft", []byte("/usr/sbin/nft"))
+	cmd.ExpectFailure("nft list tables", fmt.Errorf("kernel support missing"))
+
+	fwType := Detect(context.Background(), cmd, alcaruntime.PlatformLinux)
+	if fwType != TypeNone {
+		t.Errorf("Detect(PlatformLinux, nft not working) should return TypeNone, got %v", fwType)
+	}
+}
+
+func TestDetect_Darwin(t *testing.T) {
+	// Darwin short-circuits — no commands called
+	cmd := util.NewMockCommandRunner()
+
+	for _, platform := range []alcaruntime.RuntimePlatform{
+		alcaruntime.PlatformMacDockerDesktop,
+		alcaruntime.PlatformMacOrbStack,
+	} {
+		t.Run(string(platform), func(t *testing.T) {
+			fwType := Detect(context.Background(), cmd, platform)
+			if fwType != TypeNFTables {
+				t.Errorf("Detect(%s) should return TypeNFTables, got %v", platform, fwType)
+			}
+		})
+	}
+}
+
+func TestDetect_UnknownPlatform(t *testing.T) {
+	cmd := util.NewMockCommandRunner()
+
+	fwType := Detect(context.Background(), cmd, alcaruntime.RuntimePlatform("freebsd"))
+	if fwType != TypeNone {
+		t.Errorf("Detect(unknown) should return TypeNone, got %v", fwType)
+	}
+}
+
+// =============================================================================
+// New tests — cross-platform via injected RuntimePlatform
+// =============================================================================
+
+func TestNew_LinuxWithNft(t *testing.T) {
+	cmd := util.NewMockCommandRunner()
+	cmd.ExpectSuccess("which nft", []byte("/usr/sbin/nft"))
+	cmd.ExpectSuccess("nft list tables", []byte(""))
+	defer cmd.AssertAllExpectationsMet(t)
+
+	env := NewNetworkEnv(afero.NewMemMapFs(), cmd, "", "", alcaruntime.PlatformLinux)
 	fw, fwType := New(context.Background(), env)
 
-	switch runtime.GOOS {
-	case "darwin":
-		if fw == nil {
-			t.Error("New() on darwin should return non-nil NFTables firewall")
-		}
-		if fwType != TypeNFTables {
-			t.Errorf("New() on darwin should return TypeNFTables, got %v", fwType)
-		}
-	case "linux":
-		// On Linux, depends on nftables availability
-		if fwType == TypeNFTables {
-			if fw == nil {
-				t.Error("New() should return non-nil firewall when TypeNFTables")
-			}
-		} else {
-			if fw != nil {
-				t.Error("New() should return nil firewall when TypeNone")
-			}
-		}
-	default:
-		if fw != nil {
-			t.Errorf("New() on %s should return nil firewall", runtime.GOOS)
-		}
-		if fwType != TypeNone {
-			t.Errorf("New() on %s should return TypeNone, got %v", runtime.GOOS, fwType)
-		}
+	if fw == nil {
+		t.Error("New(PlatformLinux, nft available) should return non-nil firewall")
+	}
+	if fwType != TypeNFTables {
+		t.Errorf("New(PlatformLinux, nft available) should return TypeNFTables, got %v", fwType)
+	}
+}
+
+func TestNew_LinuxWithoutNft(t *testing.T) {
+	cmd := util.NewMockCommandRunner()
+	cmd.ExpectFailure("which nft", fmt.Errorf("not found"))
+
+	env := NewNetworkEnv(afero.NewMemMapFs(), cmd, "", "", alcaruntime.PlatformLinux)
+	fw, fwType := New(context.Background(), env)
+
+	if fw != nil {
+		t.Error("New(PlatformLinux, no nft) should return nil firewall")
+	}
+	if fwType != TypeNone {
+		t.Errorf("New(PlatformLinux, no nft) should return TypeNone, got %v", fwType)
+	}
+}
+
+func TestNew_Darwin(t *testing.T) {
+	// Darwin short-circuits — no nft commands called
+	cmd := util.NewMockCommandRunner()
+
+	env := NewNetworkEnv(afero.NewMemMapFs(), cmd, "", "", alcaruntime.PlatformMacDockerDesktop)
+	fw, fwType := New(context.Background(), env)
+
+	if fw == nil {
+		t.Error("New(darwin) should return non-nil firewall")
+	}
+	if fwType != TypeNFTables {
+		t.Errorf("New(darwin) should return TypeNFTables, got %v", fwType)
 	}
 }
 
