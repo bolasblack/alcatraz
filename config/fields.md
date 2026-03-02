@@ -111,6 +111,35 @@ enter = "[ -f flake.nix ] && exec nix develop"
 - **Default**: `"[ -f flake.nix ] && exec nix develop"`
 - **Notes**: If the command uses `exec`, it replaces the shell process
 
+### How enter interacts with `alca run`
+
+When you run `alca run <command>`, the enter command is **space-concatenated** with your quoted arguments and wrapped in `sh -c`:
+
+```
+sh -c "<enter_command> '<arg1>' '<arg2>'"
+```
+
+This means the enter command must either:
+
+1. **Accept trailing arguments naturally** — e.g., `nix develop --command` treats everything after `--command` as the command to run
+2. **End with a statement separator** — a trailing newline (multi-line string) or semicolon, so user arguments execute as a separate statement
+
+Without a separator, arguments become positional parameters to the last command instead of running independently:
+
+```toml
+# Wrong — 'ls' becomes $1 to the source command, never executes
+[commands]
+enter = ". ~/.bashrc"
+# sh -c ". ~/.bashrc 'ls'"
+
+# Correct — newline separates the statements
+[commands]
+enter = """
+. ~/.bashrc
+"""
+# sh -c ". ~/.bashrc\n'ls'"  →  sources bashrc, then runs ls
+```
+
 ## Command Formats
 
 Commands support both a simple string format and a struct format with merge control.
