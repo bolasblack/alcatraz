@@ -150,6 +150,7 @@ DOCS_BASE_URL := https://bolasblack.github.io/alcatraz
 # Usage: make release-notes VERSION=v0.2.0
 release-notes:
 	@if [ -z "$(VERSION)" ]; then echo "Usage: make release-notes VERSION=v0.2.0"; exit 1; fi
+	@mkdir -p $(OUT_DIR)
 	@CHANGELOG="docs/changelogs/$(VERSION).md"; \
 	if [ ! -f "$$CHANGELOG" ]; then echo "Changelog not found: $$CHANGELOG"; exit 1; fi; \
 	sed '/^---$$/,/^---$$/d' "$$CHANGELOG" \
