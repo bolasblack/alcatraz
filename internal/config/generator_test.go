@@ -147,7 +147,7 @@ func TestGenerateConfig(t *testing.T) {
 func TestGenerateConfigGitignore(t *testing.T) {
 	baseTc := TemplateConfig{
 		Config:    Config{Image: "img"},
-		Gitignore: []string{".alca.local.toml", ".alca.cache/"},
+		Gitignore: []string{".alca/", ".alca.local.toml", ".alca.cache/"},
 	}
 
 	t.Run("creates gitignore when it does not exist", func(t *testing.T) {
@@ -162,6 +162,9 @@ func TestGenerateConfigGitignore(t *testing.T) {
 			t.Fatalf("expected .gitignore to be created: %v", err)
 		}
 		content := string(data)
+		if !strings.Contains(content, ".alca/") {
+			t.Errorf("expected .alca/ in .gitignore, got:\n%s", content)
+		}
 		if !strings.Contains(content, ".alca.local.toml") {
 			t.Errorf("expected .alca.local.toml in .gitignore, got:\n%s", content)
 		}
@@ -184,6 +187,9 @@ func TestGenerateConfigGitignore(t *testing.T) {
 		if !strings.Contains(content, "node_modules/") {
 			t.Errorf("expected original content preserved, got:\n%s", content)
 		}
+		if !strings.Contains(content, ".alca/") {
+			t.Errorf("expected .alca/ in .gitignore, got:\n%s", content)
+		}
 		if !strings.Contains(content, ".alca.local.toml") {
 			t.Errorf("expected .alca.local.toml in .gitignore, got:\n%s", content)
 		}
@@ -194,7 +200,7 @@ func TestGenerateConfigGitignore(t *testing.T) {
 
 	t.Run("does not duplicate existing entries", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
-		afero.WriteFile(fs, "/project/.gitignore", []byte(".alca.local.toml\n.alca.cache/\n"), 0644)
+		afero.WriteFile(fs, "/project/.gitignore", []byte(".alca/\n.alca.local.toml\n.alca.cache/\n"), 0644)
 
 		if err := GenerateConfig(fs, "/project/.alca.toml", baseTc); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -203,6 +209,9 @@ func TestGenerateConfigGitignore(t *testing.T) {
 		data, _ := afero.ReadFile(fs, "/project/.gitignore")
 		content := string(data)
 
+		if strings.Count(content, ".alca/") != 1 {
+			t.Errorf("expected exactly 1 occurrence of .alca/ in:\n%s", content)
+		}
 		if strings.Count(content, ".alca.local.toml") != 1 {
 			t.Errorf("expected exactly 1 occurrence of .alca.local.toml in:\n%s", content)
 		}
@@ -225,8 +234,8 @@ func TestGenerateConfigGitignore(t *testing.T) {
 		if lines[0] != "node_modules/" {
 			t.Errorf("expected first line to be 'node_modules/', got %q", lines[0])
 		}
-		if lines[1] != ".alca.local.toml" {
-			t.Errorf("expected second line to be '.alca.local.toml', got %q", lines[1])
+		if lines[1] != ".alca/" {
+			t.Errorf("expected second line to be '.alca/', got %q", lines[1])
 		}
 	})
 

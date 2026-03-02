@@ -107,7 +107,7 @@ func GetTemplateConfig(template Template) TemplateConfig {
 			},
 			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prebuild, to reduce the time costs on enter",
-			Gitignore: []string{".alca.local.toml", ".alca.mounts/"},
+			Gitignore: []string{".alca.local.toml", ".alca/", ".alca.mounts/"},
 		}
 	case TemplateDebian:
 		return TemplateConfig{
@@ -115,6 +115,8 @@ func GetTemplateConfig(template Template) TemplateConfig {
 				Image: "debian:bookworm-slim",
 				Mounts: []MountConfig{
 					{Source: ".alca.mounts/mise", Target: "/root/.local/share/mise"},
+					{Source: ".alca.mounts/extra-bin", Target: "/extra-bin"},
+					{Source: ".alca.mounts/extra-scripts", Target: "/extra-scripts"},
 				},
 				Commands: Commands{
 					Up: CommandValue{Command: `apt update -y && apt install -y curl
@@ -130,9 +132,13 @@ export PATH="/extra-bin:$PATH"
 ' >> ~/.bashrc
 . ~/.bashrc
 
+[ -x /extra-scripts/source.sh ] && source /extra-scripts/source.sh
+
 mise trust
-mise install`},
-					Enter: CommandValue{Command: `. ~/.bashrc`},
+mise install
+
+[ -x /extra-scripts/init.sh ] && /extra-scripts/init.sh`},
+					Enter: CommandValue{Command: "[ -x /extra-scripts/source.sh ] && source /extra-scripts/source.sh\n. ~/.bashrc\n"},
 				},
 				Envs: map[string]EnvValue{
 					"IS_SANDBOX": {Value: "1"},
@@ -141,7 +147,7 @@ mise install`},
 			},
 			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prepare the environment",
-			Gitignore: []string{".alca.local.toml", ".alca.mounts/"},
+			Gitignore: []string{".alca/", ".alca.local.toml", ".alca.mounts/"},
 		}
 	default:
 		// Intentional fallback: unknown templates default to Nix (tested by TestGenerateConfigUnknownTemplate)
