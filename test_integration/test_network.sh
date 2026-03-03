@@ -11,19 +11,14 @@ test_network_allow_all() {
   local up_output
   up_output=$(run_with_timeout 120 "$ALCA_BIN" up -q 2>&1 || true)
 
-  # Verify actual network connectivity — apt-get makes real HTTP requests.
-  # debian:bookworm-slim has apt but not ping/curl/wget.
+  # Verify actual network connectivity — wget makes a real HTTP request.
+  # alpine:3.21 ships with wget (BusyBox). --spider avoids downloading.
   local net_output exit_code=0
-  net_output=$(run_with_timeout 30 "$ALCA_BIN" run sh -c 'apt-get update -qq 2>&1 | head -5' 2>&1) || exit_code=$?
+  net_output=$(run_with_timeout 30 "$ALCA_BIN" run wget -q --spider https://dl-cdn.alpinelinux.org/alpine/MIRRORS.txt 2>&1) || exit_code=$?
   if [[ $exit_code -eq 0 ]]; then
     pass "network_allow_all: real network connectivity"
   else
-    # apt-get may fail for non-network reasons (repo issues) — check if it made progress
-    if echo "$net_output" | grep -qi "hit\|get\|fetched\|reading"; then
-      pass "network_allow_all: real network connectivity (partial)"
-    else
-      fail "network_allow_all: real network connectivity" "apt-get failed: $net_output"
-    fi
+    fail "network_allow_all: real network connectivity" "wget failed: $net_output"
   fi
 
   # Up output should NOT mention firewall/isolation setup
@@ -54,7 +49,7 @@ test_network_isolation() {
 
   # Config with specific lan-access rules (only allow one address)
   cat > .alca.toml <<'TOML'
-image = "debian:bookworm-slim"
+image = "alpine:3.21"
 
 [network]
 lan-access = ["192.168.1.100:8080"]
@@ -94,16 +89,16 @@ TOML
 
   # Verify internet still works (WAN not blocked by lan-access rules)
   local wan_output wan_exit=0
-  wan_output=$(run_with_timeout 30 "$ALCA_BIN" run sh -c 'apt-get update -qq 2>&1 | head -5' 2>&1) || wan_exit=$?
-  if [[ $wan_exit -eq 0 ]] || echo "$wan_output" | grep -qi "hit\|get\|fetched\|reading"; then
+  wan_output=$(run_with_timeout 30 "$ALCA_BIN" run wget -q --spider https://dl-cdn.alpinelinux.org/alpine/MIRRORS.txt 2>&1) || wan_exit=$?
+  if [[ $wan_exit -eq 0 ]]; then
     pass "network_isolation: internet (WAN) still works"
   else
-    fail "network_isolation: internet (WAN) still works" "apt-get failed: $wan_output"
+    fail "network_isolation: internet (WAN) still works" "wget failed: $wan_output"
   fi
 
   # Verify LAN traffic to non-allowlisted address is blocked.
   # Try reaching 10.255.255.1 (RFC1918, not in our lan-access list).
-  # wget is available in debian:bookworm-slim. --spider avoids downloading.
+  # wget is available in alpine:3.21 (BusyBox). --spider avoids downloading.
   local lan_output lan_exit=0
   lan_output=$(run_with_timeout 10 "$ALCA_BIN" run wget -q --timeout=3 --spider http://10.255.255.1:80 2>&1) || lan_exit=$?
   if [[ $lan_exit -ne 0 ]]; then

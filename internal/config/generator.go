@@ -21,6 +21,8 @@ import (
 type Template string
 
 const (
+	// TemplateAlpine generates an Alpine-based configuration.
+	TemplateAlpine Template = "alpine"
 	// TemplateNix generates a Nix-based configuration.
 	TemplateNix Template = "nix"
 	// TemplateDebian generates a Debian-based configuration.
@@ -109,6 +111,41 @@ func GetTemplateConfig(template Template) TemplateConfig {
 			UpComment: "prebuild, to reduce the time costs on enter",
 			Gitignore: []string{".alca.local.toml", ".alca/", ".alca.mounts/"},
 		}
+	case TemplateAlpine:
+		return TemplateConfig{
+			Config: Config{
+				Image: "alpine:3.21",
+				Mounts: []MountConfig{
+					{Source: ".alca.mounts/mise", Target: "/root/.local/share/mise"},
+					{Source: ".alca.mounts/extra-bin", Target: "/extra-bin"},
+					{Source: ".alca.mounts/extra-scripts", Target: "/extra-scripts"},
+				},
+				Commands: Commands{
+					Up: CommandValue{Command: `apk add --no-cache mise
+
+echo '
+export PATH="/root/.local/share/mise/shims:$PATH"
+export PATH="/extra-bin:$PATH"
+' >> ~/.profile
+. ~/.profile
+
+[ -x /extra-scripts/source.sh ] && . /extra-scripts/source.sh
+
+mise trust -a
+mise install
+
+[ -x /extra-scripts/init.sh ] && /extra-scripts/init.sh`},
+					Enter: CommandValue{Command: "[ -x /extra-scripts/source.sh ] && . /extra-scripts/source.sh\n. ~/.profile"},
+				},
+				Envs: map[string]EnvValue{
+					"IS_SANDBOX": {Value: "1"},
+				},
+				WorkdirExclude: []string{".env"},
+			},
+			Includes:  []string{"./.alca.*.toml"},
+			UpComment: "prepare the environment",
+			Gitignore: []string{".alca/", ".alca.local.toml", ".alca.mounts/"},
+		}
 	case TemplateDebian:
 		return TemplateConfig{
 			Config: Config{
@@ -134,7 +171,7 @@ export PATH="/extra-bin:$PATH"
 
 [ -x /extra-scripts/source.sh ] && source /extra-scripts/source.sh
 
-mise trust
+mise trust -a
 mise install
 
 [ -x /extra-scripts/init.sh ] && /extra-scripts/init.sh`},
@@ -150,8 +187,8 @@ mise install
 			Gitignore: []string{".alca/", ".alca.local.toml", ".alca.mounts/"},
 		}
 	default:
-		// Intentional fallback: unknown templates default to Nix (tested by TestGenerateConfigUnknownTemplate)
-		return GetTemplateConfig(TemplateNix)
+		// Intentional fallback: unknown templates default to Alpine (tested by TestGetTemplateConfigUnknownFallback)
+		return GetTemplateConfig(TemplateAlpine)
 	}
 }
 

@@ -254,9 +254,44 @@ func TestGenerateConfigGitignore(t *testing.T) {
 	})
 }
 
+func TestGetTemplateConfigAlpine(t *testing.T) {
+	tc := GetTemplateConfig(TemplateAlpine)
+
+	if tc.Config.Image != "alpine:3.21" {
+		t.Errorf("expected alpine:3.21 image, got %q", tc.Config.Image)
+	}
+	if len(tc.Config.Mounts) != 3 {
+		t.Errorf("expected 3 mounts, got %d", len(tc.Config.Mounts))
+	}
+	if !strings.Contains(tc.Config.Commands.Up.Command, "apk add") {
+		t.Error("expected apk add in up command")
+	}
+	if !strings.Contains(tc.Config.Commands.Up.Command, "mise install") {
+		t.Error("expected mise install in up command")
+	}
+	if strings.Contains(tc.Config.Commands.Up.Command, "apt") {
+		t.Error("Alpine template must not use apt")
+	}
+	if strings.Contains(tc.Config.Commands.Up.Command, ".bashrc") {
+		t.Error("Alpine template must use .profile, not .bashrc")
+	}
+	if !strings.Contains(tc.Config.Commands.Up.Command, ".profile") {
+		t.Error("expected .profile in up command")
+	}
+	if !strings.Contains(tc.Config.Commands.Enter.Command, ".profile") {
+		t.Error("expected .profile in enter command")
+	}
+	if strings.Contains(tc.Config.Commands.Enter.Command, "source /") {
+		t.Error("Alpine template should use . instead of source (POSIX)")
+	}
+	if tc.Config.WorkdirExclude[0] != ".env" {
+		t.Errorf("expected .env in workdir_exclude, got %v", tc.Config.WorkdirExclude)
+	}
+}
+
 func TestGetTemplateConfigUnknownFallback(t *testing.T) {
 	tc := GetTemplateConfig("unknown")
-	if tc.Config.Image != "nixos/nix" {
-		t.Errorf("expected unknown template to fall back to nix, got image %q", tc.Config.Image)
+	if tc.Config.Image != "alpine:3.21" {
+		t.Errorf("expected unknown template to fall back to alpine, got image %q", tc.Config.Image)
 	}
 }

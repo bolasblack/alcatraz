@@ -77,6 +77,7 @@ func runInitTemplate(ctx context.Context, cwd string) error {
 	err := huh.NewSelect[string]().
 		Title("Select a template").
 		Options(
+			huh.NewOption("Alpine - Lightweight Alpine environment with mise", string(config.TemplateAlpine)),
 			huh.NewOption("Debian - Debian-based environment with mise", string(config.TemplateDebian)),
 			huh.NewOption("Nix - NixOS-based development environment", string(config.TemplateNix)),
 		).

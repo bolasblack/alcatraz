@@ -181,7 +181,7 @@ nft_available() {
 # lan-access = ["*"] skips firewall/nftables — essential for CI.
 write_lifecycle_config() {
   cat > .alca.toml <<'TOML'
-image = "debian:bookworm-slim"
+image = "alpine:3.21"
 
 [network]
 lan-access = ["*"]

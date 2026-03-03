@@ -6,7 +6,7 @@ test_run_enter_command() {
 
   # Config with enter that sets an env var
   cat > .alca.toml <<'TOML'
-image = "debian:bookworm-slim"
+image = "alpine:3.21"
 
 [network]
 lan-access = ["*"]
@@ -31,7 +31,7 @@ test_enter_multiline() {
   setup_test_dir
 
   cat > .alca.toml <<'TOML'
-image = "debian:bookworm-slim"
+image = "alpine:3.21"
 
 [network]
 lan-access = ["*"]
@@ -58,7 +58,7 @@ test_enter_concatenation_regression() {
   setup_test_dir
 
   cat > .alca.toml <<'TOML'
-image = "debian:bookworm-slim"
+image = "alpine:3.21"
 
 [network]
 lan-access = ["*"]

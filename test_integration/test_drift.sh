@@ -9,7 +9,7 @@ test_config_drift() {
 
   # Modify config — change image
   cat > .alca.toml <<'TOML'
-image = "debian:bookworm"
+image = "alpine:3.20"
 
 [network]
 lan-access = ["*"]

@@ -13,7 +13,7 @@ test_mount_persistence() {
   mkdir -p .alca.mounts/data
 
   cat > .alca.toml <<'TOML'
-image = "debian:bookworm-slim"
+image = "alpine:3.21"
 mounts = [".alca.mounts/data:/data"]
 
 [network]
@@ -66,7 +66,7 @@ test_workdir_exclude() {
   echo "visible" > keep-me.txt
 
   cat > .alca.toml <<'TOML'
-image = "debian:bookworm-slim"
+image = "alpine:3.21"
 workdir_exclude = [".env", "node_modules"]
 
 [network]
