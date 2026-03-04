@@ -106,8 +106,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Check for configuration drift and handle rebuild
-	needsRebuild, err := handleConfigDrift(cfg, st, rt, out, force)
+	// Check for configuration drift and handle rebuild.
+	// Only relevant when a container exists — after 'alca down' there's
+	// nothing to rebuild, so skip drift detection and create fresh.
+	needsRebuild, err := handleConfigDrift(ctx, cfg, st, rt, runtimeEnv, cwd, out, force)
 	if err != nil {
 		return err
 	}
@@ -120,8 +122,9 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	// TODO: extract to saveStateIfNeeded(env, tfs, cfg, st, cwd, out) — state persistence
-	// Update state with current config only when rebuilding or first time
-	if needsRebuild || isNew {
+	// Update state with current config when creating fresh, rebuilding, or first time.
+	// "Creating fresh" = container was removed (e.g., alca down) but state.json persists.
+	if needsRebuild || isNew || containerMissing(ctx, rt, runtimeEnv, cwd, st) {
 		st.UpdateConfig(cfg)
 		if err := state.Save(env, cwd, st); err != nil {
 			return fmt.Errorf("failed to save state: %w", err)
@@ -167,9 +170,21 @@ func runUp(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func containerMissing(ctx context.Context, rt runtime.Runtime, runtimeEnv *runtime.RuntimeEnv, cwd string, st *state.State) bool {
+	s, _ := rt.Status(ctx, runtimeEnv, cwd, st)
+	return s.State == runtime.StateNotFound
+}
+
 // handleConfigDrift checks for configuration drift and prompts user if needed.
 // Returns true if rebuild is needed.
-func handleConfigDrift(cfg *config.Config, st *state.State, rt runtime.Runtime, out io.Writer, force bool) (bool, error) {
+// Skips drift detection when no container exists (e.g., after 'alca down') —
+// there's nothing to rebuild, just create fresh with current config.
+func handleConfigDrift(ctx context.Context, cfg *config.Config, st *state.State, rt runtime.Runtime, runtimeEnv *runtime.RuntimeEnv, cwd string, out io.Writer, force bool) (bool, error) {
+	// No container → no drift. Create fresh.
+	if containerMissing(ctx, rt, runtimeEnv, cwd, st) {
+		return false, nil
+	}
+
 	runtimeChanged := st.Runtime != rt.Name()
 	drift := st.DetectConfigDrift(cfg)
 

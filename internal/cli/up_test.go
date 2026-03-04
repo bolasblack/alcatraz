@@ -55,6 +55,117 @@ func (s *stubNetworkHelper) UninstallHelper(_ *network.NetworkEnv, _ network.Pro
 	return &network.PostCommitAction{}, nil
 }
 
+// driftRuntime controls Status return for drift detection tests.
+type driftRuntime struct {
+	runtime.StubRuntime
+	statusState runtime.ContainerState
+}
+
+func (d *driftRuntime) Status(_ context.Context, _ *runtime.RuntimeEnv, _ string, _ *state.State) (runtime.ContainerStatus, error) {
+	return runtime.ContainerStatus{State: d.statusState}, nil
+}
+
+func (d *driftRuntime) Name() string { return "Docker" }
+
+func TestHandleConfigDrift_NoContainer_NoDrift(t *testing.T) {
+	rt := &driftRuntime{statusState: runtime.StateNotFound}
+	st := &state.State{
+		Runtime: "Docker",
+		Config: &config.Config{
+			Image:    "alpine:3.20",
+			Commands: config.Commands{Up: config.CommandValue{Command: "old"}},
+		},
+	}
+	cfg := &config.Config{
+		Image:    "alpine:3.21",
+		Commands: config.Commands{Up: config.CommandValue{Command: "new"}},
+	}
+
+	rebuild, err := handleConfigDrift(context.Background(), cfg, st, rt, nil, "/tmp", nil, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rebuild {
+		t.Error("expected no rebuild when container doesn't exist")
+	}
+}
+
+func TestHandleConfigDrift_RunningContainer_DetectsDrift(t *testing.T) {
+	rt := &driftRuntime{statusState: runtime.StateRunning}
+	st := &state.State{
+		Runtime: "Docker",
+		Config: &config.Config{
+			Image: "alpine:3.20",
+		},
+	}
+	cfg := &config.Config{
+		Image: "alpine:3.21",
+	}
+
+	// force=true so we don't hit promptConfirm
+	rebuild, err := handleConfigDrift(context.Background(), cfg, st, rt, nil, "/tmp", nil, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !rebuild {
+		t.Error("expected rebuild when container exists and config changed")
+	}
+}
+
+func TestHandleConfigDrift_RunningContainer_NoDriftWhenUnchanged(t *testing.T) {
+	rt := &driftRuntime{statusState: runtime.StateRunning}
+	cfg := &config.Config{Image: "alpine:3.21"}
+	st := &state.State{
+		Runtime: "Docker",
+		Config:  cfg,
+	}
+
+	rebuild, err := handleConfigDrift(context.Background(), cfg, st, rt, nil, "/tmp", nil, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rebuild {
+		t.Error("expected no rebuild when config unchanged")
+	}
+}
+
+func TestContainerMissing_UpdatesState(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	env := &util.Env{Fs: fs}
+	cwd := "/project"
+
+	// Simulate state.json with old config (left by previous alca up)
+	oldCfg := &config.Config{Image: "alpine:3.20", Commands: config.Commands{Up: config.CommandValue{Command: "old"}}}
+	st := &state.State{ProjectID: "test-id", ContainerName: "alca-test", Runtime: "Docker", Config: oldCfg}
+	if err := state.Save(env, cwd, st); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	// New config
+	newCfg := &config.Config{Image: "alpine:3.21", Commands: config.Commands{Up: config.CommandValue{Command: "new"}}}
+
+	// containerMissing returns true → state should be updated
+	rt := &driftRuntime{statusState: runtime.StateNotFound}
+	if !containerMissing(context.Background(), rt, nil, cwd, st) {
+		t.Fatal("expected containerMissing=true")
+	}
+
+	// Simulate the save path from runUp
+	st.UpdateConfig(newCfg)
+	if err := state.Save(env, cwd, st); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	// Verify state.json has new config
+	loaded, _ := state.Load(env, cwd)
+	if loaded.Config.Image != "alpine:3.21" {
+		t.Errorf("state not updated: image=%q, want alpine:3.21", loaded.Config.Image)
+	}
+	if loaded.Config.Commands.Up.Command != "new" {
+		t.Errorf("state not updated: up=%q, want 'new'", loaded.Config.Commands.Up.Command)
+	}
+}
+
 func TestExpandAlcaTokensInRules(t *testing.T) {
 	ctx := context.Background()
 	runtimeEnv := &runtime.RuntimeEnv{}
