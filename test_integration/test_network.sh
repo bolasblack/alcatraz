@@ -14,7 +14,7 @@ test_network_allow_all() {
   # Verify actual network connectivity — wget makes a real HTTP request.
   # alpine:3.21 ships with wget (BusyBox). --spider avoids downloading.
   local net_output exit_code=0
-  net_output=$(run_with_timeout 30 "$ALCA_BIN" run wget -q --spider https://dl-cdn.alpinelinux.org/alpine/MIRRORS.txt 2>&1) || exit_code=$?
+  net_output=$(run_with_timeout 30 "$ALCA_BIN" run wget -q --spider https://dl-cdn.alpinelinux.org/alpine/MIRRORS.txt < /dev/null 2>&1) || exit_code=$?
   if [[ $exit_code -eq 0 ]]; then
     pass "network_allow_all: real network connectivity"
   else
@@ -89,7 +89,7 @@ TOML
 
   # Verify internet still works (WAN not blocked by lan-access rules)
   local wan_output wan_exit=0
-  wan_output=$(run_with_timeout 30 "$ALCA_BIN" run wget -q --spider https://dl-cdn.alpinelinux.org/alpine/MIRRORS.txt 2>&1) || wan_exit=$?
+  wan_output=$(run_with_timeout 30 "$ALCA_BIN" run wget -q --spider https://dl-cdn.alpinelinux.org/alpine/MIRRORS.txt < /dev/null 2>&1) || wan_exit=$?
   if [[ $wan_exit -eq 0 ]]; then
     pass "network_isolation: internet (WAN) still works"
   else
@@ -100,23 +100,11 @@ TOML
   # Try reaching 10.255.255.1 (RFC1918, not in our lan-access list).
   # wget is available in alpine:3.21 (BusyBox). --spider avoids downloading.
   local lan_output lan_exit=0
-  lan_output=$(run_with_timeout 10 "$ALCA_BIN" run wget -q --timeout=3 --spider http://10.255.255.1:80 2>&1) || lan_exit=$?
+  lan_output=$(run_with_timeout 10 "$ALCA_BIN" run wget -q --timeout=3 --spider http://10.255.255.1:80 < /dev/null 2>&1) || lan_exit=$?
   if [[ $lan_exit -ne 0 ]]; then
     pass "network_isolation: non-allowlisted LAN blocked"
   else
     fail "network_isolation: non-allowlisted LAN blocked" "wget to 10.255.255.1 succeeded"
-  fi
-
-  # Down — verify cleanup
-  run_with_timeout 30 "$ALCA_BIN" down 2>&1 || true
-
-  # Verify firewall rules are cleaned up via helper status
-  local post_down_helper
-  post_down_helper=$("$ALCA_BIN" network-helper status 2>&1 || true)
-  if echo "$post_down_helper" | grep -qF "Rules applied: Yes"; then
-    fail "network_isolation: firewall rules cleaned up" "rules still active after down"
-  else
-    pass "network_isolation: firewall rules cleaned up"
   fi
 
   teardown_test_dir

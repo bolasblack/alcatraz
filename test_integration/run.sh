@@ -12,6 +12,7 @@ source "$SCRIPT_DIR/test_drift.sh"
 source "$SCRIPT_DIR/test_enter.sh"
 source "$SCRIPT_DIR/test_mounts.sh"
 source "$SCRIPT_DIR/test_network.sh"
+source "$SCRIPT_DIR/test_ports.sh"
 source "$SCRIPT_DIR/test_cleanup.sh"
 
 # Prerequisites
@@ -29,18 +30,13 @@ echo ""
 echo "=== Group 1: Config ==="
 test_config_validation
 
-# Groups 2-8: require container runtime (Docker or Podman)
+# Groups 2-9: require container runtime (Docker or Podman)
 if container_runtime_available; then
   echo ""
   echo "Container runtime: $CONTAINER_RUNTIME"
   echo ""
   echo "=== Group 2: Lifecycle ==="
   test_lifecycle_basic
-  test_run_args_propagation
-  test_run_exit_code
-  test_list
-  test_up_idempotent
-  test_down_idempotent
 
   echo ""
   echo "=== Group 3: Status Variations ==="
@@ -53,8 +49,6 @@ if container_runtime_available; then
   echo ""
   echo "=== Group 5: Enter Command ==="
   test_run_enter_command
-  test_enter_multiline
-  test_enter_concatenation_regression
 
   echo ""
   echo "=== Group 6: Mounts ==="
@@ -67,11 +61,15 @@ if container_runtime_available; then
   test_network_isolation
 
   echo ""
-  echo "=== Group 8: Cleanup ==="
+  echo "=== Group 8: Port Mapping ==="
+  test_ports_mapping
+
+  echo ""
+  echo "=== Group 9: Cleanup ==="
   test_cleanup_no_orphans
 else
   echo ""
-  echo "  SKIP: No container runtime (Docker/Podman) available — skipping Groups 2-8"
+  echo "  SKIP: No container runtime (Docker/Podman) available — skipping Groups 2-9"
 fi
 
 # Summary

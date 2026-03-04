@@ -133,6 +133,19 @@
             fi
           '';
         };
+
+        devShells.integration = pkgs.mkShell {
+          buildInputs = with pkgs; [
+            bashInteractive
+            python312
+            mutagen
+            alca
+          ];
+
+          shellHook = ''
+            export ALCA_BIN="${alca}/bin/alca"
+          '';
+        };
       }
     );
 }

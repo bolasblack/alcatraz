@@ -17,7 +17,7 @@ test_status_not_running() {
   pass "status_not_running: no crash"
 
   # Should indicate container is not running
-  if echo "$output" | grep -qi "not running\|stopped\|not found\|no container"; then
+  if echo "$output" | grep -qi "not running\|stopped\|not found\|no container\|not created"; then
     pass "status_not_running: reports not running"
   else
     fail "status_not_running: reports not running" "output: $output"

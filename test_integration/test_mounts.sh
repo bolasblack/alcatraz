@@ -29,7 +29,7 @@ TOML
   run_with_timeout 120 "$ALCA_BIN" up -q 2>&1 || { fail "mount_persistence: first up" "setup failed"; teardown_test_dir; return; }
 
   # Write data inside container
-  run_with_timeout 30 "$ALCA_BIN" run sh -c 'echo persist > /data/test.txt' 2>&1 || {
+  run_with_timeout 30 "$ALCA_BIN" run sh -c 'echo persist > /data/test.txt' < /dev/null 2>&1 || {
     fail "mount_persistence: write data" "run failed"
     teardown_test_dir
     return
@@ -41,7 +41,7 @@ TOML
 
   # Read data back from container
   local output
-  output=$(run_with_timeout 30 "$ALCA_BIN" run cat /data/test.txt 2>&1)
+  output=$(run_with_timeout 30 "$ALCA_BIN" run cat /data/test.txt < /dev/null 2>&1 || true)
   assert_stdout_contains "$output" "persist" "mount_persistence: data survives restart"
 
   # Verify host file
@@ -83,7 +83,7 @@ TOML
 
   # Excluded files should NOT be visible inside container
   local ls_output
-  ls_output=$(run_with_timeout 30 "$ALCA_BIN" run ls -a /workspace 2>&1)
+  ls_output=$(run_with_timeout 30 "$ALCA_BIN" run ls -a /workspace < /dev/null 2>&1 || true)
 
   if echo "$ls_output" | grep -qF ".env"; then
     fail "workdir_exclude: .env excluded" ".env visible inside container"
