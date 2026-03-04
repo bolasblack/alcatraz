@@ -172,6 +172,11 @@ func (r *dockerCLICompatibleRuntime) buildRunArgs(ctx context.Context, env *Runt
 		}
 	}
 
+	// Add port mappings
+	for _, p := range cfg.Network.Ports {
+		args = append(args, "-p", config.FormatPortArg(p))
+	}
+
 	// Add capability flags (AGD-026)
 	for _, cap := range cfg.Caps.Drop {
 		args = append(args, "--cap-drop", cap)

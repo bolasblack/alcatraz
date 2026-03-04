@@ -480,6 +480,68 @@ includes = [".alca.local.toml"]
 
 See [Extends & Includes](./extends-includes.md) for full documentation including three-layer merge, processing order, and migration guide.
 
+## network.ports
+
+Map container ports to the host machine. Each port entry creates a Docker `-p` flag at container creation time. Port changes trigger a container rebuild (detected via drift detection).
+
+Supports both a simple string format (Docker-style) and an extended object format. Both forms can coexist in the same array.
+
+### String Format
+
+```toml
+[network]
+ports = [
+  "8080",                       # container 8080 → host 8080
+  "3001:3000",                  # container 3000 → host 3001
+  "127.0.0.1:5432:5432",       # container 5432 → host 127.0.0.1:5432
+  "53:53/udp",                  # container 53/udp → host 53/udp
+  "0.0.0.0:8080:80/tcp",       # full form
+]
+```
+
+- **Format**: `[hostIp:]hostPort:containerPort[/protocol]` or just `containerPort`
+- **Single number**: treated as the container port (host port defaults to the same)
+- **Protocol**: append `/tcp` or `/udp` (default: `tcp`)
+
+### Object Format
+
+```toml
+[network]
+ports = [
+  { port = 8080 },                                           # container 8080 → host 8080
+  { port = 3000, hostPort = 3001 },                          # container 3000 → host 3001
+  { port = 5432, hostIp = "127.0.0.1" },                     # container 5432 → host 127.0.0.1:5432
+  { port = 53, protocol = "udp" },                            # container 53/udp → host 53/udp
+  { port = 80, hostIp = "0.0.0.0", hostPort = 8080, protocol = "tcp" },  # full form
+]
+```
+
+| Field      | Type   | Required | Default          | Description                         |
+| ---------- | ------ | -------- | ---------------- | ----------------------------------- |
+| `port`     | int    | Yes      | -                | Container port (1-65535)            |
+| `hostPort` | int    | No       | Same as `port`   | Host port (1-65535)                 |
+| `hostIp`   | string | No       | `""` (all interfaces) | Host IP to bind to             |
+| `protocol` | string | No       | `"tcp"`          | Protocol: `"tcp"` or `"udp"`       |
+
+### Mixed Forms
+
+Both formats can be combined in the same array:
+
+```toml
+[network]
+ports = [
+  "8080",
+  "3001:3000",
+  { port = 9090 },
+  "53:53/udp",
+]
+```
+
+- **Type**: array (strings or objects)
+- **Required**: No
+- **Default**: `[]` (no port mappings)
+- **Notes**: Changing ports triggers a container rebuild since Docker `-p` flags are set at creation time
+
 ## network.lan-access
 
 Control container access to your local network (LAN).

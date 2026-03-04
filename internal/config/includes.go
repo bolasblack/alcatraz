@@ -147,7 +147,7 @@ func rawToConfig(raw RawConfig, expandEnv func(string) (string, error)) (Config,
 		Mounts         RawMountSlice
 		Resources      Resources
 		Envs           RawEnvValueMap
-		Network        Network
+		Network        RawNetwork
 		Caps           RawCaps
 	}
 	_ = rawConfigFields(raw)
@@ -184,6 +184,12 @@ func rawToConfig(raw RawConfig, expandEnv func(string) (string, error)) (Config,
 		return Config{}, fmt.Errorf("commands.enter: %w", err)
 	}
 
+	// Convert raw ports to PortConfig
+	ports, err := parsePorts(raw.Network.Ports)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		Image:          raw.Image,
 		Workdir:        raw.Workdir,
@@ -193,8 +199,11 @@ func rawToConfig(raw RawConfig, expandEnv func(string) (string, error)) (Config,
 		Mounts:         mounts,
 		Resources:      raw.Resources,
 		Envs:           envs,
-		Network:        raw.Network,
-		Caps:           caps,
+		Network: Network{
+			LANAccess: raw.Network.LANAccess,
+			Ports:     ports,
+		},
+		Caps: caps,
 	}, nil
 }
 
@@ -323,6 +332,7 @@ func mergeConfigs(base, overlay Config) Config {
 	result.Envs = maps.Clone(base.Envs)
 	result.Mounts = slices.Clone(base.Mounts)
 	result.Network.LANAccess = slices.Clone(base.Network.LANAccess)
+	result.Network.Ports = slices.Clone(base.Network.Ports)
 
 	// Simple fields: overlay wins if non-empty
 	if overlay.Image != "" {
@@ -366,6 +376,10 @@ func mergeConfigs(base, overlay Config) Config {
 	// Network: deep merge
 	if len(overlay.Network.LANAccess) > 0 {
 		result.Network.LANAccess = append(result.Network.LANAccess, overlay.Network.LANAccess...)
+	}
+	// Ports: overlay replaces if non-empty (complete specification, not append)
+	if len(overlay.Network.Ports) > 0 {
+		result.Network.Ports = overlay.Network.Ports
 	}
 
 	// Caps: overlay wins if non-empty (full replacement, not merge)

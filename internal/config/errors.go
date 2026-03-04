@@ -15,4 +15,8 @@ var (
 	ErrInvalidType        = errors.New("invalid type")
 	ErrUnknownAlcaToken   = errors.New("unknown alca token")
 	ErrInvalidAlcaToken   = errors.New("invalid alca token")
+	ErrInvalidPort        = errors.New("invalid port")
+	ErrInvalidProtocol    = errors.New("invalid protocol")
+	ErrInvalidHostIP      = errors.New("invalid host IP")
+	ErrInvalidPortFormat  = errors.New("invalid port format")
 )

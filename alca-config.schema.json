@@ -2,19 +2,6 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$ref": "#/$defs/RawConfig",
   "$defs": {
-    "Network": {
-      "properties": {
-        "lan-access": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "LAN access configuration (currently only '*' is supported)"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
     "RawCommands": {
       "properties": {
         "up": true,
@@ -128,7 +115,7 @@
           "$ref": "#/$defs/RawEnvValueMap"
         },
         "network": {
-          "$ref": "#/$defs/Network",
+          "$ref": "#/$defs/RawNetwork",
           "description": "Network configuration"
         },
         "caps": {
@@ -236,6 +223,60 @@
       },
       "type": "array",
       "description": "Additional bind mounts"
+    },
+    "RawNetwork": {
+      "properties": {
+        "lan-access": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "LAN access configuration (currently only '*' is supported)"
+        },
+        "ports": {
+          "$ref": "#/$defs/RawPortSlice"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "RawPortSlice": {
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "String format: [hostIp:]hostPort:containerPort[/protocol] or just containerPort"
+          },
+          {
+            "properties": {
+              "port": {
+                "type": "integer",
+                "description": "Container port (required, 1-65535)"
+              },
+              "hostIp": {
+                "type": "string",
+                "description": "Host IP to bind (default: all interfaces)"
+              },
+              "hostPort": {
+                "type": "integer",
+                "description": "Host port (default: same as container port)"
+              },
+              "protocol": {
+                "type": "string",
+                "description": "Protocol: tcp (default) or udp"
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "port"
+            ],
+            "description": "Object format with explicit fields"
+          }
+        ]
+      },
+      "type": "array",
+      "description": "Port mappings (Docker -p flags)"
     },
     "Resources": {
       "properties": {

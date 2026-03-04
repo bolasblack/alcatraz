@@ -138,6 +138,9 @@ func displayConfigDrift(w io.Writer, drift *state.DriftChanges, runtimeChanged b
 		if drift.Envs {
 			_, _ = fmt.Fprintf(w, "  Envs: changed\n")
 		}
+		if drift.Ports {
+			_, _ = fmt.Fprintf(w, "  Ports: changed\n")
+		}
 	}
 
 	return true

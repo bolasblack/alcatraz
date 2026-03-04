@@ -250,7 +250,7 @@ func configToRaw(c Config) RawConfig {
 		Mounts:         mountsToRaw(c.Mounts),
 		Resources:      c.Resources,
 		Envs:           envsToRaw(c.Envs),
-		Network:        c.Network,
+		Network:        networkToRaw(c.Network),
 		Caps:           capsToRaw(c.Caps),
 	}
 }
@@ -287,6 +287,39 @@ func mountsToRaw(mounts []MountConfig) RawMountSlice {
 		}
 	}
 	return raw
+}
+
+// networkToRaw converts Network to RawNetwork for TOML serialization.
+// Ports are kept in object form (map[string]any) for TOML round-trip fidelity.
+func networkToRaw(n Network) RawNetwork {
+	var rawPorts RawPortSlice
+	if len(n.Ports) > 0 {
+		rawPorts = make(RawPortSlice, len(n.Ports))
+		for i, p := range n.Ports {
+			rawPorts[i] = portConfigToMap(p)
+		}
+	}
+	return RawNetwork{
+		LANAccess: n.LANAccess,
+		Ports:     rawPorts,
+	}
+}
+
+// portConfigToMap converts a PortConfig to map[string]any for TOML serialization.
+func portConfigToMap(p PortConfig) map[string]any {
+	m := map[string]any{
+		"port": int64(p.Port),
+	}
+	if p.HostIP != "" {
+		m["hostIp"] = p.HostIP
+	}
+	if p.HostPort != 0 {
+		m["hostPort"] = int64(p.HostPort)
+	}
+	if p.Protocol != "" {
+		m["protocol"] = p.Protocol
+	}
+	return m
 }
 
 // capsToRaw converts Caps to raw format (object mode) for TOML serialization.

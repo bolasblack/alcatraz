@@ -173,10 +173,18 @@ func DefaultEnvs() map[string]EnvValue {
 	}
 }
 
-// Network defines network configuration for the container.
+// Network defines network configuration for the container (resolved form).
 // See AGD-030 for LAN access design decisions.
 type Network struct {
-	LANAccess []string `toml:"lan-access,omitempty" json:"lan-access,omitempty" jsonschema:"description=LAN access configuration (currently only '*' is supported)"`
+	LANAccess []string     `toml:"lan-access,omitempty" json:"lan-access,omitempty" jsonschema:"description=LAN access configuration (currently only '*' is supported)"`
+	Ports     []PortConfig `toml:"ports,omitempty" json:"ports,omitempty" jsonschema:"description=Port mappings (Docker -p flags)"`
+}
+
+// RawNetwork is the raw TOML representation of Network.
+// Uses RawPortSlice to support polymorphic port decoding (string or object).
+type RawNetwork struct {
+	LANAccess []string     `toml:"lan-access,omitempty" json:"lan-access,omitempty" jsonschema:"description=LAN access configuration (currently only '*' is supported)"`
+	Ports     RawPortSlice `toml:"ports,omitempty" json:"ports,omitempty"`
 }
 
 // Caps represents container capability configuration (resolved form).
@@ -380,7 +388,7 @@ type RawConfig struct {
 	Mounts         RawMountSlice  `toml:"mounts,omitempty" json:"mounts,omitempty"`
 	Resources      Resources      `toml:"resources,omitempty" json:"resources,omitempty" jsonschema:"description=Container resource limits"`
 	Envs           RawEnvValueMap `toml:"envs,omitempty" json:"envs,omitempty"`
-	Network        Network        `toml:"network,omitempty" json:"network,omitempty" jsonschema:"description=Network configuration"`
+	Network        RawNetwork     `toml:"network,omitempty" json:"network,omitempty" jsonschema:"description=Network configuration"`
 	Caps           RawCaps        `toml:"caps,omitempty" json:"caps,omitempty"`
 }
 
@@ -420,6 +428,11 @@ func LoadConfig(env *util.Env, path string, expandEnv func(string) (string, erro
 		if err := ValidateAlcaTokens(rule); err != nil {
 			return Config{}, fmt.Errorf("lan-access %q: %w", rule, err)
 		}
+	}
+
+	// Validate port mappings
+	if err := ValidatePorts(cfg.Network.Ports); err != nil {
+		return Config{}, fmt.Errorf("network: %w", err)
 	}
 
 	// Apply default caps if not specified (AGD-026)

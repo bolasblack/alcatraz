@@ -193,6 +193,7 @@ type DriftChanges struct {
 	Mounts         bool // true if changed (slice comparison, no diff detail)
 	Envs           bool // true if changed (map comparison, no diff detail)
 	Caps           bool // true if changed (struct comparison, no diff detail)
+	Ports          bool // true if changed (slice comparison, no diff detail)
 }
 
 // DetectConfigDrift compares the state's config with the given config.
@@ -225,6 +226,23 @@ func enforceConfigFieldCompleteness(cfg *config.Config) {
 		Caps           config.Caps
 	}
 	_ = fields(*cfg)
+
+	type fieldsNetwork struct {
+		LANAccess []string
+		Ports     []config.PortConfig
+	}
+	_ = fieldsNetwork(cfg.Network)
+
+	type fieldsPortConfig struct {
+		Port     int
+		HostIP   string
+		HostPort int
+		Protocol string
+	}
+	for _, p := range cfg.Network.Ports {
+		_ = fieldsPortConfig(p)
+		break // Only need to check one value for type compatibility
+	}
 
 	type fieldsCommands struct {
 		Up    config.CommandValue
@@ -311,6 +329,9 @@ func compareConfigs(old, new *config.Config) *DriftChanges {
 	}
 	if !config.CapsEqual(old.Caps, new.Caps) {
 		c.Caps = true
+	}
+	if !config.PortsEqual(old.Network.Ports, new.Network.Ports) {
+		c.Ports = true
 	}
 
 	if c == (DriftChanges{}) {

@@ -297,6 +297,49 @@ func TestBuildRunArgs(t *testing.T) {
 			contName: "alca-nores",
 			dontWant: []string{"-m", "--cpus"},
 		},
+		{
+			name: "with ports",
+			cfg: &config.Config{
+				Image:   "test-image",
+				Workdir: "/workspace",
+				Mounts:  []config.MountConfig{{Source: ".", Target: "/workspace"}},
+				Network: config.Network{
+					Ports: []config.PortConfig{
+						{Port: 8080},
+						{Port: 3000, HostPort: 3001},
+						{Port: 5432, HostIP: "127.0.0.1"},
+						{Port: 53, Protocol: "udp"},
+					},
+				},
+			},
+			projectDir: "/project",
+			state: &state.State{
+				ProjectID:     "uuid-ports",
+				ContainerName: "alca-ports",
+			},
+			contName: "alca-ports",
+			wantParts: []string{
+				"-p", "8080:8080",
+				"-p", "3001:3000",
+				"-p", "127.0.0.1:5432:5432",
+				"-p", "53:53/udp",
+			},
+		},
+		{
+			name: "no ports when empty",
+			cfg: &config.Config{
+				Image:   "test-image",
+				Workdir: "/workspace",
+				Mounts:  []config.MountConfig{{Source: ".", Target: "/workspace"}},
+			},
+			projectDir: "/project",
+			state: &state.State{
+				ProjectID:     "uuid-noports",
+				ContainerName: "alca-noports",
+			},
+			contName: "alca-noports",
+			dontWant: []string{"-p"},
+		},
 	}
 
 	for _, tt := range tests {
