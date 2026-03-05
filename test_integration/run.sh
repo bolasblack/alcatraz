@@ -26,6 +26,78 @@ ALCA_BIN="$(cd "$(dirname "$ALCA_BIN")" && pwd)/$(basename "$ALCA_BIN")"
 echo "Using alca binary: $ALCA_BIN"
 echo ""
 
+# ---------------------------------------------------------------------------
+# Ensure dockerd is running (CI environments may not have it started)
+# ---------------------------------------------------------------------------
+
+DOCKERD_PID=""
+
+ensure_dockerd() {
+  if docker info >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! command -v dockerd >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "Starting dockerd..."
+  dockerd &>/tmp/dockerd.log &
+  DOCKERD_PID=$!
+  local i=0
+  while [ "$i" -lt 30 ]; do
+    if docker info >/dev/null 2>&1; then
+      echo "dockerd ready (PID: $DOCKERD_PID)"
+      return 0
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+  echo "ERROR: dockerd failed to start within 30s"
+  cat /tmp/dockerd.log
+  exit 1
+}
+
+cleanup_dockerd() {
+  if [ -n "$DOCKERD_PID" ]; then
+    echo "Stopping dockerd (PID: $DOCKERD_PID)..."
+    kill "$DOCKERD_PID" 2>/dev/null || true
+    wait "$DOCKERD_PID" 2>/dev/null || true
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Network helper lifecycle
+# ---------------------------------------------------------------------------
+
+NETWORK_HELPER_INSTALLED_BY_US=""
+
+ensure_network_helper() {
+  # Check if already installed
+  local status_output
+  status_output=$("$ALCA_BIN" network-helper status 2>&1 || true)
+  if echo "$status_output" | grep -qF "Installed: Yes"; then
+    return 0
+  fi
+  # Try to install (needs sudo + nft)
+  if sudo "$ALCA_BIN" network-helper install --yes 2>&1; then
+    echo "Network helper installed for testing"
+    NETWORK_HELPER_INSTALLED_BY_US="true"
+  else
+    echo "Network helper install failed (nftables may not be available)"
+  fi
+}
+
+cleanup_network_helper() {
+  if [ -n "$NETWORK_HELPER_INSTALLED_BY_US" ]; then
+    echo "Uninstalling network helper (installed by test runner)..."
+    sudo "$ALCA_BIN" network-helper uninstall --yes 2>/dev/null || true
+  fi
+}
+
+trap 'cleanup_on_exit; cleanup_network_helper; cleanup_dockerd' EXIT
+
+ensure_dockerd
+ensure_network_helper
+
 # Group 1: Config (no container runtime needed)
 echo "=== Group 1: Config ==="
 test_config_validation
@@ -69,13 +141,13 @@ if container_runtime_available; then
   test_cleanup_no_orphans
 else
   echo ""
-  echo "  SKIP: No container runtime (Docker/Podman) available — skipping Groups 2-9"
+  skip "No container runtime (Docker/Podman) available — skipping Groups 2-9"
 fi
 
 # Summary
 echo ""
 echo "=== Summary ==="
-echo "Passed: $PASSED  Failed: $FAILED"
+echo "Passed: $PASSED  Failed: $FAILED  Skipped: $SKIPPED"
 if [[ $FAILED -gt 0 ]]; then
   for name in "${FAIL_NAMES[@]}"; do
     echo "  - $name"

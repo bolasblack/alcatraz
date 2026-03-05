@@ -4,6 +4,7 @@
 ALCA_BIN="${ALCA_BIN:-./out/bin/alca}"
 PASSED=0
 FAILED=0
+SKIPPED=0
 FAIL_NAMES=()
 CURRENT_TEST_DIR=""
 
@@ -20,6 +21,11 @@ fail() {
   echo "  FAIL: $1 — $2"
   FAILED=$((FAILED + 1))
   FAIL_NAMES+=("$1")
+}
+
+skip() {
+  echo "  SKIP: $1"
+  SKIPPED=$((SKIPPED + 1))
 }
 
 assert_file_exists() {

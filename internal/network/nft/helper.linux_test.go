@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/network/shared"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/util"
@@ -20,22 +19,9 @@ import (
 // NewLinuxHelper Factory Tests
 // =============================================================================
 
-func TestNewLinuxHelper_ReturnsNilWithoutLANAccess(t *testing.T) {
-	cfg := config.Network{LANAccess: nil}
-	h := NewLinuxHelper(cfg, runtime.PlatformLinux)
-	assert.Nil(t, h, "should return nil when no LAN access is configured")
-}
-
-func TestNewLinuxHelper_ReturnsHelperWithLANAccess(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
-	h := NewLinuxHelper(cfg, runtime.PlatformLinux)
-	assert.NotNil(t, h, "should return non-nil helper when LAN access is configured")
-}
-
-func TestNewLinuxHelper_ReturnsNilForWildcard(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"*"}}
-	h := NewLinuxHelper(cfg, runtime.PlatformLinux)
-	assert.Nil(t, h, "should return nil when LAN access is wildcard (no helper needed)")
+func TestNewLinuxHelper_ReturnsNonNilHelper(t *testing.T) {
+	h := NewLinuxHelper()
+	assert.NotNil(t, h, "should return non-nil helper")
 }
 
 // =============================================================================
@@ -208,6 +194,20 @@ func TestLinuxInstallHelper_CreatesDirectory(t *testing.T) {
 
 	exists, _ := afero.DirExists(fs, alcatrazNftDirOnLinux)
 	assert.True(t, exists, "InstallHelper should create the nftables directory")
+}
+
+func TestLinuxInstallHelper_WritesMarkerFile(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
+	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
+	h := &nftLinuxHelper{}
+
+	_, err := h.InstallHelper(env, nil)
+	require.NoError(t, err)
+
+	markerPath := filepath.Join(alcatrazNftDirOnLinux, ".managed-by-alcatraz")
+	exists, _ := afero.Exists(fs, markerPath)
+	assert.True(t, exists, "InstallHelper should write marker file so TransactFs commits the directory")
 }
 
 func TestLinuxInstallHelper_AddsIncludeLine(t *testing.T) {

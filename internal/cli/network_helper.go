@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/network"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/util"
@@ -89,7 +88,7 @@ type networkHelperSetup struct {
 func newNetworkHelperSetup(ctx context.Context) *networkHelperSetup {
 	deps := newCLIDeps()
 	platform := runtime.DetectPlatform(ctx, deps.RuntimeEnv)
-	nh := network.NewNetworkHelper(config.Network{LANAccess: []string{"*"}}, platform)
+	nh := network.NewNetworkHelperForSystem(platform)
 	if nh == nil {
 		return nil
 	}
@@ -197,7 +196,7 @@ func runNetworkHelperStatus(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	deps := newCLIReadDeps()
 	platform := runtime.DetectPlatform(ctx, deps.RuntimeEnv)
-	nh := network.NewNetworkHelper(config.Network{LANAccess: []string{"*"}}, platform)
+	nh := network.NewNetworkHelperForSystem(platform)
 	if nh == nil {
 		fmt.Println("Network helper not applicable on this platform/runtime.")
 		return nil

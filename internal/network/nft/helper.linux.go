@@ -8,16 +8,11 @@ import (
 
 	"github.com/spf13/afero"
 
-	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/network/shared"
-	"github.com/bolasblack/alcatraz/internal/runtime"
 )
 
 // NewLinuxHelper creates a NetworkHelper for Linux.
-func NewLinuxHelper(cfg config.Network, _ runtime.RuntimePlatform) shared.NetworkHelper {
-	if !hasLANAccess(cfg.LANAccess) {
-		return nil
-	}
+func NewLinuxHelper() shared.NetworkHelper {
 	return &nftLinuxHelper{}
 }
 
@@ -93,10 +88,17 @@ func (h *nftLinuxHelper) InstallHelper(env *shared.NetworkEnv, progress shared.P
 
 	fs := env.Fs
 
-	// 1. Create directory
+	// 1. Create directory and write marker file.
+	// TransactFs only tracks files (via trackPath), not empty directories,
+	// so MkdirAll alone won't produce a FileOp during commit.
+	// The marker file forces a FileOp, which implicitly creates the directory.
 	progress("Creating nftables directory %s...\n", alcatrazNftDirOnLinux)
 	if err := fs.MkdirAll(alcatrazNftDirOnLinux, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create directory %s: %w", alcatrazNftDirOnLinux, err)
+	}
+	markerPath := filepath.Join(alcatrazNftDirOnLinux, ".managed-by-alcatraz")
+	if err := afero.WriteFile(fs, markerPath, []byte("# This directory is managed by alcatraz network-helper.\n# Do not remove manually — use: alca network-helper uninstall\n"), 0644); err != nil {
+		return nil, fmt.Errorf("failed to write marker file: %w", err)
 	}
 
 	// 2. Add include line to nftables.conf

@@ -19,7 +19,7 @@ import (
 func TestDetect_LinuxWithNft(t *testing.T) {
 	cmd := util.NewMockCommandRunner()
 	cmd.ExpectSuccess("which nft", []byte("/usr/sbin/nft"))
-	cmd.ExpectSuccess("nft list tables", []byte(""))
+	cmd.ExpectSuccess("sudo nft list tables", []byte(""))
 	defer cmd.AssertAllExpectationsMet(t)
 
 	fwType := Detect(context.Background(), cmd, alcaruntime.PlatformLinux)
@@ -41,7 +41,7 @@ func TestDetect_LinuxWithoutNft(t *testing.T) {
 func TestDetect_LinuxNftNotWorking(t *testing.T) {
 	cmd := util.NewMockCommandRunner()
 	cmd.ExpectSuccess("which nft", []byte("/usr/sbin/nft"))
-	cmd.ExpectFailure("nft list tables", fmt.Errorf("kernel support missing"))
+	cmd.ExpectFailure("sudo nft list tables", fmt.Errorf("kernel support missing"))
 
 	fwType := Detect(context.Background(), cmd, alcaruntime.PlatformLinux)
 	if fwType != TypeNone {
@@ -82,7 +82,7 @@ func TestDetect_UnknownPlatform(t *testing.T) {
 func TestNew_LinuxWithNft(t *testing.T) {
 	cmd := util.NewMockCommandRunner()
 	cmd.ExpectSuccess("which nft", []byte("/usr/sbin/nft"))
-	cmd.ExpectSuccess("nft list tables", []byte(""))
+	cmd.ExpectSuccess("sudo nft list tables", []byte(""))
 	defer cmd.AssertAllExpectationsMet(t)
 
 	env := NewNetworkEnv(afero.NewMemMapFs(), cmd, "", "", alcaruntime.PlatformLinux)
@@ -155,22 +155,22 @@ func TestNewFirewallForType_UnknownType(t *testing.T) {
 }
 
 // =============================================================================
-// newNetworkHelperForPlatform tests
+// NewNetworkHelperForProject tests
 // =============================================================================
 
 func TestNewNetworkHelperForPlatform_DarwinWithLANAccess(t *testing.T) {
 	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
-	helper := newNetworkHelperForPlatform(cfg, alcaruntime.PlatformMacOrbStack)
+	helper := NewNetworkHelperForProject(cfg, alcaruntime.PlatformMacOrbStack)
 	if helper == nil {
-		t.Error("newNetworkHelperForPlatform(darwin, LANAccess) should return non-nil helper")
+		t.Error("NewNetworkHelperForProject(darwin, LANAccess) should return non-nil helper")
 	}
 }
 
 func TestNewNetworkHelperForPlatform_LinuxWithLANAccess(t *testing.T) {
 	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
-	helper := newNetworkHelperForPlatform(cfg, alcaruntime.PlatformLinux)
+	helper := NewNetworkHelperForProject(cfg, alcaruntime.PlatformLinux)
 	if helper == nil {
-		t.Error("newNetworkHelperForPlatform(linux, LANAccess) should return non-nil helper")
+		t.Error("NewNetworkHelperForProject(linux, LANAccess) should return non-nil helper")
 	}
 }
 
@@ -185,9 +185,9 @@ func TestNewNetworkHelperForPlatform_EmptyLANAccess(t *testing.T) {
 
 	for _, platform := range platforms {
 		t.Run(string(platform), func(t *testing.T) {
-			helper := newNetworkHelperForPlatform(cfg, platform)
+			helper := NewNetworkHelperForProject(cfg, platform)
 			if helper != nil {
-				t.Errorf("newNetworkHelperForPlatform(%s, no LANAccess) should return nil, got %v", platform, helper)
+				t.Errorf("NewNetworkHelperForProject(%s, no LANAccess) should return nil, got %v", platform, helper)
 			}
 		})
 	}
@@ -195,16 +195,16 @@ func TestNewNetworkHelperForPlatform_EmptyLANAccess(t *testing.T) {
 
 func TestNewNetworkHelperForPlatform_UnsupportedPlatform(t *testing.T) {
 	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
-	helper := newNetworkHelperForPlatform(cfg, alcaruntime.RuntimePlatform("unknown-os"))
+	helper := NewNetworkHelperForProject(cfg, alcaruntime.RuntimePlatform("unknown-os"))
 	if helper != nil {
-		t.Errorf("newNetworkHelperForPlatform(unsupported) should return nil, got %v", helper)
+		t.Errorf("NewNetworkHelperForProject(unsupported) should return nil, got %v", helper)
 	}
 }
 
 func TestNewNetworkHelperForPlatform_DockerDesktopWithLANAccess(t *testing.T) {
 	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
-	helper := newNetworkHelperForPlatform(cfg, alcaruntime.PlatformMacDockerDesktop)
+	helper := NewNetworkHelperForProject(cfg, alcaruntime.PlatformMacDockerDesktop)
 	if helper == nil {
-		t.Error("newNetworkHelperForPlatform(docker-desktop, LANAccess) should return non-nil helper")
+		t.Error("NewNetworkHelperForProject(docker-desktop, LANAccess) should return non-nil helper")
 	}
 }

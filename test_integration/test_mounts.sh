@@ -54,7 +54,7 @@ TOML
 
 test_workdir_exclude() {
   if ! mutagen_available; then
-    echo "  SKIP: test_workdir_exclude — Mutagen not installed"
+    skip "test_workdir_exclude — Mutagen not installed"
     return
   fi
 

@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/network/darwin/vmhelper"
 	"github.com/bolasblack/alcatraz/internal/network/shared"
 	"github.com/bolasblack/alcatraz/internal/runtime"
@@ -21,28 +20,9 @@ import (
 // NewDarwinHelper Tests
 // =============================================================================
 
-func TestNewDarwinHelper_ReturnsNilWhenNoLANAccess(t *testing.T) {
-	cfg := config.Network{LANAccess: nil}
-	helper := NewDarwinHelper(cfg, runtime.PlatformMacOrbStack)
-	assert.Nil(t, helper, "NewDarwinHelper should return nil when LANAccess is nil")
-}
-
-func TestNewDarwinHelper_ReturnsNilWhenLANAccessEmpty(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{}}
-	helper := NewDarwinHelper(cfg, runtime.PlatformMacOrbStack)
-	assert.Nil(t, helper, "NewDarwinHelper should return nil when LANAccess is empty")
-}
-
-func TestNewDarwinHelper_ReturnsHelperWhenLANAccessPresent(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
-	helper := NewDarwinHelper(cfg, runtime.PlatformMacOrbStack)
-	assert.NotNil(t, helper, "NewDarwinHelper should return non-nil when LANAccess is configured")
-}
-
-func TestNewDarwinHelper_ReturnsNilWhenLANAccessWildcard(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"*"}}
-	helper := NewDarwinHelper(cfg, runtime.PlatformMacOrbStack)
-	assert.Nil(t, helper, "NewDarwinHelper should return nil when LANAccess is wildcard (no helper needed)")
+func TestNewDarwinHelper_ReturnsNonNilHelper(t *testing.T) {
+	helper := NewDarwinHelper(runtime.PlatformMacOrbStack)
+	assert.NotNil(t, helper, "NewDarwinHelper should return non-nil helper")
 }
 
 func TestNewDarwinHelper_UsesPlatformForRuleset(t *testing.T) {
@@ -370,8 +350,7 @@ func TestDarwinUninstallHelper_AcceptsNilProgress(t *testing.T) {
 
 func newTestDarwinHelper(t *testing.T) shared.NetworkHelper {
 	t.Helper()
-	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
-	helper := NewDarwinHelper(cfg, runtime.PlatformMacOrbStack)
+	helper := NewDarwinHelper(runtime.PlatformMacOrbStack)
 	require.NotNil(t, helper)
 	return helper
 }

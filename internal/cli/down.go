@@ -95,7 +95,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	// Network cleanup
-	nh := network.NewNetworkHelper(cfg.Network, platform)
+	nh := network.NewNetworkHelperForProject(cfg.Network, platform)
 	if nh != nil {
 		if err := nh.Teardown(networkEnv, cwd); err != nil {
 			util.ProgressStep(out, "Warning: failed to cleanup network: %v\n", err)

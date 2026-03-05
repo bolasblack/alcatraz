@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/afero"
 
-	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/network/darwin/vmhelper"
 	"github.com/bolasblack/alcatraz/internal/network/shared"
 	"github.com/bolasblack/alcatraz/internal/runtime"
@@ -24,11 +23,7 @@ type nftDarwinHelper struct {
 var _ shared.NetworkHelper = (*nftDarwinHelper)(nil)
 
 // NewDarwinHelper creates a NetworkHelper for macOS.
-// Returns nil if no LAN access is configured.
-func NewDarwinHelper(cfg config.Network, platform runtime.RuntimePlatform) shared.NetworkHelper {
-	if !hasLANAccess(cfg.LANAccess) {
-		return nil
-	}
+func NewDarwinHelper(platform runtime.RuntimePlatform) shared.NetworkHelper {
 	return &nftDarwinHelper{platform: platform}
 }
 

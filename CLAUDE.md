@@ -86,6 +86,18 @@ func (s *MyStruct) Equals(other *MyStruct) bool {
 
 This ensures adding a new field to the struct will cause a compile error, forcing review of the comparison logic.
 
+### Constructor Discipline
+
+When a `NewXxx()` constructor exists for a type, ALL creation of that type must go through the constructor. Never construct the struct directly. The constructor is the contract — it ensures proper initialization, validation, and encapsulation.
+
+```go
+// Good — uses constructor
+helper := NewHelperForProject(cfg, platform)
+
+// Bad — bypasses constructor
+helper := &nftLinuxHelper{cfg: cfg}
+```
+
 ### Compile-Time Interface Assertions
 
 When a concrete type implements an interface, add a compile-time assertion at package level to guarantee it:

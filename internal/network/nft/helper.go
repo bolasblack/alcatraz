@@ -6,13 +6,23 @@ import (
 	"github.com/bolasblack/alcatraz/internal/runtime"
 )
 
-// NewHelper creates a platform-specific NetworkHelper based on the runtime platform.
-func NewHelper(cfg config.Network, platform runtime.RuntimePlatform) shared.NetworkHelper {
+// NewHelperForProject creates a platform-specific NetworkHelper based on the runtime platform.
+func NewHelperForProject(cfg config.Network, platform runtime.RuntimePlatform) shared.NetworkHelper {
+	if !hasLANAccess(cfg.LANAccess) {
+		return nil
+	}
+	return NewHelperForSystem(platform)
+}
+
+// NewHelperForSystem creates a NetworkHelper for system-level operations
+// (install/uninstall/status). Unlike NewHelperForProject, this does not check LANAccess
+// config — system operations are platform-level, not project-level.
+func NewHelperForSystem(platform runtime.RuntimePlatform) shared.NetworkHelper {
 	if runtime.IsDarwin(platform) {
-		return NewDarwinHelper(cfg, platform)
+		return NewDarwinHelper(platform)
 	}
 	if platform == runtime.PlatformLinux {
-		return NewLinuxHelper(cfg, platform)
+		return NewLinuxHelper()
 	}
 	return nil
 }

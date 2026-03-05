@@ -25,9 +25,6 @@ jobs:
       - name: Load nftables kernel module
         run: sudo modprobe nf_tables
 
-      - name: Install network helper
-        run: nix develop .#integration --command bash -c 'sudo "$ALCA_BIN" network-helper install --yes'
-
       - name: Run integration tests
         env:
           CONTAINER_RUNTIME: docker

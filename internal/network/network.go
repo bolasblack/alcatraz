@@ -81,10 +81,16 @@ func New(ctx context.Context, env *NetworkEnv) (Firewall, Type) {
 	return newFirewallForType(t, env), t
 }
 
-// NewNetworkHelper creates a NetworkHelper for the given platform and runtime.
-// Returns nil if network isolation is not needed.
-func NewNetworkHelper(cfg config.Network, platform alcaruntime.RuntimePlatform) NetworkHelper {
-	return newNetworkHelperForPlatform(cfg, platform)
+// NewNetworkHelperForProject creates a NetworkHelper for per-project use.
+// Returns nil if network isolation is not needed (wildcard or empty LANAccess).
+func NewNetworkHelperForProject(cfg config.Network, platform alcaruntime.RuntimePlatform) NetworkHelper {
+	return nft.NewHelperForProject(cfg, platform)
+}
+
+// NewNetworkHelperForSystem creates a NetworkHelper for system-level operations.
+// This is for install/uninstall/status commands which are platform-level, not project-level.
+func NewNetworkHelperForSystem(platform alcaruntime.RuntimePlatform) NetworkHelper {
+	return nft.NewHelperForSystem(platform)
 }
 
 // commandExists checks if a command is available in PATH.
@@ -95,7 +101,7 @@ func commandExists(ctx context.Context, cmd util.CommandRunner, name string) boo
 
 // nftablesWorking checks if nftables kernel support is available.
 func nftablesWorking(ctx context.Context, cmd util.CommandRunner) bool {
-	_, err := cmd.RunQuiet(ctx, "nft", "list", "tables")
+	_, err := cmd.SudoRunQuiet(ctx, "nft", "list", "tables")
 	return err == nil
 }
 
@@ -107,9 +113,4 @@ func newFirewallForType(t Type, env *NetworkEnv) Firewall {
 	default:
 		return nil
 	}
-}
-
-// newNetworkHelperForPlatform creates a platform-specific NetworkHelper.
-func newNetworkHelperForPlatform(cfg config.Network, platform alcaruntime.RuntimePlatform) shared.NetworkHelper {
-	return nft.NewHelper(cfg, platform)
 }

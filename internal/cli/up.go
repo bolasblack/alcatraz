@@ -99,7 +99,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	networkEnv := network.NewNetworkEnv(tfs, deps.CmdRunner, cwd, st.ProjectID, platform)
 
 	// Network helper (handles all platform-specific logic)
-	nh := network.NewNetworkHelper(cfg.Network, platform)
+	nh := network.NewNetworkHelperForProject(cfg.Network, platform)
 	if nh != nil {
 		if err := setupNetwork(ctx, nh, networkEnv, env, tfs, out); err != nil {
 			return err
