@@ -36,6 +36,7 @@ test_ports_mapping() {
   setup_test_dir
   cat > .alca.toml <<'TOML'
 image = "alpine:3.21"
+runtime = "docker"
 
 [network]
 lan-access = ["*"]

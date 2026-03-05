@@ -7,6 +7,7 @@ test_config_validation() {
   # Valid config — alca status should parse without error
   cat > .alca.toml <<'TOML'
 image = "alpine:3.21"
+runtime = "docker"
 
 [commands]
 up = "true"

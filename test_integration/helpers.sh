@@ -182,6 +182,7 @@ nft_available() {
 write_lifecycle_config() {
   cat > .alca.toml <<'TOML'
 image = "alpine:3.21"
+runtime = "docker"
 
 [network]
 lan-access = ["*"]

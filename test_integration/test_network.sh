@@ -50,6 +50,7 @@ test_network_isolation() {
   # Config with specific lan-access rules (only allow one address)
   cat > .alca.toml <<'TOML'
 image = "alpine:3.21"
+runtime = "docker"
 
 [network]
 lan-access = ["192.168.1.100:8080"]

@@ -10,6 +10,7 @@ test_config_drift() {
   # Modify config — change image
   cat > .alca.toml <<'TOML'
 image = "alpine:3.20"
+runtime = "docker"
 
 [network]
 lan-access = ["*"]

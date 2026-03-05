@@ -7,6 +7,7 @@ test_run_enter_command() {
   # Config with enter that sets an env var
   cat > .alca.toml <<'TOML'
 image = "alpine:3.21"
+runtime = "docker"
 
 [network]
 lan-access = ["*"]

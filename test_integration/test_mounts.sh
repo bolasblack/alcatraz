@@ -14,6 +14,7 @@ test_mount_persistence() {
 
   cat > .alca.toml <<'TOML'
 image = "alpine:3.21"
+runtime = "docker"
 mounts = [".alca.mounts/data:/data"]
 
 [network]
@@ -67,6 +68,7 @@ test_workdir_exclude() {
 
   cat > .alca.toml <<'TOML'
 image = "alpine:3.21"
+runtime = "docker"
 workdir_exclude = [".env", "node_modules"]
 
 [network]

@@ -20,6 +20,8 @@
           config.allowUnfree = true;
         };
 
+        alcaVersion = "0.1.0";
+
         # Single source of truth for supported systems
         supportedSystems = {
           "x86_64-linux" = {
@@ -47,7 +49,7 @@
 
         alca = pkgs.buildGoModule {
           pname = "alca";
-          version = "0.1.0";
+          version = alcaVersion;
 
           src = ./.;
 
