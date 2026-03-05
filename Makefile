@@ -161,12 +161,27 @@ release-notes:
 
 release-patch:
 	@if ! command -v svu >/dev/null 2>&1; then echo "svu not found. Install: mise install"; exit 1; fi
-	@VERSION=$$(svu patch) && git tag -a $$VERSION -m "Release $$VERSION" && git push origin $$VERSION
+	@VERSION=$$(svu patch) && \
+		sed -i "s/alcaVersion = \".*\"/alcaVersion = \"$${VERSION#v}\"/" flake.nix && \
+		git add flake.nix && \
+		git commit -m "Release $$VERSION" && \
+		git tag -a $$VERSION -m "Release $$VERSION" && \
+		git push origin HEAD $$VERSION
 
 release-minor:
 	@if ! command -v svu >/dev/null 2>&1; then echo "svu not found. Install: mise install"; exit 1; fi
-	@VERSION=$$(svu minor) && git tag -a $$VERSION -m "Release $$VERSION" && git push origin $$VERSION
+	@VERSION=$$(svu minor) && \
+		sed -i "s/alcaVersion = \".*\"/alcaVersion = \"$${VERSION#v}\"/" flake.nix && \
+		git add flake.nix && \
+		git commit -m "Release $$VERSION" && \
+		git tag -a $$VERSION -m "Release $$VERSION" && \
+		git push origin HEAD $$VERSION
 
 release-major:
 	@if ! command -v svu >/dev/null 2>&1; then echo "svu not found. Install: mise install"; exit 1; fi
-	@VERSION=$$(svu major) && git tag -a $$VERSION -m "Release $$VERSION" && git push origin $$VERSION
+	@VERSION=$$(svu major) && \
+		sed -i "s/alcaVersion = \".*\"/alcaVersion = \"$${VERSION#v}\"/" flake.nix && \
+		git add flake.nix && \
+		git commit -m "Release $$VERSION" && \
+		git tag -a $$VERSION -m "Release $$VERSION" && \
+		git push origin HEAD $$VERSION
