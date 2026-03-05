@@ -41,7 +41,7 @@ network_helper_installed() {
 
 test_network_isolation() {
   if ! network_helper_installed; then
-    echo "  SKIP: test_network_isolation — network helper not installed"
+    skip "test_network_isolation — network helper not installed"
     return
   fi
 
@@ -70,19 +70,15 @@ TOML
     teardown_test_dir
     return
   fi
+  pass "network_isolation: alca up with isolation config"
 
-  # Verify isolation was applied (check up output for confirmation)
-  if echo "$up_output" | grep -qi "isolation\|firewall\|rules"; then
+  # Verify firewall rules are actually applied (real system state check)
+  local helper_output
+  helper_output=$("$ALCA_BIN" network-helper status 2>&1 || true)
+  if echo "$helper_output" | grep -qF "Rules applied: Yes"; then
     pass "network_isolation: firewall rules applied"
   else
-    # Also check via network-helper status for active rules
-    local helper_output
-    helper_output=$("$ALCA_BIN" network-helper status 2>&1 || true)
-    if echo "$helper_output" | grep -qF "Rules applied: Yes"; then
-      pass "network_isolation: firewall rules applied"
-    else
-      fail "network_isolation: firewall rules applied" "no evidence of rules in up output or helper status"
-    fi
+    fail "network_isolation: firewall rules applied" "network-helper status: $helper_output"
   fi
 
   # lan-access blocks RFC1918 (LAN) traffic except allowlisted addresses.
@@ -97,15 +93,19 @@ TOML
     fail "network_isolation: internet (WAN) still works" "wget failed: $wan_output"
   fi
 
-  # Verify LAN traffic to non-allowlisted address is blocked.
-  # Try reaching 10.255.255.1 (RFC1918, not in our lan-access list).
-  # wget is available in alpine:3.21 (BusyBox). --spider avoids downloading.
-  local lan_output lan_exit=0
-  lan_output=$(run_with_timeout 10 "$ALCA_BIN" run wget -q --timeout=3 --spider http://10.255.255.1:80 < /dev/null 2>&1) || lan_exit=$?
-  if [[ $lan_exit -ne 0 ]]; then
-    pass "network_isolation: non-allowlisted LAN blocked"
+  # Verify LAN gateway is blocked (real behavioral test).
+  local gw_ip
+  gw_ip=$(ip route | awk '/default/ {print $3}')
+  if [[ -n "$gw_ip" ]]; then
+    local lan_output lan_exit=0
+    lan_output=$(run_with_timeout 10 "$ALCA_BIN" run ping -c 1 -W 3 "$gw_ip" < /dev/null 2>&1) || lan_exit=$?
+    if [[ $lan_exit -ne 0 ]]; then
+      pass "network_isolation: LAN gateway blocked"
+    else
+      fail "network_isolation: LAN gateway blocked" "ping to gateway $gw_ip succeeded"
+    fi
   else
-    fail "network_isolation: non-allowlisted LAN blocked" "wget to 10.255.255.1 succeeded"
+    skip "network_isolation: LAN gateway blocked — could not determine gateway IP"
   fi
 
   teardown_test_dir

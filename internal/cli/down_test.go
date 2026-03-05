@@ -74,7 +74,7 @@ func TestCleanupFirewall_StatusError(t *testing.T) {
 	// Mock command runner where nft is available but runtime.Status fails
 	cmd := util.NewMockCommandRunner()
 	cmd.ExpectSuccess("which nft", []byte("/usr/sbin/nft"))
-	cmd.ExpectSuccess("nft list tables", []byte(""))
+	cmd.ExpectSuccess("sudo nft list tables", []byte(""))
 	defer cmd.AssertAllExpectationsMet(t)
 
 	fs := afero.NewMemMapFs()
@@ -100,7 +100,7 @@ func TestCleanupFirewall_StatusError(t *testing.T) {
 func TestCleanupFirewall_ContainerNotFound(t *testing.T) {
 	cmd := util.NewMockCommandRunner()
 	cmd.ExpectSuccess("which nft", []byte("/usr/sbin/nft"))
-	cmd.ExpectSuccess("nft list tables", []byte(""))
+	cmd.ExpectSuccess("sudo nft list tables", []byte(""))
 	defer cmd.AssertAllExpectationsMet(t)
 
 	fs := afero.NewMemMapFs()

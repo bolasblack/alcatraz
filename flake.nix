@@ -187,6 +187,7 @@
         devShells.integration = pkgs.mkShell {
           buildInputs = [
             pkgs.bashInteractive
+            pkgs.wget
             pkgs.python312
             mutagen
             alca

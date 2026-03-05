@@ -64,38 +64,32 @@ cleanup_dockerd() {
   fi
 }
 
-# ---------------------------------------------------------------------------
-# Network helper lifecycle
-# ---------------------------------------------------------------------------
-
-NETWORK_HELPER_INSTALLED_BY_US=""
-
-ensure_network_helper() {
-  # Check if already installed
-  local status_output
-  status_output=$("$ALCA_BIN" network-helper status 2>&1 || true)
-  if echo "$status_output" | grep -qF "Installed: Yes"; then
-    return 0
-  fi
-  # Try to install (needs sudo + nft)
-  if sudo "$ALCA_BIN" network-helper install --yes 2>&1; then
-    echo "Network helper installed for testing"
-    NETWORK_HELPER_INSTALLED_BY_US="true"
-  else
-    echo "Network helper install failed (nftables may not be available)"
-  fi
-}
-
-cleanup_network_helper() {
-  if [ -n "$NETWORK_HELPER_INSTALLED_BY_US" ]; then
-    echo "Uninstalling network helper (installed by test runner)..."
-    sudo "$ALCA_BIN" network-helper uninstall --yes 2>/dev/null || true
-  fi
-}
-
 trap 'cleanup_on_exit; cleanup_network_helper; cleanup_dockerd' EXIT
 
 ensure_dockerd
+
+# ---------------------------------------------------------------------------
+# Ensure network helper is installed (required for network isolation tests)
+# ---------------------------------------------------------------------------
+
+ensure_network_helper() {
+  if ! container_runtime_available; then
+    return 0
+  fi
+  if "$ALCA_BIN" network-helper status 2>&1 | grep -qF "Installed: Yes"; then
+    return 0
+  fi
+  echo "Installing network helper..."
+  sudo "$ALCA_BIN" network-helper install --yes 2>&1 || true
+}
+
+cleanup_network_helper() {
+  if ! container_runtime_available; then
+    return 0
+  fi
+  sudo "$ALCA_BIN" network-helper uninstall --yes 2>/dev/null || true
+}
+
 ensure_network_helper
 
 # Group 1: Config (no container runtime needed)

@@ -258,7 +258,7 @@ func TestLinuxInstallHelper_ReturnsPostCommitAction(t *testing.T) {
 	assert.NotNil(t, action.Run, "PostCommitAction.Run should not be nil")
 }
 
-func TestLinuxInstallHelper_PostCommitReloadsNftables(t *testing.T) {
+func TestLinuxInstallHelper_PostCommitVerifiesNftables(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
@@ -271,13 +271,13 @@ func TestLinuxInstallHelper_PostCommitReloadsNftables(t *testing.T) {
 	require.NoError(t, err)
 
 	mockCmd.AssertCalled(t, "systemctl enable nftables.service")
-	mockCmd.AssertCalled(t, "nft -f "+nftablesConfPathOnLinux)
+	mockCmd.AssertCalled(t, "nft list tables")
 }
 
-func TestLinuxInstallHelper_PostCommitReturnsErrorOnNftFailure(t *testing.T) {
+func TestLinuxInstallHelper_PostCommitReturnsErrorWhenNftUnavailable(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	mockCmd.ExpectFailure("nft -f "+nftablesConfPathOnLinux, assert.AnError)
+	mockCmd.ExpectFailure("nft list tables", assert.AnError)
 	env := shared.NewNetworkEnv(fs, mockCmd, "", "", runtime.PlatformLinux)
 	h := &nftLinuxHelper{}
 
@@ -286,7 +286,7 @@ func TestLinuxInstallHelper_PostCommitReturnsErrorOnNftFailure(t *testing.T) {
 
 	err = action.Run(context.Background(), nil)
 	assert.Error(t, err, "PostCommitAction should propagate nft reload error")
-	assert.Contains(t, err.Error(), "failed to reload nftables")
+	assert.Contains(t, err.Error(), "nftables not available")
 }
 
 func TestLinuxInstallHelper_AcceptsNilProgress(t *testing.T) {

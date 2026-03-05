@@ -119,11 +119,15 @@ func (h *nftLinuxHelper) InstallHelper(env *shared.NetworkEnv, progress shared.P
 			progress("Enabling nftables.service...\n")
 			_, _ = cmd.RunQuiet(ctx, "systemctl", "enable", "nftables.service")
 
-			// Reload nftables configuration
-			progress("Reloading nftables configuration...\n")
-			output, err := cmd.RunQuiet(ctx, "nft", "-f", nftablesConfPathOnLinux)
+			// Verify nftables is functional (read-only, no side effects).
+			// We intentionally do NOT reload /etc/nftables.conf here because
+			// distro defaults include "flush ruleset" which destroys Docker's
+			// iptables-nft chains. Individual rule files are loaded by
+			// ApplyRules when containers start.
+			progress("Verifying nftables is available...\n")
+			output, err := cmd.RunQuiet(ctx, "nft", "list", "tables")
 			if err != nil {
-				return fmt.Errorf("failed to reload nftables: %w: %s", err, strings.TrimSpace(string(output)))
+				return fmt.Errorf("nftables not available: %w: %s", err, strings.TrimSpace(string(output)))
 			}
 			return nil
 		},
