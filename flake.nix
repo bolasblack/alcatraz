@@ -20,7 +20,7 @@
           config.allowUnfree = true;
         };
 
-        alcaVersion = "0.1.0";
+        alcaVersion = "0.2.1";
 
         # Single source of truth for supported systems
         supportedSystems = {
@@ -46,6 +46,54 @@
         systemInfo = supportedSystems.${system} or (throw "Unsupported system: ${system}");
         makeTarget = systemInfo.target;
         binaryName = systemInfo.bin;
+
+        # Pin mutagen to 0.18.1+ (nixpkgs has 0.18.0 which has a protocol handshake bug).
+        # Must override postInstall because the original uses `rec {}` — the agents
+        # store path is baked into postInstall at definition time, not at override time.
+        mutagen =
+          (pkgs.mutagen.override {
+            buildGoModule =
+              args:
+              pkgs.buildGoModule (
+                args
+                // {
+                  vendorHash = "sha256-RVVUeNfp/HWd3/5uCyaDGw6bXFJvfomhu//829jO+qE=";
+                }
+              );
+          }).overrideAttrs
+            (old: rec {
+              version = "0.18.1";
+              src = pkgs.fetchFromGitHub {
+                owner = "mutagen-io";
+                repo = "mutagen";
+                rev = "v${version}";
+                hash = "sha256-eT1B2ifs1BA2wcVyz9C9F8YoSbGcpGghu5Z3UrjfBOc=";
+              };
+              agents = pkgs.fetchzip {
+                name = "mutagen-agents-${version}";
+                url = "https://github.com/mutagen-io/mutagen/releases/download/v${version}/mutagen_linux_amd64_v${version}.tar.gz";
+                stripRoot = false;
+                postFetch = ''
+                  rm $out/mutagen
+                '';
+                hash = "sha256-ltObD3MCSYE7IJaEDyB35CqmtUKintsaD0sMQdFAfYY=";
+              };
+              postInstall = ''
+                install -d $out/libexec
+                ln -s ${agents}/mutagen-agents.tar.gz $out/libexec/
+
+                $out/bin/mutagen generate \
+                  --bash-completion-script mutagen.bash \
+                  --fish-completion-script mutagen.fish \
+                  --zsh-completion-script mutagen.zsh
+
+                installShellCompletion \
+                  --cmd mutagen \
+                  --bash mutagen.bash \
+                  --fish mutagen.fish \
+                  --zsh mutagen.zsh
+              '';
+            });
 
         alca = pkgs.buildGoModule {
           pname = "alca";
@@ -137,9 +185,9 @@
         };
 
         devShells.integration = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            bashInteractive
-            python312
+          buildInputs = [
+            pkgs.bashInteractive
+            pkgs.python312
             mutagen
             alca
           ];

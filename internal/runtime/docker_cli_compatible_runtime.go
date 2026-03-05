@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -148,6 +149,8 @@ func (r *dockerCLICompatibleRuntime) buildRunArgs(ctx context.Context, env *Runt
 		source := mount.Source
 		if source == "." {
 			source = projectDir
+		} else if !filepath.IsAbs(source) {
+			source = filepath.Join(projectDir, source)
 		}
 		mountStr := fmt.Sprintf("%s:%s", source, mount.Target)
 		if mount.Readonly {
@@ -246,6 +249,8 @@ func (r *dockerCLICompatibleRuntime) setupMutagenSyncs(ctx context.Context, env 
 		source := mount.Source
 		if source == "." {
 			source = projectDir
+		} else if !filepath.IsAbs(source) {
+			source = filepath.Join(projectDir, source)
 		}
 
 		util.ProgressStep(progressOut, "Setting up Mutagen sync for %s -> %s\n", source, mount.Target)

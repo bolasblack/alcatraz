@@ -69,6 +69,8 @@ var networkHelperStatusCmd = &cobra.Command{
 }
 
 func init() {
+	networkHelperInstallCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
+	networkHelperUninstallCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 	networkHelperCmd.AddCommand(networkHelperInstallCmd)
 	networkHelperCmd.AddCommand(networkHelperUninstallCmd)
 	networkHelperCmd.AddCommand(networkHelperStatusCmd)
@@ -120,7 +122,8 @@ func runNetworkHelperInstall(cmd *cobra.Command, args []string) error {
 
 	// Confirmation prompt
 	fmt.Println("This will install the network helper to manage firewall rules.")
-	if !promptConfirm("Continue?") {
+	yes, _ := cmd.Flags().GetBool("yes")
+	if !yes && !promptConfirm("Continue?") {
 		return nil
 	}
 
@@ -164,7 +167,8 @@ func runNetworkHelperUninstall(cmd *cobra.Command, args []string) error {
 
 	// Confirmation prompt
 	fmt.Println("This will remove the network helper and all rules.")
-	if !promptConfirm("Continue?") {
+	yes, _ := cmd.Flags().GetBool("yes")
+	if !yes && !promptConfirm("Continue?") {
 		return nil
 	}
 

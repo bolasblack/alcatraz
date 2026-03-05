@@ -10,10 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-13 (Intel): macos-latest is ARM (M-series) which lacks nested
-        # virtualization support required for Docker. Switch to macos-latest
-        # when GitHub ARM runners support Docker natively.
-        os: [ubuntu-latest, macos-13]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -22,9 +19,14 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v30
 
-      - name: Set up Docker (macOS)
-        if: runner.os == 'macOS'
-        uses: docker/setup-docker-action@v5
+      - name: Install nftables
+        run: sudo apt-get update && sudo apt-get install -y nftables
+
+      - name: Load nftables kernel module
+        run: sudo modprobe nf_tables
+
+      - name: Install network helper
+        run: nix develop .#integration --command bash -c 'sudo "$ALCA_BIN" network-helper install --yes'
 
       - name: Run integration tests
         env:

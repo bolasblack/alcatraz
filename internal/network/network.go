@@ -89,13 +89,13 @@ func NewNetworkHelper(cfg config.Network, platform alcaruntime.RuntimePlatform) 
 
 // commandExists checks if a command is available in PATH.
 func commandExists(ctx context.Context, cmd util.CommandRunner, name string) bool {
-	_, err := cmd.Run(ctx, "which", name)
+	_, err := cmd.RunQuiet(ctx, "which", name)
 	return err == nil
 }
 
 // nftablesWorking checks if nftables kernel support is available.
 func nftablesWorking(ctx context.Context, cmd util.CommandRunner) bool {
-	_, err := cmd.Run(ctx, "nft", "list", "tables")
+	_, err := cmd.RunQuiet(ctx, "nft", "list", "tables")
 	return err == nil
 }
 

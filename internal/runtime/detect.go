@@ -210,13 +210,13 @@ var ErrMutagenNotFound = fmt.Errorf("mutagen is required but not installed.\n\n"
 	"Install Mutagen: https://mutagen.io/documentation/introduction/installation/\n\n" +
 	"Mutagen is needed when mount excludes are configured (workdir_exclude or mounts.exclude)")
 
-// minMutagenMacOS is the minimum Mutagen version required on macOS.
-// v0.18.0 has a known protocol handshake bug on macOS (mutagen-io/mutagen#531).
-var minMutagenMacOS = [3]int{0, 18, 1}
+// minMutagen is the minimum Mutagen version required on all platforms.
+// v0.18.0 has a known protocol handshake bug (mutagen-io/mutagen#531).
+var minMutagen = [3]int{0, 18, 1}
 
 // ValidateMutagenAvailable checks if Mutagen is needed and available.
 // Returns ErrMutagenNotFound if not installed, or an error if the version is
-// too old on macOS (v0.18.0 has a known handshake bug).
+// below the minimum (v0.18.0 has a known protocol handshake bug).
 func ValidateMutagenAvailable(ctx context.Context, env *RuntimeEnv, cfg *config.Config) error {
 	platform := DetectPlatform(ctx, env)
 
@@ -236,12 +236,9 @@ func ValidateMutagenAvailable(ctx context.Context, env *RuntimeEnv, cfg *config.
 		return ErrMutagenNotFound
 	}
 
-	// On macOS, enforce minimum version due to protocol handshake bug in v0.18.0
-	if platform == PlatformMacDockerDesktop || platform == PlatformMacOrbStack {
-		version := strings.TrimSpace(string(output))
-		if err := checkMutagenMinVersion(version, minMutagenMacOS); err != nil {
-			return err
-		}
+	version := strings.TrimSpace(string(output))
+	if err := checkMutagenMinVersion(version, minMutagen); err != nil {
+		return err
 	}
 
 	return nil
@@ -261,11 +258,12 @@ func checkMutagenMinVersion(version string, min [3]int) error {
 			return nil
 		}
 		if current[i] < min[i] {
-			return fmt.Errorf("mutagen %s is not supported on macOS (protocol handshake bug).\n\n"+
-				"Please upgrade: brew upgrade mutagen\n"+
-				"Minimum required: %d.%d.%d\n\n"+
+			return fmt.Errorf("mutagen %s has a known protocol bug that causes sync failures.\n\n"+
+				"Please upgrade to %d.%d.%d or later.\n"+
+				"  Homebrew: brew upgrade mutagen\n"+
+				"  Nix:      use a nixpkgs with mutagen >= %d.%d.%d\n\n"+
 				"See: https://github.com/mutagen-io/mutagen/issues/531",
-				version, min[0], min[1], min[2])
+				version, min[0], min[1], min[2], min[0], min[1], min[2])
 		}
 	}
 	return nil // equal

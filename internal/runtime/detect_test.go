@@ -340,6 +340,69 @@ func TestBuildRunArgs(t *testing.T) {
 			contName: "alca-noports",
 			dontWant: []string{"-p"},
 		},
+		{
+			name: "relative mount source resolved to projectDir",
+			cfg: &config.Config{
+				Image:   "test-image",
+				Workdir: "/workspace",
+				Mounts: []config.MountConfig{
+					{Source: ".", Target: "/workspace"},
+					{Source: ".alca.mounts/data", Target: "/data"},
+				},
+			},
+			projectDir: "/home/user/project",
+			state: &state.State{
+				ProjectID:     "uuid-rel",
+				ContainerName: "alca-rel",
+			},
+			contName: "alca-rel",
+			wantParts: []string{
+				"-v", "/home/user/project:/workspace",
+				"-v", "/home/user/project/.alca.mounts/data:/data",
+			},
+		},
+		{
+			name: "dot-slash relative mount source resolved",
+			cfg: &config.Config{
+				Image:   "test-image",
+				Workdir: "/workspace",
+				Mounts: []config.MountConfig{
+					{Source: ".", Target: "/workspace"},
+					{Source: "./relative/path", Target: "/mnt"},
+				},
+			},
+			projectDir: "/project",
+			state: &state.State{
+				ProjectID:     "uuid-dotslash",
+				ContainerName: "alca-dotslash",
+			},
+			contName: "alca-dotslash",
+			wantParts: []string{
+				"-v", "/project:/workspace",
+				"-v", "/project/relative/path:/mnt",
+			},
+		},
+		{
+			name: "absolute mount source unchanged",
+			cfg: &config.Config{
+				Image:   "test-image",
+				Workdir: "/workspace",
+				Mounts: []config.MountConfig{
+					{Source: ".", Target: "/workspace"},
+					{Source: "/tmp/data", Target: "/data"},
+				},
+			},
+			projectDir: "/project",
+			state: &state.State{
+				ProjectID:     "uuid-abs",
+				ContainerName: "alca-abs",
+			},
+			contName: "alca-abs",
+			wantParts: []string{
+				"-v", "/project:/workspace",
+				"-v", "/tmp/data:/data",
+			},
+		},
 	}
 
 	for _, tt := range tests {
