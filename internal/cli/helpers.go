@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
+	"golang.org/x/term"
 
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
@@ -156,7 +157,12 @@ func getCwd() (string, error) {
 }
 
 // promptConfirm prompts the user for confirmation.
+// Returns false immediately when stdin is not a terminal (CI, scripts, piped input)
+// so that non-interactive invocations never block waiting for input.
 func promptConfirm(prompt string) bool {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return false
+	}
 	fmt.Printf("%s [y/N] ", prompt)
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')

@@ -17,10 +17,15 @@ func NewHelper(cfg config.Network, platform runtime.RuntimePlatform) shared.Netw
 	return nil
 }
 
-// hasLANAccess checks if LAN access is configured.
-// Returns true if any lan-access rules are specified (not just wildcard).
-// TODO: lan-access=["*"] returns true here, causing setupNetwork to run unnecessarily
-// since ["*"] means allow-all (no helper/rules needed). Low priority — harmless but wasteful.
+// hasLANAccess checks if LAN access rules require a network helper.
+// Returns false for empty/nil and for wildcard-only (["*"]) — wildcard means
+// allow-all, which needs no helper or firewall rules.
 func hasLANAccess(lanAccess []string) bool {
-	return len(lanAccess) > 0
+	if len(lanAccess) == 0 {
+		return false
+	}
+	if len(lanAccess) == 1 && lanAccess[0] == shared.LanAccessWildcard {
+		return false
+	}
+	return true
 }

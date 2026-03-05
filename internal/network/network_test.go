@@ -159,7 +159,7 @@ func TestNewFirewallForType_UnknownType(t *testing.T) {
 // =============================================================================
 
 func TestNewNetworkHelperForPlatform_DarwinWithLANAccess(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"*"}}
+	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
 	helper := newNetworkHelperForPlatform(cfg, alcaruntime.PlatformMacOrbStack)
 	if helper == nil {
 		t.Error("newNetworkHelperForPlatform(darwin, LANAccess) should return non-nil helper")
@@ -167,7 +167,7 @@ func TestNewNetworkHelperForPlatform_DarwinWithLANAccess(t *testing.T) {
 }
 
 func TestNewNetworkHelperForPlatform_LinuxWithLANAccess(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"*"}}
+	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
 	helper := newNetworkHelperForPlatform(cfg, alcaruntime.PlatformLinux)
 	if helper == nil {
 		t.Error("newNetworkHelperForPlatform(linux, LANAccess) should return non-nil helper")
@@ -194,7 +194,7 @@ func TestNewNetworkHelperForPlatform_EmptyLANAccess(t *testing.T) {
 }
 
 func TestNewNetworkHelperForPlatform_UnsupportedPlatform(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"*"}}
+	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
 	helper := newNetworkHelperForPlatform(cfg, alcaruntime.RuntimePlatform("unknown-os"))
 	if helper != nil {
 		t.Errorf("newNetworkHelperForPlatform(unsupported) should return nil, got %v", helper)

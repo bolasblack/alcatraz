@@ -34,9 +34,15 @@ func TestNewDarwinHelper_ReturnsNilWhenLANAccessEmpty(t *testing.T) {
 }
 
 func TestNewDarwinHelper_ReturnsHelperWhenLANAccessPresent(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"*"}}
+	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
 	helper := NewDarwinHelper(cfg, runtime.PlatformMacOrbStack)
 	assert.NotNil(t, helper, "NewDarwinHelper should return non-nil when LANAccess is configured")
+}
+
+func TestNewDarwinHelper_ReturnsNilWhenLANAccessWildcard(t *testing.T) {
+	cfg := config.Network{LANAccess: []string{"*"}}
+	helper := NewDarwinHelper(cfg, runtime.PlatformMacOrbStack)
+	assert.Nil(t, helper, "NewDarwinHelper should return nil when LANAccess is wildcard (no helper needed)")
 }
 
 func TestNewDarwinHelper_UsesPlatformForRuleset(t *testing.T) {
@@ -364,7 +370,7 @@ func TestDarwinUninstallHelper_AcceptsNilProgress(t *testing.T) {
 
 func newTestDarwinHelper(t *testing.T) shared.NetworkHelper {
 	t.Helper()
-	cfg := config.Network{LANAccess: []string{"*"}}
+	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
 	helper := NewDarwinHelper(cfg, runtime.PlatformMacOrbStack)
 	require.NotNil(t, helper)
 	return helper

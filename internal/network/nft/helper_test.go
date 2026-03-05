@@ -17,7 +17,7 @@ import (
 // =============================================================================
 
 func TestNewHelper_ReturnsFunctionalHelperForOrbStack(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"*"}}
+	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
 	helper := NewHelper(cfg, runtime.PlatformMacOrbStack)
 
 	assert.NotNil(t, helper, "NewHelper should return non-nil for darwin OrbStack platform")
@@ -30,7 +30,7 @@ func TestNewHelper_ReturnsFunctionalHelperForOrbStack(t *testing.T) {
 }
 
 func TestNewHelper_ReturnsFunctionalHelperForDockerDesktop(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"*"}}
+	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
 	helper := NewHelper(cfg, runtime.PlatformMacDockerDesktop)
 
 	assert.NotNil(t, helper, "NewHelper should return non-nil for darwin Docker Desktop platform")
@@ -43,7 +43,7 @@ func TestNewHelper_ReturnsFunctionalHelperForDockerDesktop(t *testing.T) {
 }
 
 func TestNewHelper_ReturnsFunctionalHelperForLinux(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"*"}}
+	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
 	helper := NewHelper(cfg, runtime.PlatformLinux)
 
 	assert.NotNil(t, helper, "NewHelper should return non-nil for Linux platform")
@@ -55,10 +55,20 @@ func TestNewHelper_ReturnsFunctionalHelperForLinux(t *testing.T) {
 }
 
 func TestNewHelper_ReturnsNilForUnsupportedPlatform(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"*"}}
+	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
 	helper := NewHelper(cfg, runtime.RuntimePlatform("freebsd"))
 
 	assert.Nil(t, helper, "NewHelper should return nil for unsupported platform")
+}
+
+func TestNewHelper_ReturnsNilWhenLANAccessIsWildcard(t *testing.T) {
+	cfg := config.Network{LANAccess: []string{"*"}}
+
+	helperDarwin := NewHelper(cfg, runtime.PlatformMacOrbStack)
+	assert.Nil(t, helperDarwin, "NewHelper should return nil when LANAccess is wildcard (darwin)")
+
+	helperLinux := NewHelper(cfg, runtime.PlatformLinux)
+	assert.Nil(t, helperLinux, "NewHelper should return nil when LANAccess is wildcard (linux)")
 }
 
 func TestNewHelper_ReturnsNilWhenLANAccessEmpty(t *testing.T) {
@@ -97,8 +107,12 @@ func TestHasLANAccess_ReturnsFalseForEmpty(t *testing.T) {
 	assert.False(t, hasLANAccess([]string{}))
 }
 
-func TestHasLANAccess_ReturnsTrueForWildcard(t *testing.T) {
-	assert.True(t, hasLANAccess([]string{"*"}))
+func TestHasLANAccess_ReturnsFalseForWildcard(t *testing.T) {
+	assert.False(t, hasLANAccess([]string{"*"}))
+}
+
+func TestHasLANAccess_ReturnsTrueForWildcardWithOtherRules(t *testing.T) {
+	assert.True(t, hasLANAccess([]string{"*", "192.168.1.0/24"}))
 }
 
 func TestHasLANAccess_ReturnsTrueForCIDR(t *testing.T) {

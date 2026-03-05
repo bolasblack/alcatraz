@@ -27,9 +27,15 @@ func TestNewLinuxHelper_ReturnsNilWithoutLANAccess(t *testing.T) {
 }
 
 func TestNewLinuxHelper_ReturnsHelperWithLANAccess(t *testing.T) {
-	cfg := config.Network{LANAccess: []string{"*"}}
+	cfg := config.Network{LANAccess: []string{"192.168.1.0/24"}}
 	h := NewLinuxHelper(cfg, runtime.PlatformLinux)
 	assert.NotNil(t, h, "should return non-nil helper when LAN access is configured")
+}
+
+func TestNewLinuxHelper_ReturnsNilForWildcard(t *testing.T) {
+	cfg := config.Network{LANAccess: []string{"*"}}
+	h := NewLinuxHelper(cfg, runtime.PlatformLinux)
+	assert.Nil(t, h, "should return nil when LAN access is wildcard (no helper needed)")
 }
 
 // =============================================================================
