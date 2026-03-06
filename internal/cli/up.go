@@ -296,7 +296,7 @@ func setupFirewall(ctx context.Context, fw network.Firewall, fwType network.Type
 	// Clean up stale rule files unconditionally — must run even when
 	// HasAllLAN or TypeNone would cause early returns below.
 	if fw != nil {
-		if staleCount, err := fw.CleanupStaleFiles(); err != nil {
+		if staleCount, err := fw.CleanupStaleFiles(ctx); err != nil {
 			util.ProgressStep(out, "Warning: stale rule cleanup: %v\n", err)
 		} else if staleCount > 0 {
 			util.ProgressStep(out, "Cleaned up %d stale firewall rule file(s)\n", staleCount)

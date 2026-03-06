@@ -1,6 +1,7 @@
 package nft
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -33,11 +34,11 @@ func TestCleanupStaleFiles_DirRenameWithTransactFs(t *testing.T) {
 	// Fs=TransactFs (for staged writes); TransactFs reads through to actualFs
 	// for paths never written, so isStaleProject sees the real filesystem state.
 	tfs := transact.New(transact.WithActualFs(actualFs))
-	env := shared.NewNetworkEnv(tfs, util.NewMockCommandRunner(), "/path/new-name", "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(tfs, util.NewMockCommandRunner().AllowUnexpected(), "/path/new-name", "", runtime.PlatformLinux)
 	env.ProjectID = projectID
 	n := New(env).(*NFTables)
 
-	count, err := n.CleanupStaleFiles()
+	count, err := n.CleanupStaleFiles(context.Background())
 	if err != nil {
 		t.Fatalf("CleanupStaleFiles() error = %v", err)
 	}
@@ -75,11 +76,11 @@ func TestCleanupStaleFiles_RunsIndependentOfLANAccessRules(t *testing.T) {
 
 	// CleanupStaleFiles operates on the firewall instance, not on lan-access rules.
 	// Even if the calling project uses lan-access=["*"], cleanup still runs.
-	env := shared.NewNetworkEnv(mockFs, util.NewMockCommandRunner(), activeDir, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(mockFs, util.NewMockCommandRunner().AllowUnexpected(), activeDir, "", runtime.PlatformLinux)
 	env.ProjectID = "active-uuid"
 	n := New(env).(*NFTables)
 
-	count, err := n.CleanupStaleFiles()
+	count, err := n.CleanupStaleFiles(context.Background())
 	if err != nil {
 		t.Fatalf("CleanupStaleFiles() error = %v", err)
 	}
@@ -122,11 +123,11 @@ func TestCleanupStaleFiles_TwoFilesForSameProjectID(t *testing.T) {
 	_ = afero.WriteFile(mockFs, newDir+"/.alca/state.json",
 		[]byte(fmt.Sprintf(`{"project_id":"%s"}`, projectID)), 0644)
 
-	env := shared.NewNetworkEnv(mockFs, util.NewMockCommandRunner(), newDir, "", runtime.PlatformLinux)
+	env := shared.NewNetworkEnv(mockFs, util.NewMockCommandRunner().AllowUnexpected(), newDir, "", runtime.PlatformLinux)
 	env.ProjectID = projectID
 	n := New(env).(*NFTables)
 
-	count, err := n.CleanupStaleFiles()
+	count, err := n.CleanupStaleFiles(context.Background())
 	if err != nil {
 		t.Fatalf("CleanupStaleFiles() error = %v", err)
 	}

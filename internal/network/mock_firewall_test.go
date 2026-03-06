@@ -1,6 +1,10 @@
 package network
 
-import "github.com/bolasblack/alcatraz/internal/network/shared"
+import (
+	"context"
+
+	"github.com/bolasblack/alcatraz/internal/network/shared"
+)
 
 // MockFirewall implements Firewall for testing.
 // Provides test configuration fields and call recording.
@@ -53,6 +57,6 @@ func (m *MockFirewall) Cleanup(containerID string) (*PostCommitAction, error) {
 	return &PostCommitAction{}, m.ReturnCleanupError
 }
 
-func (m *MockFirewall) CleanupStaleFiles() (int, error) {
+func (m *MockFirewall) CleanupStaleFiles(_ context.Context) (int, error) {
 	return 0, nil
 }

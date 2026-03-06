@@ -81,7 +81,7 @@ type Firewall interface {
 
 	// CleanupStaleFiles removes rule files for projects whose directory no longer exists.
 	// Returns the count of cleaned-up files.
-	CleanupStaleFiles() (int, error)
+	CleanupStaleFiles(ctx context.Context) (int, error)
 }
 
 // =============================================================================

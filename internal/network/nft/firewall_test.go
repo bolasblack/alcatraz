@@ -1,6 +1,7 @@
 package nft
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -788,7 +789,7 @@ func TestParseTableName(t *testing.T) {
 
 func TestCleanupStaleFiles(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
-	mockCmd := util.NewMockCommandRunner()
+	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", "", runtime.PlatformLinux)
 	n := New(env).(*NFTables)
 
@@ -811,7 +812,7 @@ func TestCleanupStaleFiles(t *testing.T) {
 	oldContent := "#!/usr/sbin/nft -f\ntable inet alca-ccc {}\n"
 	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/old-format.nft", dir), []byte(oldContent), 0644)
 
-	count, err := n.CleanupStaleFiles()
+	count, err := n.CleanupStaleFiles(context.Background())
 	if err != nil {
 		t.Fatalf("CleanupStaleFiles() error = %v", err)
 	}
@@ -839,9 +840,43 @@ func TestCleanupStaleFiles(t *testing.T) {
 	}
 }
 
-func TestCleanupStaleFiles_StateJsonMissing(t *testing.T) {
+func TestCleanupStaleFiles_DeletesInMemoryTables(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner()
+	defer mockCmd.AssertAllExpectationsMet(t)
+
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", "", runtime.PlatformLinux)
+	n := New(env).(*NFTables)
+
+	dir := nftDirOnLinux()
+	_ = mockFs.MkdirAll(dir, 0755)
+
+	// File a: stale project — project dir does NOT exist → should be deleted
+	staleDir := "/gone/project1"
+	staleRuleset := generateRuleset("alca-stale1", "172.17.0.2", nil, "filter - 1", staleDir, "proj-stale1")
+	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(staleDir)), []byte(staleRuleset), 0644)
+
+	// File b: old-format file without project-dir comment → treated as stale
+	oldContent := "#!/usr/sbin/nft -f\n# Alcatraz container rules for table: alca-oldformat\ntable inet alca-oldformat {}\n"
+	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/old-format.nft", dir), []byte(oldContent), 0644)
+
+	// Expect exact delete commands for both stale tables
+	mockCmd.ExpectSuccess("sudo nft delete table inet alca-stale1", nil)
+	mockCmd.ExpectSuccess("sudo nft delete table inet alca-oldformat", nil)
+
+	count, err := n.CleanupStaleFiles(context.Background())
+	if err != nil {
+		t.Fatalf("CleanupStaleFiles() error = %v", err)
+	}
+
+	if count != 2 {
+		t.Errorf("CleanupStaleFiles() count = %d, want 2", count)
+	}
+}
+
+func TestCleanupStaleFiles_StateJsonMissing(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", "", runtime.PlatformLinux)
 	n := New(env).(*NFTables)
 
@@ -854,7 +889,7 @@ func TestCleanupStaleFiles_StateJsonMissing(t *testing.T) {
 	ruleset := generateRuleset("alca-orphan", "172.17.0.2", nil, "filter - 1", projectDir, "some-id")
 	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(projectDir)), []byte(ruleset), 0644)
 
-	count, err := n.CleanupStaleFiles()
+	count, err := n.CleanupStaleFiles(context.Background())
 	if err != nil {
 		t.Fatalf("CleanupStaleFiles() error = %v", err)
 	}
@@ -865,7 +900,7 @@ func TestCleanupStaleFiles_StateJsonMissing(t *testing.T) {
 
 func TestCleanupStaleFiles_ProjectIDMismatch(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
-	mockCmd := util.NewMockCommandRunner()
+	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", "", runtime.PlatformLinux)
 	n := New(env).(*NFTables)
 
@@ -879,7 +914,7 @@ func TestCleanupStaleFiles_ProjectIDMismatch(t *testing.T) {
 	ruleset := generateRuleset("alca-reused", "172.17.0.2", nil, "filter - 1", projectDir, "old-id")
 	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(projectDir)), []byte(ruleset), 0644)
 
-	count, err := n.CleanupStaleFiles()
+	count, err := n.CleanupStaleFiles(context.Background())
 	if err != nil {
 		t.Fatalf("CleanupStaleFiles() error = %v", err)
 	}
@@ -905,7 +940,7 @@ func TestCleanupStaleFiles_OldFormatNoProjectID(t *testing.T) {
 	oldContent := "#!/usr/sbin/nft -f\n# Alcatraz container rules for table: alca-legacy\n\n# project-dir: " + projectDir + "\n\ntable inet alca-legacy {}\n"
 	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(projectDir)), []byte(oldContent), 0644)
 
-	count, err := n.CleanupStaleFiles()
+	count, err := n.CleanupStaleFiles(context.Background())
 	if err != nil {
 		t.Fatalf("CleanupStaleFiles() error = %v", err)
 	}
@@ -921,7 +956,7 @@ func TestCleanupStaleFiles_EmptyDir(t *testing.T) {
 	n := New(env).(*NFTables)
 
 	// Directory doesn't exist — should return 0 with no error
-	count, err := n.CleanupStaleFiles()
+	count, err := n.CleanupStaleFiles(context.Background())
 	if err != nil {
 		t.Fatalf("CleanupStaleFiles() error = %v", err)
 	}

@@ -159,7 +159,7 @@ func cleanupFirewall(ctx context.Context, fw network.Firewall, env *util.Env, tf
 	}
 
 	// Clean up stale rule files before container-specific cleanup
-	if staleCount, err := fw.CleanupStaleFiles(); err != nil {
+	if staleCount, err := fw.CleanupStaleFiles(ctx); err != nil {
 		util.ProgressStep(out, "Warning: stale rule cleanup: %v\n", err)
 	} else if staleCount > 0 {
 		util.ProgressStep(out, "Cleaned up %d stale firewall rule file(s)\n", staleCount)

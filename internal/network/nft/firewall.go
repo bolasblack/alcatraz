@@ -370,7 +370,7 @@ func (n *NFTables) deleteTable(ctx context.Context, table string) error {
 // project directory no longer exists on disk. Returns the count of cleaned-up
 // files. This handles orphaned files from projects that were moved/deleted
 // without running "alca down".
-func (n *NFTables) CleanupStaleFiles() (int, error) {
+func (n *NFTables) CleanupStaleFiles(ctx context.Context) (int, error) {
 	var dir string
 	if n.isDarwin() {
 		d, err := nftDirOnDarwin()
@@ -403,6 +403,10 @@ func (n *NFTables) CleanupStaleFiles() (int, error) {
 		projectDir := parseProjectDir(string(content))
 		if projectDir == "" {
 			// Old format file without project-dir comment — treat as stale
+			tableName := parseTableName(string(content))
+			if tableName != "" {
+				_ = n.deleteTable(ctx, tableName)
+			}
 			if err := n.env.Fs.Remove(filePath); err != nil {
 				continue
 			}
@@ -412,6 +416,10 @@ func (n *NFTables) CleanupStaleFiles() (int, error) {
 
 		projectID := parseProjectID(string(content))
 		if isStaleProject(n.env.Fs, projectDir, projectID) {
+			tableName := parseTableName(string(content))
+			if tableName != "" {
+				_ = n.deleteTable(ctx, tableName)
+			}
 			if err := n.env.Fs.Remove(filePath); err != nil {
 				continue
 			}
