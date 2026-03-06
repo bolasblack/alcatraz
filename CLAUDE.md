@@ -51,6 +51,7 @@ Changelogs live in `docs/changelogs/v<VERSION>.md` and follow [Common Changelog]
 **Content guidelines:**
 
 - **User-facing changes only** — no internal refactoring, test infrastructure, or code reorganization
+- **No internal references** — no function names (`hasLANAccess()`), internal file paths (`state.json`), type names (`CleanupStaleFiles`), or implementation details. Describe behavior from the user's perspective
 - **Code examples where applicable** — copy-pasteable CLI commands or TOML config snippets so users know how to use it
 - **Link to documentation** — each feature entry should link to the relevant docs page for users who want to dive deeper
 - **Imperative mood, self-describing entries** — each line should make sense without its category heading
@@ -61,6 +62,10 @@ Changelogs live in `docs/changelogs/v<VERSION>.md` and follow [Common Changelog]
 - Use portable markdown links (`../config/fields.md`) — Hugo resolves them via `BookPortableLinks`
 - `make release-notes VERSION=v0.2.0` rewrites links to absolute URLs for GitHub Releases
 - Use negative `weight` in frontmatter so newer versions sort first (e.g., `-20` for v0.2.0, `-30` for v0.3.0)
+
+### LLM Documentation
+
+When any file under `docs/` is added or modified, update `docs/llms.md` to keep it in sync.
 
 ### Installation
 
