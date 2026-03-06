@@ -44,7 +44,7 @@ checksum:
 release:
   draft: true
 
-homebrew_formulas:
+brews:
   - name: alca
     repository:
       owner: bolasblack

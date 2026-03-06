@@ -20,7 +20,7 @@
           config.allowUnfree = true;
         };
 
-        alcaVersion = "0.2.1";
+        alcaVersion = "0.2.2";
 
         # Single source of truth for supported systems
         supportedSystems = {
