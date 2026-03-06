@@ -29,13 +29,17 @@ var initCmd = &cobra.Command{
 	Long: `Initialize Alcatraz by creating a .alca.toml configuration file in the current directory with default settings.
 
 When called with a git+<url> argument, downloads preset configuration files from a git repository.
-Use --update to refresh previously downloaded preset files to their latest versions.`,
+Use --template/-t to select a template non-interactively (e.g., --template alpine).
+Use --update to refresh previously downloaded preset files to their latest versions.
+
+The --template and --update flags are mutually exclusive.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runInit,
 }
 
 func init() {
 	initCmd.Flags().Bool("update", false, "Update all preset files to latest versions")
+	initCmd.Flags().StringP("template", "t", "", "Template to use (alpine, debian, nix)")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -45,6 +49,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	update, _ := cmd.Flags().GetBool("update")
+	templateFlag, _ := cmd.Flags().GetString("template")
+
+	// Mutual exclusion: --template and --update cannot be combined
+	if update && templateFlag != "" {
+		return fmt.Errorf("cannot use --template with --update")
+	}
 
 	// Update flow
 	if update {
@@ -56,11 +66,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return runInitPreset(cmd.Context(), cwd, args[0])
 	}
 
-	// Existing template flow (unchanged)
-	return runInitTemplate(cmd.Context(), cwd)
+	// Template flow
+	return runInitTemplate(cmd.Context(), cwd, templateFlag)
 }
 
-func runInitTemplate(ctx context.Context, cwd string) error {
+func runInitTemplate(ctx context.Context, cwd string, templateFlag string) error {
 	// Create transact filesystem for writing
 	tfs := transact.New()
 	env := util.NewEnv(tfs)
@@ -72,19 +82,30 @@ func runInitTemplate(ctx context.Context, cwd string) error {
 		return fmt.Errorf("configuration file already exists: %s", configPath)
 	}
 
-	// Interactive template selection
 	var selectedTemplate string
-	err := huh.NewSelect[string]().
-		Title("Select a template").
-		Options(
-			huh.NewOption("Alpine - Lightweight Alpine environment with mise", string(config.TemplateAlpine)),
-			huh.NewOption("Debian - Debian-based environment with mise", string(config.TemplateDebian)),
-			huh.NewOption("Nix - NixOS-based development environment", string(config.TemplateNix)),
-		).
-		Value(&selectedTemplate).
-		Run()
-	if err != nil {
-		return fmt.Errorf("template selection cancelled: %w", err)
+
+	if templateFlag != "" {
+		// Validate the flag value against known templates
+		switch config.Template(templateFlag) {
+		case config.TemplateAlpine, config.TemplateDebian, config.TemplateNix:
+			selectedTemplate = templateFlag
+		default:
+			return fmt.Errorf("unknown template %q, valid options: alpine, debian, nix", templateFlag)
+		}
+	} else {
+		// Interactive template selection
+		err := huh.NewSelect[string]().
+			Title("Select a template").
+			Options(
+				huh.NewOption("Alpine - Lightweight Alpine environment with mise", string(config.TemplateAlpine)),
+				huh.NewOption("Debian - Debian-based environment with mise", string(config.TemplateDebian)),
+				huh.NewOption("Nix - NixOS-based development environment", string(config.TemplateNix)),
+			).
+			Value(&selectedTemplate).
+			Run()
+		if err != nil {
+			return fmt.Errorf("template selection cancelled: %w", err)
+		}
 	}
 
 	// Generate configuration from template
