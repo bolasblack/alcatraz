@@ -5,13 +5,13 @@
 class Alca < Formula
   desc "Run code agents unrestricted, but fearlessly"
   homepage "https://github.com/bolasblack/alcatraz"
-  version "0.2.0"
+  version "0.2.2"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.intel?
-      url "https://github.com/bolasblack/alcatraz/releases/download/v0.2.0/alcatraz_0.2.0_darwin_amd64.tar.gz"
-      sha256 "2df4f84a7c8349939749276badd15d5f72cff67d19dae982ba375a7a86ef9892"
+      url "https://github.com/bolasblack/alcatraz/releases/download/v0.2.2/alcatraz_0.2.2_darwin_amd64.tar.gz"
+      sha256 "8c5cecefc10926bd9e9b8de27e428d8bb8376976207c828737d90c9a4f0a3b54"
 
       define_method(:install) do
         bin.install "alca"
@@ -22,8 +22,8 @@ class Alca < Formula
       end
     end
     if Hardware::CPU.arm?
-      url "https://github.com/bolasblack/alcatraz/releases/download/v0.2.0/alcatraz_0.2.0_darwin_arm64.tar.gz"
-      sha256 "c221fcfa4bffffacda2961abee30ce219eb3d78c7a3e01454bd0bd61e99c3d80"
+      url "https://github.com/bolasblack/alcatraz/releases/download/v0.2.2/alcatraz_0.2.2_darwin_arm64.tar.gz"
+      sha256 "76b467ffca3835e724fe8c7d7026150a03505f923c4bf005c0f839475c91a1bd"
 
       define_method(:install) do
         bin.install "alca"
@@ -37,8 +37,8 @@ class Alca < Formula
 
   on_linux do
     if Hardware::CPU.intel? && Hardware::CPU.is_64_bit?
-      url "https://github.com/bolasblack/alcatraz/releases/download/v0.2.0/alcatraz_0.2.0_linux_amd64.tar.gz"
-      sha256 "84df7763789300899f0423ea78203506fc0d308342edfb35310f0a24c099b12f"
+      url "https://github.com/bolasblack/alcatraz/releases/download/v0.2.2/alcatraz_0.2.2_linux_amd64.tar.gz"
+      sha256 "79d08e26614347df440d756f4cb4233849bdcc18f42462f03f91ea7e5462bff9"
       define_method(:install) do
         bin.install "alca"
         man1.install Dir["man/man1/*"]
@@ -48,8 +48,8 @@ class Alca < Formula
       end
     end
     if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
-      url "https://github.com/bolasblack/alcatraz/releases/download/v0.2.0/alcatraz_0.2.0_linux_arm64.tar.gz"
-      sha256 "397ef5a7460a60853e851463e1bc0b060af4705b000fede2beefd6fa5f1281cf"
+      url "https://github.com/bolasblack/alcatraz/releases/download/v0.2.2/alcatraz_0.2.2_linux_arm64.tar.gz"
+      sha256 "7e86b98df388742e4b8de543bd37908e20e389f7c81b42ea358d454dd1032904"
       define_method(:install) do
         bin.install "alca"
         man1.install Dir["man/man1/*"]
