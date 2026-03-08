@@ -109,7 +109,7 @@ func GetTemplateConfig(template Template) TemplateConfig {
 			},
 			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prebuild, to reduce the time costs on enter",
-			Gitignore: []string{".alca.local.toml", ".alca/", ".alca.mounts/"},
+			Gitignore: []string{".alca.local.toml", ".alca.*.local.toml", ".alca/", ".alca.mounts/"},
 		}
 	case TemplateAlpine:
 		return TemplateConfig{
@@ -144,7 +144,7 @@ mise install
 			},
 			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prepare the environment",
-			Gitignore: []string{".alca/", ".alca.local.toml", ".alca.mounts/"},
+			Gitignore: []string{".alca/", ".alca.local.toml", ".alca.*.local.toml", ".alca.mounts/"},
 		}
 	case TemplateDebian:
 		return TemplateConfig{
@@ -184,7 +184,7 @@ mise install
 			},
 			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prepare the environment",
-			Gitignore: []string{".alca/", ".alca.local.toml", ".alca.mounts/"},
+			Gitignore: []string{".alca/", ".alca.local.toml", ".alca.*.local.toml", ".alca.mounts/"},
 		}
 	default:
 		// Intentional fallback: unknown templates default to Alpine (tested by TestGetTemplateConfigUnknownFallback)

@@ -147,7 +147,7 @@ func TestGenerateConfig(t *testing.T) {
 func TestGenerateConfigGitignore(t *testing.T) {
 	baseTc := TemplateConfig{
 		Config:    Config{Image: "img"},
-		Gitignore: []string{".alca/", ".alca.local.toml", ".alca.cache/"},
+		Gitignore: []string{".alca/", ".alca.local.toml", ".alca.*.local.toml", ".alca.cache/"},
 	}
 
 	t.Run("creates gitignore when it does not exist", func(t *testing.T) {
@@ -167,6 +167,9 @@ func TestGenerateConfigGitignore(t *testing.T) {
 		}
 		if !strings.Contains(content, ".alca.local.toml") {
 			t.Errorf("expected .alca.local.toml in .gitignore, got:\n%s", content)
+		}
+		if !strings.Contains(content, ".alca.*.local.toml") {
+			t.Errorf("expected .alca.*.local.toml in .gitignore, got:\n%s", content)
 		}
 		if !strings.Contains(content, ".alca.cache/") {
 			t.Errorf("expected .alca.cache/ in .gitignore, got:\n%s", content)
@@ -193,6 +196,9 @@ func TestGenerateConfigGitignore(t *testing.T) {
 		if !strings.Contains(content, ".alca.local.toml") {
 			t.Errorf("expected .alca.local.toml in .gitignore, got:\n%s", content)
 		}
+		if !strings.Contains(content, ".alca.*.local.toml") {
+			t.Errorf("expected .alca.*.local.toml in .gitignore, got:\n%s", content)
+		}
 		if !strings.Contains(content, ".alca.cache/") {
 			t.Errorf("expected .alca.cache/ in .gitignore, got:\n%s", content)
 		}
@@ -200,7 +206,7 @@ func TestGenerateConfigGitignore(t *testing.T) {
 
 	t.Run("does not duplicate existing entries", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
-		afero.WriteFile(fs, "/project/.gitignore", []byte(".alca/\n.alca.local.toml\n.alca.cache/\n"), 0644)
+		afero.WriteFile(fs, "/project/.gitignore", []byte(".alca/\n.alca.local.toml\n.alca.*.local.toml\n.alca.cache/\n"), 0644)
 
 		if err := GenerateConfig(fs, "/project/.alca.toml", baseTc); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -214,6 +220,9 @@ func TestGenerateConfigGitignore(t *testing.T) {
 		}
 		if strings.Count(content, ".alca.local.toml") != 1 {
 			t.Errorf("expected exactly 1 occurrence of .alca.local.toml in:\n%s", content)
+		}
+		if strings.Count(content, ".alca.*.local.toml") != 1 {
+			t.Errorf("expected exactly 1 occurrence of .alca.*.local.toml in:\n%s", content)
 		}
 		if strings.Count(content, ".alca.cache/") != 1 {
 			t.Errorf("expected exactly 1 occurrence of .alca.cache/ in:\n%s", content)
