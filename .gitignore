@@ -9,6 +9,7 @@ out_*
 .alca
 .alca.cache
 .alca.local.toml
+.alca.*.local.toml
 
 .mise.local.toml
 

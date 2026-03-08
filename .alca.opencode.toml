@@ -1,0 +1,16 @@
+#:schema https://raw.githubusercontent.com/bolasblack/alcatraz/refs/heads/master/alca-config.schema.json
+
+mounts = [
+  #"${HOME}/.config/opencode/opencode.json:/root/.config/opencode/opencode.json",
+  #"${HOME}/.config/opencode/tui.json:/root/.config/opencode/tui.json",
+
+  "${HOME}/.config/opencode/agent:/root/.config/opencode/agent",
+  "${HOME}/.config/opencode/agents:/root/.config/opencode/agents",
+  "${HOME}/.config/opencode/command:/root/.config/opencode/command",
+  "${HOME}/.config/opencode/commands:/root/.config/opencode/commands",
+  "${HOME}/.config/opencode/skills:/root/.config/opencode/skills",
+  "${HOME}/.config/opencode/plugins:/root/.config/opencode/plugins",
+  "${HOME}/.config/opencode/modes:/root/.config/opencode/modes",
+  "${HOME}/.config/opencode/tools:/root/.config/opencode/tools",
+  "${HOME}/.config/opencode/themes:/root/.config/opencode/themes",
+]
