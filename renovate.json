@@ -1,0 +1,15 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "mergeConfidence:all-badges",
+    "docker:pinDigests"
+  ],
+  "stabilityDays": 7,
+  "vulnerabilityAlerts": {
+    "enabled": true
+  },
+  "dockerfile": {
+    "fileMatch": ["^dockerfiles/debian-mise\\.dockerfile$"]
+  }
+}
