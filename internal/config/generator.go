@@ -25,8 +25,10 @@ const (
 	TemplateAlpine Template = "alpine"
 	// TemplateNix generates a Nix-based configuration.
 	TemplateNix Template = "nix"
-	// TemplateDebian generates a Debian-based configuration.
-	TemplateDebian Template = "debian"
+	// TemplateDebianMise generates a Debian+mise configuration using the pre-built alca-debian image.
+	TemplateDebianMise Template = "debian-mise"
+	// TemplateDebianSlim generates a plain Debian configuration with mise installed via APT on first run.
+	TemplateDebianSlim Template = "debian-slim"
 )
 
 // LLMsComment is the TOML comment that points LLMs to the project's llms.txt.
@@ -37,11 +39,12 @@ const SchemaComment = "#:schema https://raw.githubusercontent.com/bolasblack/alc
 
 // TemplateConfig holds a Config and its associated comment.
 type TemplateConfig struct {
-	Config    Config
-	Includes  []string // Config files to include (RawConfig-only field)
-	Extends   []string // Config files to extend (RawConfig-only field)
-	UpComment string   // Comment to insert before the "up" command
-	Gitignore []string // Entries to append to .gitignore if it exists
+	Config       Config
+	Includes     []string // Config files to include (RawConfig-only field)
+	Extends      []string // Config files to extend (RawConfig-only field)
+	ImageComment string   // Comment to insert before the "image" field
+	UpComment    string   // Comment to insert before the "up" command
+	Gitignore    []string // Entries to append to .gitignore if it exists
 }
 
 // GenerateConfig writes the TOML config file and appends gitignore entries.
@@ -79,6 +82,9 @@ func generateConfigContent(tc TemplateConfig) (string, error) {
 	content := buf.String()
 	content = convertMultilineStrings(content)
 
+	if tc.ImageComment != "" {
+		content = insertImageComment(content, tc.ImageComment)
+	}
 	if tc.UpComment != "" {
 		content = insertUpComment(content, tc.UpComment)
 	}
@@ -105,7 +111,7 @@ func GetTemplateConfig(template Template) TemplateConfig {
 					"NIXPKGS_ALLOW_UNFREE": {Value: "1"},
 					"NIX_CONFIG":           {Value: "extra-experimental-features = nix-command flakes"},
 				},
-				WorkdirExclude: []string{".env"},
+				WorkdirExclude: []string{".env", ".alca.mounts"},
 			},
 			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prebuild, to reduce the time costs on enter",
@@ -140,31 +146,23 @@ mise install
 				Envs: map[string]EnvValue{
 					"IS_SANDBOX": {Value: "1"},
 				},
-				WorkdirExclude: []string{".env"},
+				WorkdirExclude: []string{".env", ".alca.mounts"},
 			},
 			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prepare the environment",
 			Gitignore: []string{".alca/", ".alca.local.toml", ".alca.*.local.toml", ".alca.mounts/"},
 		}
-	case TemplateDebian:
+	case TemplateDebianMise:
 		return TemplateConfig{
 			Config: Config{
-				Image: "debian:bookworm-slim",
+				Image: "ghcr.io/bolasblack/alca-debian:latest",
 				Mounts: []MountConfig{
-					{Source: ".alca.mounts/mise", Target: "/root/.local/share/mise"},
+					{Source: ".alca.mounts/mise", Target: "/mise"},
 					{Source: ".alca.mounts/extra-bin", Target: "/extra-bin"},
 					{Source: ".alca.mounts/extra-scripts", Target: "/extra-scripts"},
 				},
 				Commands: Commands{
-					Up: CommandValue{Command: `apt update -y && apt install -y curl
-install -dm 755 /etc/apt/keyrings
-curl -fSs https://mise.jdx.dev/gpg-key.pub | tee /etc/apt/keyrings/mise-archive-keyring.asc 1> /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.jdx.dev/deb stable main" | tee /etc/apt/sources.list.d/mise.list
-apt update -y
-apt install -y mise
-
-echo '
-export PATH="/root/.local/share/mise/shims:$PATH"
+					Up: CommandValue{Command: `echo '
 export PATH="/extra-bin:$PATH"
 ' >> ~/.bashrc
 . ~/.bashrc
@@ -180,7 +178,36 @@ mise install
 				Envs: map[string]EnvValue{
 					"IS_SANDBOX": {Value: "1"},
 				},
-				WorkdirExclude: []string{".env"},
+				WorkdirExclude: []string{".env", ".alca.mounts"},
+			},
+			ImageComment: "Dockerfile: https://github.com/bolasblack/alcatraz/blob/master/dockerfiles/debian-mise.dockerfile\nCI/CD: https://github.com/bolasblack/alcatraz/blob/master/.github/workflows/docker-build.yml",
+			Includes:     []string{"./.alca.*.toml"},
+			UpComment:    "prepare the environment",
+			Gitignore:    []string{".alca/", ".alca.local.toml", ".alca.*.local.toml", ".alca.mounts/"},
+		}
+	case TemplateDebianSlim:
+		return TemplateConfig{
+			Config: Config{
+				Image: "debian:bookworm-slim",
+				Mounts: []MountConfig{
+					{Source: ".alca.mounts/extra-bin", Target: "/extra-bin"},
+					{Source: ".alca.mounts/extra-scripts", Target: "/extra-scripts"},
+				},
+				Commands: Commands{
+					Up: CommandValue{Command: `echo '
+export PATH="/extra-bin:$PATH"
+' >> ~/.bashrc
+. ~/.bashrc
+
+[ -x /extra-scripts/source.sh ] && source /extra-scripts/source.sh
+
+[ -x /extra-scripts/init.sh ] && /extra-scripts/init.sh`},
+					Enter: CommandValue{Command: "[ -x /extra-scripts/source.sh ] && source /extra-scripts/source.sh\n. ~/.bashrc\n"},
+				},
+				Envs: map[string]EnvValue{
+					"IS_SANDBOX": {Value: "1"},
+				},
+				WorkdirExclude: []string{".env", ".alca.mounts"},
 			},
 			Includes:  []string{"./.alca.*.toml"},
 			UpComment: "prepare the environment",
@@ -190,6 +217,23 @@ mise install
 		// Intentional fallback: unknown templates default to Alpine (tested by TestGetTemplateConfigUnknownFallback)
 		return GetTemplateConfig(TemplateAlpine)
 	}
+}
+
+// insertImageComment inserts a comment before the "image" field.
+func insertImageComment(content, comment string) string {
+	lines := strings.Split(content, "\n")
+	var result []string
+
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "image") {
+			for _, cl := range strings.Split(comment, "\n") {
+				result = append(result, "# "+cl)
+			}
+		}
+		result = append(result, line)
+	}
+
+	return strings.Join(result, "\n")
 }
 
 // insertUpComment inserts a comment before the "up" field in [commands] section.

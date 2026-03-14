@@ -39,7 +39,7 @@ The --template and --update flags are mutually exclusive.`,
 
 func init() {
 	initCmd.Flags().Bool("update", false, "Update all preset files to latest versions")
-	initCmd.Flags().StringP("template", "t", "", "Template to use (alpine, debian, nix)")
+	initCmd.Flags().StringP("template", "t", "", "Template to use (alpine, debian-mise, debian-slim, nix)")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -87,10 +87,10 @@ func runInitTemplate(ctx context.Context, cwd string, templateFlag string) error
 	if templateFlag != "" {
 		// Validate the flag value against known templates
 		switch config.Template(templateFlag) {
-		case config.TemplateAlpine, config.TemplateDebian, config.TemplateNix:
+		case config.TemplateAlpine, config.TemplateDebianMise, config.TemplateDebianSlim, config.TemplateNix:
 			selectedTemplate = templateFlag
 		default:
-			return fmt.Errorf("unknown template %q, valid options: alpine, debian, nix", templateFlag)
+			return fmt.Errorf("unknown template %q, valid options: alpine, debian-mise, debian-slim, nix", templateFlag)
 		}
 	} else {
 		// Interactive template selection
@@ -98,8 +98,9 @@ func runInitTemplate(ctx context.Context, cwd string, templateFlag string) error
 			Title("Select a template").
 			Options(
 				huh.NewOption("Alpine - Lightweight Alpine environment with mise", string(config.TemplateAlpine)),
-				huh.NewOption("Debian - Debian-based environment with mise", string(config.TemplateDebian)),
+				huh.NewOption("Debian+mise - Pre-built Debian image with mise, build-essential", string(config.TemplateDebianMise)),
 				huh.NewOption("Nix - NixOS-based development environment", string(config.TemplateNix)),
+				huh.NewOption("Debian slim - Plain Debian with mise installed on first run", string(config.TemplateDebianSlim)),
 			).
 			Value(&selectedTemplate).
 			Run()
