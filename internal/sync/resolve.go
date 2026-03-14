@@ -16,8 +16,8 @@ type ContainerExecutor interface {
 // ResolveLocal resolves a conflict by keeping the local version.
 // Deletes the file on the container side via the provided executor.
 func ResolveLocal(ctx context.Context, executor ContainerExecutor, containerID string, containerPath string) error {
-	if err := executor.ExecInContainer(ctx, containerID, []string{"rm", containerPath}); err != nil {
-		return fmt.Errorf("failed to delete container file: %w", err)
+	if err := executor.ExecInContainer(ctx, containerID, []string{"rm", "-rf", containerPath}); err != nil {
+		return fmt.Errorf("failed to delete container path: %w", err)
 	}
 	return nil
 }
@@ -25,8 +25,8 @@ func ResolveLocal(ctx context.Context, executor ContainerExecutor, containerID s
 // ResolveContainer resolves a conflict by keeping the container version.
 // Deletes the file on the local side so mutagen syncs the container version over.
 func ResolveContainer(fs afero.Fs, localPath string) error {
-	if err := fs.Remove(localPath); err != nil {
-		return fmt.Errorf("failed to delete local file: %w", err)
+	if err := fs.RemoveAll(localPath); err != nil {
+		return fmt.Errorf("failed to delete local path: %w", err)
 	}
 	return nil
 }

@@ -102,14 +102,14 @@ func TestResolveAllInteractive(t *testing.T) {
 			wantSkipped:  0,
 		},
 		{
-			name:      "container resolve error continues to next",
+			name:      "container resolve succeeds even when local file already gone",
 			conflicts: conflicts[:2],
 			choices:   []ResolveChoice{ResolveChoiceContainer, ResolveChoiceContainer},
 			setupFs: func(fs afero.Fs) {
-				// Only create file2, file1 is missing so Remove will fail
+				// Only create file2, file1 is already gone — RemoveAll is idempotent
 				_ = afero.WriteFile(fs, "/project/file2.txt", []byte("b"), 0o644)
 			},
-			wantResolved: 1,
+			wantResolved: 2,
 			wantSkipped:  0,
 		},
 	}

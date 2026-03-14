@@ -41,6 +41,10 @@ func TestResolveLocal(t *testing.T) {
 			containerPath: "/workspace/src/config.yaml",
 		},
 		{
+			name:          "successful directory deletion",
+			containerPath: "/workspace/pi-claude",
+		},
+		{
 			name:          "executor failure",
 			containerPath: "/workspace/src/config.yaml",
 			execErr:       fmt.Errorf("container not found"),
@@ -82,10 +86,18 @@ func TestResolveContainer(t *testing.T) {
 			},
 		},
 		{
-			name:      "file does not exist",
+			name:      "successful directory deletion",
+			localPath: "/project/pi-claude",
+			setup: func(fs afero.Fs) {
+				_ = fs.MkdirAll("/project/pi-claude/node_modules", 0o755)
+				_ = afero.WriteFile(fs, "/project/pi-claude/index.js", []byte("code"), 0o644)
+			},
+		},
+		{
+			name:      "non-existent path is idempotent",
 			localPath: "/project/nonexistent.txt",
 			setup:     func(fs afero.Fs) {},
-			wantErr:   true,
+			wantErr:   false,
 		},
 	}
 
@@ -128,8 +140,8 @@ func TestResolveLocal_PassesCorrectCommandArgs(t *testing.T) {
 	if executor.gotID != containerID {
 		t.Errorf("got container ID %q, want %q", executor.gotID, containerID)
 	}
-	if len(executor.gotCmd) != 2 || executor.gotCmd[0] != "rm" || executor.gotCmd[1] != containerPath {
-		t.Errorf("got cmd %v, want [rm %s]", executor.gotCmd, containerPath)
+	if len(executor.gotCmd) != 3 || executor.gotCmd[0] != "rm" || executor.gotCmd[1] != "-rf" || executor.gotCmd[2] != containerPath {
+		t.Errorf("got cmd %v, want [rm -rf %s]", executor.gotCmd, containerPath)
 	}
 	if executor.callCount != 1 {
 		t.Errorf("executor called %d times, want 1", executor.callCount)
@@ -144,7 +156,7 @@ func TestResolveLocal_ErrorWrapping(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to delete container file") {
+	if !strings.Contains(err.Error(), "failed to delete container path") {
 		t.Errorf("error should contain wrapper message, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "permission denied") {
@@ -153,14 +165,14 @@ func TestResolveLocal_ErrorWrapping(t *testing.T) {
 }
 
 func TestResolveContainer_ErrorWrapping(t *testing.T) {
-	fs := afero.NewMemMapFs()
-	// Don't create the file — Remove will fail
+	// ReadOnlyFs rejects all write operations, including RemoveAll
+	fs := afero.NewReadOnlyFs(afero.NewMemMapFs())
 
-	err := ResolveContainer(fs, "/nonexistent/path.txt")
+	err := ResolveContainer(fs, "/some/path.txt")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to delete local file") {
+	if !strings.Contains(err.Error(), "failed to delete local path") {
 		t.Errorf("error should contain wrapper message, got: %v", err)
 	}
 }
