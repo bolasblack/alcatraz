@@ -127,6 +127,7 @@ func (r *dockerCLICompatibleRuntime) buildRunArgs(ctx context.Context, env *Runt
 	args := []string{
 		"run", "-d",
 		"--name", name,
+		"--restart=unless-stopped",
 		"-w", cfg.Workdir,
 	}
 
