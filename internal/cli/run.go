@@ -33,7 +33,7 @@ func init() {
 // See AGD-009 for CLI workflow design.
 func runRun(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	cwd, err := getCwd()
+	cwd, err := findProjectDir()
 	if err != nil {
 		return err
 	}

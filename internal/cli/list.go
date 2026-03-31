@@ -22,7 +22,7 @@ var listCmd = &cobra.Command{
 // runList displays all alca-managed containers.
 func runList(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	cwd, err := getCwd()
+	cwd, err := findProjectDir()
 	if err != nil {
 		return err
 	}

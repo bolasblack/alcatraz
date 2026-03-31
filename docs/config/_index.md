@@ -12,6 +12,31 @@ Configure your agent's isolated environment. Each setting controls what the cont
 
 Alcatraz uses TOML format for configuration. The configuration file should be named `.alca.toml` and placed in your project root.
 
+### Project Root Discovery
+
+All commands except `alca init` automatically walk up the directory tree to find the nearest `.alca.toml`. This means you can run `alca status`, `alca up`, `alca run`, etc. from any subdirectory within your project.
+
+For example, given this directory structure:
+
+```
+my-project/
+├── .alca.toml
+├── src/
+│   └── pkg/
+│       └── main.go
+└── tests/
+```
+
+Running `alca status` from `my-project/src/pkg/` finds and uses `my-project/.alca.toml`. The project root (the directory containing `.alca.toml`) is used for state files, container mounts, and all path resolution.
+
+`alca init` is the exception — it always creates `.alca.toml` in the current working directory.
+
+**Edge cases:**
+
+- If `.alca.toml` is a symlink to a file, it is treated as a normal config file.
+- If `.alca.toml` is a directory (not a file), it is skipped and the search continues upward.
+- If no `.alca.toml` is found all the way to the filesystem root, the command reports the usual "not initialized" error.
+
 ## Field Reference
 
 | Field                | Type             | Required | Default                                  | Description                                    |

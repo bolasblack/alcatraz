@@ -33,7 +33,7 @@ func runSyncCheck(cmd *cobra.Command, args []string) error {
 	_, _ = fmt.Fprint(cmd.OutOrStderr(), experimentalWarning)
 	_, _ = fmt.Fprintln(cmd.OutOrStderr())
 
-	cwd, err := getCwd()
+	cwd, err := findProjectDir()
 	if err != nil {
 		return err
 	}

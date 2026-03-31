@@ -152,6 +152,8 @@ See the [full configuration reference](docs/config/fields.md) for all options.
 | `experimental sync check`                   | Check for sync conflicts                    |
 | `experimental sync resolve`                 | Interactively resolve sync conflicts        |
 
+All commands except `init` work from any subdirectory — Alcatraz walks up the directory tree to find the nearest `.alca.toml`.
+
 ## Network Isolation
 
 On macOS, container traffic is proxied through a userspace process (`com.docker.backend` for Docker Desktop, OrbStack's network stack for OrbStack). macOS-level firewalls like `pf` cannot intercept this traffic. Network isolation must happen **inside the Linux VM** using nftables.

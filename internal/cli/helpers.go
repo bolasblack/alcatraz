@@ -156,6 +156,35 @@ func getCwd() (string, error) {
 	return cwd, nil
 }
 
+// findProjectDir walks up the directory tree from cwd looking for ConfigFilename.
+// Returns the directory containing the config file. If not found, returns cwd
+// so that callers can produce the normal "not initialized" error.
+func findProjectDir() (string, error) {
+	cwd, err := getCwd()
+	if err != nil {
+		return "", err
+	}
+	return findProjectDirFrom(afero.NewOsFs(), cwd), nil
+}
+
+// findProjectDirFrom walks up from startDir looking for ConfigFilename.
+// Returns startDir if not found.
+func findProjectDirFrom(fs afero.Fs, startDir string) string {
+	dir := startDir
+	for {
+		info, err := fs.Stat(filepath.Join(dir, ConfigFilename))
+		if err == nil && !info.IsDir() {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached filesystem root — return original startDir
+			return startDir
+		}
+		dir = parent
+	}
+}
+
 // promptConfirm prompts the user for confirmation.
 // Returns false immediately when stdin is not a terminal (CI, scripts, piped input)
 // so that non-interactive invocations never block waiting for input.

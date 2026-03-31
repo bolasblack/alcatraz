@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -138,6 +140,100 @@ func TestDisplayConfigDrift(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFindProjectDirFrom(t *testing.T) {
+	t.Run("finds config in current dir", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		_ = afero.WriteFile(fs, "/home/user/project/.alca.toml", []byte(""), 0644)
+
+		got := findProjectDirFrom(fs, "/home/user/project")
+		if got != "/home/user/project" {
+			t.Errorf("got %q, want /home/user/project", got)
+		}
+	})
+
+	t.Run("finds config in parent dir", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		_ = afero.WriteFile(fs, "/home/user/project/.alca.toml", []byte(""), 0644)
+		_ = fs.MkdirAll("/home/user/project/src/pkg", 0755)
+
+		got := findProjectDirFrom(fs, "/home/user/project/src/pkg")
+		if got != "/home/user/project" {
+			t.Errorf("got %q, want /home/user/project", got)
+		}
+	})
+
+	t.Run("returns startDir when not found", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+
+		got := findProjectDirFrom(fs, "/home/user/noproject/deep/dir")
+		if got != "/home/user/noproject/deep/dir" {
+			t.Errorf("got %q, want /home/user/noproject/deep/dir", got)
+		}
+	})
+
+	t.Run("finds nearest config (not grandparent)", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		_ = afero.WriteFile(fs, "/home/user/.alca.toml", []byte(""), 0644)
+		_ = afero.WriteFile(fs, "/home/user/project/.alca.toml", []byte(""), 0644)
+		_ = fs.MkdirAll("/home/user/project/src", 0755)
+
+		got := findProjectDirFrom(fs, "/home/user/project/src")
+		if got != "/home/user/project" {
+			t.Errorf("got %q, want /home/user/project (nearest), not /home/user", got)
+		}
+	})
+
+	t.Run("skips directory named .alca.toml", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		// .alca.toml exists as a directory in /project — should be skipped
+		_ = fs.MkdirAll("/home/user/project/.alca.toml", 0755)
+		// Real config file in parent
+		_ = afero.WriteFile(fs, "/home/user/.alca.toml", []byte(""), 0644)
+		_ = fs.MkdirAll("/home/user/project/src", 0755)
+
+		got := findProjectDirFrom(fs, "/home/user/project/src")
+		if got != "/home/user" {
+			t.Errorf("got %q, want /home/user (should skip directory)", got)
+		}
+	})
+
+	t.Run("skips directory named .alca.toml with no fallback", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		// Only a directory exists, no real file anywhere
+		_ = fs.MkdirAll("/home/user/project/.alca.toml", 0755)
+		_ = fs.MkdirAll("/home/user/project/src", 0755)
+
+		got := findProjectDirFrom(fs, "/home/user/project/src")
+		if got != "/home/user/project/src" {
+			t.Errorf("got %q, want /home/user/project/src (startDir fallback)", got)
+		}
+	})
+
+	t.Run("symlink to config file is accepted", func(t *testing.T) {
+		// MemMapFs doesn't support symlinks — use OsFs with temp dir
+		tmpDir := t.TempDir()
+		fs := afero.NewOsFs()
+
+		projectDir := filepath.Join(tmpDir, "project")
+		realDir := filepath.Join(tmpDir, "shared")
+		_ = fs.MkdirAll(projectDir, 0755)
+		_ = fs.MkdirAll(realDir, 0755)
+
+		// Create real config file and symlink to it
+		realConfig := filepath.Join(realDir, ".alca.toml")
+		_ = afero.WriteFile(fs, realConfig, []byte("image = \"test\""), 0644)
+		_ = os.Symlink(realConfig, filepath.Join(projectDir, ".alca.toml")) //nolint:fslint // afero has no Symlink; real filesystem needed
+
+		subDir := filepath.Join(projectDir, "src", "pkg")
+		_ = fs.MkdirAll(subDir, 0755)
+
+		got := findProjectDirFrom(fs, subDir)
+		if got != projectDir {
+			t.Errorf("got %q, want %q (symlink should be treated as file)", got, projectDir)
+		}
+	})
 }
 
 func TestNewCLIDeps(t *testing.T) {

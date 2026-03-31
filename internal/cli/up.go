@@ -43,7 +43,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		out = nil
 	}
 
-	cwd, err := getCwd()
+	cwd, err := findProjectDir()
 	if err != nil {
 		return err
 	}

@@ -41,7 +41,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	cleanupAll, _ := cmd.Flags().GetBool("all")
 
-	cwd, err := getCwd()
+	cwd, err := findProjectDir()
 	if err != nil {
 		return err
 	}

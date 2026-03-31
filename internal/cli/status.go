@@ -25,7 +25,7 @@ var statusCmd = &cobra.Command{
 // See AGD-009 for CLI workflow design.
 func runStatus(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	cwd, err := getCwd()
+	cwd, err := findProjectDir()
 	if err != nil {
 		return err
 	}
