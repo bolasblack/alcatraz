@@ -61,6 +61,8 @@ mise use -g "go:github.com/bolasblack/alcatraz/cmd/alca@latest"
 | `alca down`      | Stop and remove container             |
 | `alca status`    | Show container status and config info |
 
+All commands except `init` work from any subdirectory — Alcatraz [walks up the directory tree](./config/_index.md#project-root-discovery) to find the nearest `.alca.toml`.
+
 ## Your First Container
 
 ### Step 1: Initialize

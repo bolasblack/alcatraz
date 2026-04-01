@@ -8,7 +8,7 @@ build:
 
 > Alcatraz is a local sandbox tool for running AI code agents safely in containers with file and network isolation.
 
-Alcatraz (CLI: `alca`) lets you run AI coding agents like Claude Code, Codex, or Gemini CLI unrestricted but safely. You define your sandbox in a `.alca.toml` config file — specifying the container image, file exclusion patterns, network rules, and mounts — then `alca init && alca up` builds and starts an isolated container. Inside, agents can operate without permission guardrails while sensitive files (SSH keys, cloud credentials) stay hidden via exclusion patterns and LAN access is blocked by automated nftables firewall rules. Alcatraz auto-detects Docker, OrbStack, or Podman as the container runtime.
+Alcatraz (CLI: `alca`) lets you run AI coding agents like Claude Code, Codex, or Gemini CLI unrestricted but safely. You define your sandbox in a `.alca.toml` config file — specifying the container image, file exclusion patterns, network rules, and mounts — then `alca init && alca up` builds and starts an isolated container. Inside, agents can operate without permission guardrails while sensitive files (SSH keys, cloud credentials) stay hidden via exclusion patterns and LAN access is blocked by automated nftables firewall rules. Alcatraz auto-detects Docker, OrbStack, or Podman as the container runtime. All commands except `init` work from any subdirectory — Alcatraz [walks up the directory tree](./config/_index.md#project-root-discovery) to find the nearest `.alca.toml`.
 
 ## Getting Started
 
