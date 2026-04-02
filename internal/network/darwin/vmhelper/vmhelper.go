@@ -154,10 +154,43 @@ func UninstallHelper(ctx context.Context, env *VMHelperEnv, progress shared.Prog
 }
 
 // Reload triggers a rule reload in the helper container via SIGHUP.
+// Note: This is asynchronous — the signal is sent but rule loading may not be
+// complete when this function returns. For synchronous rule loading, use
+// LoadRuleFile instead.
 func Reload(ctx context.Context, env *VMHelperEnv) error {
 	_, err := env.Cmd.RunQuiet(ctx, "docker", "exec", ContainerName, "sh", "-c", "kill -HUP 1")
 	if err != nil {
 		return fmt.Errorf("vmhelper: failed to reload helper: %w", err)
+	}
+	return nil
+}
+
+// LoadRuleFile loads a single nft rule file synchronously via the helper container.
+// The file is read from the container filesystem and piped to nft via nsenter,
+// matching the same pattern used by entry.sh.
+// containerPath is the path inside the container (e.g., "/files/alcatraz_nft/file.nft").
+func LoadRuleFile(ctx context.Context, env *VMHelperEnv, containerPath string) error {
+	// Shell redirection opens the file from container FS before nsenter switches
+	// to the host mount namespace, then nft reads from /dev/stdin.
+	script := fmt.Sprintf("nsenter -t 1 -m -u -n -i sh -c 'nft -f /dev/stdin' < '%s'", containerPath)
+	output, err := env.Cmd.RunQuiet(ctx, "docker", "exec", ContainerName, "sh", "-c", script)
+	if err != nil {
+		return fmt.Errorf("vmhelper: failed to load rule file %s: %w: %s", containerPath, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+// DeleteTable deletes an nftables table inside the VM via the helper container.
+// Returns nil if the table does not exist.
+func DeleteTable(ctx context.Context, env *VMHelperEnv, family string, table string) error {
+	output, err := env.Cmd.RunQuiet(ctx, "docker", "exec", ContainerName,
+		"nsenter", "-t", "1", "-m", "-u", "-n", "-i", "nft", "delete", "table", family, table)
+	if err != nil {
+		combined := string(output) + " " + err.Error()
+		if strings.Contains(combined, "No such file or directory") {
+			return nil
+		}
+		return fmt.Errorf("vmhelper: failed to delete table %s %s: %w: %s", family, table, err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }

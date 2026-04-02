@@ -9,3 +9,7 @@ import "github.com/bolasblack/alcatraz/internal/util"
 // NftDirRel is the nft rule directory path relative to user home.
 // Used by both nft/paths.go (nftDirOnDarwin) and network helper (directory creation).
 const NftDirRel = util.FilesDir + "/alcatraz_nft"
+
+// NftDirInContainer is the nft rule directory path inside the helper container.
+// The helper container mounts ~/.alcatraz/files/ as /files/.
+const NftDirInContainer = "/files/alcatraz_nft"
