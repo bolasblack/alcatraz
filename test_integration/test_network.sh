@@ -95,7 +95,11 @@ TOML
 
   # Verify LAN gateway is blocked (real behavioral test).
   local gw_ip
-  gw_ip=$(ip route | awk '/default/ {print $3}')
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    gw_ip=$(route -n get default 2>/dev/null | awk '/gateway:/ {print $2}')
+  else
+    gw_ip=$(ip route | awk '/default/ {print $3}')
+  fi
   if [[ -n "$gw_ip" ]]; then
     local lan_output lan_exit=0
     lan_output=$(run_with_timeout 10 "$ALCA_BIN" run ping -c 1 -W 3 "$gw_ip" < /dev/null 2>&1) || lan_exit=$?

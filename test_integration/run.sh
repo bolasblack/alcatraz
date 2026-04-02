@@ -14,6 +14,9 @@ source "$SCRIPT_DIR/test_mounts.sh"
 source "$SCRIPT_DIR/test_network.sh"
 source "$SCRIPT_DIR/test_ports.sh"
 source "$SCRIPT_DIR/test_cleanup.sh"
+source "$SCRIPT_DIR/test_init.sh"
+source "$SCRIPT_DIR/test_subdir.sh"
+source "$SCRIPT_DIR/test_restart_policy.sh"
 
 # Prerequisites
 if [[ ! -x "$ALCA_BIN" ]]; then
@@ -72,6 +75,8 @@ ensure_dockerd
 # Ensure network helper is installed (required for network isolation tests)
 # ---------------------------------------------------------------------------
 
+NETWORK_HELPER_INSTALLED_BY_US=""
+
 ensure_network_helper() {
   if ! container_runtime_available; then
     return 0
@@ -81,13 +86,16 @@ ensure_network_helper() {
   fi
   echo "Installing network helper..."
   sudo "$ALCA_BIN" network-helper install --yes 2>&1 || true
+  NETWORK_HELPER_INSTALLED_BY_US=1
 }
 
 cleanup_network_helper() {
   if ! container_runtime_available; then
     return 0
   fi
-  sudo "$ALCA_BIN" network-helper uninstall --yes 2>/dev/null || true
+  if [ -n "$NETWORK_HELPER_INSTALLED_BY_US" ]; then
+    sudo "$ALCA_BIN" network-helper uninstall --yes 2>/dev/null || true
+  fi
 }
 
 ensure_network_helper
@@ -95,6 +103,8 @@ ensure_network_helper
 # Group 1: Config (no container runtime needed)
 echo "=== Group 1: Config ==="
 test_config_validation
+test_init_template
+test_init_template_unknown
 
 # Groups 2-9: require container runtime (Docker or Podman)
 if container_runtime_available; then
@@ -133,9 +143,18 @@ if container_runtime_available; then
   echo ""
   echo "=== Group 9: Cleanup ==="
   test_cleanup_no_orphans
+
+  echo ""
+  echo "=== Group 10: Subdirectory Discovery ==="
+  test_subdir_status
+  test_subdir_run
+
+  echo ""
+  echo "=== Group 11: Restart Policy ==="
+  test_restart_policy
 else
   echo ""
-  skip "No container runtime (Docker/Podman) available — skipping Groups 2-9"
+  skip "No container runtime (Docker/Podman) available — skipping Groups 2-11"
 fi
 
 # Summary
