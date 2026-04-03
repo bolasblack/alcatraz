@@ -56,6 +56,11 @@ If you haven't already configured Docker in your OrbStack NixOS VM, do so now:
 virtualisation.docker.enable = true;
 networking.nftables.enable = true;
 users.users.<user>.extraGroups = [ "docker" ];
+
+# Optional: add useful tools for debugging inside the VM
+environment.systemPackages = with pkgs; [
+  vim
+];
 ```
 
 Replace `<user>` with your actual username in the VM.
