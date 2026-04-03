@@ -3,7 +3,8 @@
 - `make build` — full build: all platform binaries + schema + man pages + shell completions
 - `make build:all` — build all platform binaries only
 - `make test` — run unit tests
-- `make test-integration` — build and run integration tests (requires Docker)
+- `make test-integration` — run integration tests via `nix develop .#integration` (requires Nix + Docker)
+- `TEST_GROUP=12 make test-integration` — run a single integration test group
 - `make lint` — run linter
 - `make schema` — regenerate `alca-config.schema.json`
 - `make docs` — generate all docs (markdown + man pages + shell completions)
@@ -21,9 +22,7 @@
 
 **Release prerequisites**: Requires `svu` (installed via `mise install`). Homebrew formula is stored in the `HomebrewFormula/` directory of this repo.
 
-After modifying code, always run `make lint` and `make test` to find and fix any issues before reporting completion.
-
-After dependency updates, always run `make vendor-hash-update` to update the vendor hash in `flake.nix`.
+**Release workflow**: Load the `release-note` skill to generate changelogs. The skill gathers commits since the last tag, filters user-facing changes, and writes `docs/changelogs/v<VERSION>.md`. Then run `make release-minor` (or `-patch`/`-major`). CI automatically generates GitHub Release notes from the changelog via goreleaser.
 
 ### Makefile Embedded File Tracking
 
@@ -61,8 +60,6 @@ Changelogs live in `docs/changelogs/v<VERSION>.md` and follow [Common Changelog]
 
 - Categories in order: Changed, Added, Removed, Fixed (only include categories that have entries)
 - Use portable markdown links (`../config/fields.md`) — Hugo resolves them via `BookPortableLinks`
-- `make release-notes VERSION=v0.2.0` rewrites links to absolute URLs for GitHub Releases
-- Use negative `weight` in frontmatter so newer versions sort first (e.g., `-20` for v0.2.0, `-30` for v0.3.0)
 
 ### LLM Documentation
 
@@ -163,3 +160,9 @@ Tests exist to discover bugs — mismatches between implementation and expectati
   - `defer cmd.AssertAllExpectationsMet(t)` — always add this when using `ExpectSuccess`. Verifies all expected commands were called (nothing was skipped). Uses `t.Errorf` internally so it's safe with `defer`
   - `AssertCalled` — only use when checking something beyond expectations (e.g., dynamic commands not set up via `ExpectSuccess`). Redundant when `AssertAllExpectationsMet` is present since it already guarantees all expected commands ran
   - `AssertNotCalled` — use to verify a command was NOT called (e.g., cache reuse skips fetch, pinned commit skips network). This checks absence, which `AssertAllExpectationsMet` does not cover
+
+## Rules
+
+- After modifying code, always run `make lint` and `make test` to find and fix any issues before reporting completion.
+- After dependency updates, always run `make vendor-hash-update` to update the vendor hash in `flake.nix`.
+- Integration tests: see `test_integration/CLAUDE.md` for rules and conventions, `docs_internal/integration-tests-macos.md` for running on macOS.
