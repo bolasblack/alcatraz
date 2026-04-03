@@ -22,8 +22,10 @@ jobs:
       - name: Install nftables
         run: sudo apt-get update && sudo apt-get install -y nftables
 
-      - name: Load nftables kernel module
-        run: sudo modprobe nf_tables
+      - name: Load kernel modules
+        run: |
+          sudo modprobe nf_tables
+          sudo modprobe br_netfilter
 
       - name: Run integration tests
         env:

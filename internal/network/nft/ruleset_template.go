@@ -70,7 +70,16 @@ table ip {{.ProxyTable}} {
 	}
 
 	chain prerouting {
-		type nat hook prerouting priority dstnat; policy accept;
+		# Priority dstnat - 1 (-101) to run BEFORE Docker's iptables PREROUTING (-100).
+		# Docker defaults to iptables for networking on most distros. NAT rules are
+		# only evaluated on the first packet of each flow — once a NAT binding is set
+		# (even "no NAT" via nf_nat_alloc_null_binding), subsequent chains are skipped.
+		# If Docker's chain runs first without DNAT, our rules are never evaluated.
+		#
+		# References:
+		#   NAT first-packet semantics: https://wiki.nftables.org/wiki-nftables/index.php/Performing_Network_Address_Translation_(NAT)
+		#   null_binding source: https://github.com/torvalds/linux/blob/master/net/netfilter/nf_nat_core.c
+		type nat hook prerouting priority dstnat - 1; policy accept;
 
 		# Rule ordering is critical: routing loop prevention rules MUST come before
 		# the DNAT wildcard rules (dport 1-65535) which would otherwise match traffic

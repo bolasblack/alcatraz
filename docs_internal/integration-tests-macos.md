@@ -55,6 +55,7 @@ If you haven't already configured Docker in your OrbStack NixOS VM, do so now:
 ```nix
 virtualisation.docker.enable = true;
 networking.nftables.enable = true;
+boot.kernelModules = [ "br_netfilter" ];
 users.users.<user>.extraGroups = [ "docker" ];
 
 # Optional: add useful tools for debugging inside the VM

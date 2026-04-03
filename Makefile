@@ -62,8 +62,8 @@ test:
 	go test -coverprofile=out_coverage ./...
 	go tool cover -html=out_coverage -o out_coverage.html
 
-test-integration: build\:$(shell go env GOOS)\:$(shell go env GOARCH)
-	ALCA_BIN=$(BIN_DIR)/alca-$(shell go env GOOS)-$(shell go env GOARCH) bash test_integration/run.sh
+test-integration:
+	nix --extra-experimental-features "nix-command flakes" develop .#integration --command bash test_integration/run.sh
 
 # ========= Linting =========
 .PHONY: lint

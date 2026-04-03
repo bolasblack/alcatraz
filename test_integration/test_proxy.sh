@@ -2,8 +2,11 @@
 # Sourced by run.sh — no shebang needed.
 #
 # Tests that network.proxy redirects container traffic via nftables DNAT.
-# Uses a listener INSIDE a Docker container (not on the host) to avoid
-# macOS firewall issues. All traffic stays within the Docker network.
+#
+# IMPORTANT: br_netfilter must be loaded for DNAT between containers on the
+# same bridge. Without it, response packets (SYN-ACK) go through bridge L2
+# forwarding which bypasses netfilter — conntrack can't do reverse NAT and
+# the container sees the wrong source IP.
 
 PROXY__LISTENER_NAME="alca-test-proxy-listener"
 
@@ -18,24 +21,54 @@ test_proxy_redirect() {
     return
   fi
 
+  # Ensure br_netfilter is loaded so bridge packets go through netfilter
+  # (needed for conntrack reverse NAT on DNAT'd same-bridge traffic).
+  if [[ "$(uname -s)" == "Linux" ]]; then
+    # br_netfilter is required so bridge packets go through netfilter
+    # (conntrack reverse NAT for DNAT between same-bridge containers).
+    # CI loads it via workflow step; NixOS via boot.kernelModules.
+    if [[ ! -f /proc/sys/net/bridge/bridge-nf-call-iptables ]]; then
+      fail "proxy_redirect: br_netfilter" "kernal module \`br_netfilter\` module not loaded."
+      teardown_test_dir
+      return
+    fi
+  fi
+
   setup_test_dir
   proxy__cleanup_listener
 
   local proxy_port=19876
 
   # Start a listener in a separate container on the Docker bridge network.
-  # nc -l -p PORT listens for one connection, saves data, then sleep keeps
-  # the container alive so we can read the file.
   $CONTAINER_RUNTIME run -d --name "$PROXY__LISTENER_NAME" alpine \
-    sh -c "nc -l -p $proxy_port > /tmp/received 2>/dev/null; sleep 30" >/dev/null 2>&1
+    sh -c "while true; do nc -l -p $proxy_port >> /tmp/received 2>/dev/null; done" >/dev/null 2>&1
 
   sleep 1
 
   # Get the listener container's IP on the bridge network
   local listener_ip
-  listener_ip=$($CONTAINER_RUNTIME inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$PROXY__LISTENER_NAME" 2>/dev/null)
+  listener_ip=$($CONTAINER_RUNTIME inspect \
+    --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+    "$PROXY__LISTENER_NAME" 2>/dev/null)
   if [[ -z "$listener_ip" ]]; then
     fail "proxy_redirect: get listener IP" "could not get listener container IP"
+    proxy__cleanup_listener
+    teardown_test_dir
+    return
+  fi
+
+  # Verify listener is ready
+  local ready=0
+  for i in $(seq 1 5); do
+    if $CONTAINER_RUNTIME exec "$PROXY__LISTENER_NAME" sh -c \
+      "netstat -tln 2>/dev/null | grep -q $proxy_port || ss -tln 2>/dev/null | grep -q $proxy_port" 2>/dev/null; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ $ready -eq 0 ]]; then
+    fail "proxy_redirect: listener ready" "listener not listening on port $proxy_port after 5s"
     proxy__cleanup_listener
     teardown_test_dir
     return
@@ -67,15 +100,12 @@ TOML
     return
   fi
 
-  # Send a marker string from inside the test container to an arbitrary address.
-  # DNAT should redirect this connection to the listener container.
+  # Send a marker string to an arbitrary address — DNAT should redirect.
   local marker="PROXY_TEST_$$"
   run_with_timeout 10 "$ALCA_BIN" run sh -c "echo $marker | nc -w 3 8.8.8.8 80" < /dev/null 2>&1 || true
+  sleep 2
 
-  # Give the listener a moment to flush
-  sleep 1
-
-  # Read what the listener captured
+  # Check if the listener captured the marker.
   local received
   received=$($CONTAINER_RUNTIME exec "$PROXY__LISTENER_NAME" cat /tmp/received 2>/dev/null || true)
 

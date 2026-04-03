@@ -63,7 +63,7 @@ func TestGenerateRuleset_WithProxy(t *testing.T) {
 	assert.Contains(t, ruleset, "ip saddr 172.17.0.2 udp dport 1-65535 dnat to 172.17.0.1:1080")
 
 	// Verify proxy chain uses nat hook with dstnat priority
-	assert.Contains(t, ruleset, "type nat hook prerouting priority dstnat")
+	assert.Contains(t, ruleset, "type nat hook prerouting priority dstnat - 1")
 }
 
 func TestGenerateRuleset_WithoutProxy(t *testing.T) {
