@@ -34,7 +34,7 @@ func TestNewDarwinHelper_UsesPlatformForRuleset(t *testing.T) {
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "/project", "", runtime.PlatformMacDockerDesktop)
 	firewall := New(env)
 
-	_, err := firewall.ApplyRules("container1", "172.17.0.2", nil)
+	_, err := firewall.ApplyRules("container1", "172.17.0.2", nil, nil)
 	require.NoError(t, err)
 
 	dir, _ := nftDirOnDarwin()

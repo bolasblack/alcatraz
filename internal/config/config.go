@@ -175,9 +175,11 @@ func DefaultEnvs() map[string]EnvValue {
 
 // Network defines network configuration for the container (resolved form).
 // See AGD-030 for LAN access design decisions.
+// See AGD-037 for transparent proxy design decisions.
 type Network struct {
 	LANAccess []string     `toml:"lan-access,omitempty" json:"lan-access,omitempty" jsonschema:"description=LAN access configuration (currently only '*' is supported)"`
 	Ports     []PortConfig `toml:"ports,omitempty" json:"ports,omitempty" jsonschema:"description=Port mappings (Docker -p flags)"`
+	Proxy     string       `toml:"proxy,omitempty" json:"proxy,omitempty" jsonschema:"description=Transparent proxy address (host:port). All container TCP/UDP traffic is redirected via nftables DNAT. Supports ${alca:HOST_IP} token."`
 }
 
 // RawNetwork is the raw TOML representation of Network.
@@ -185,6 +187,7 @@ type Network struct {
 type RawNetwork struct {
 	LANAccess []string     `toml:"lan-access,omitempty" json:"lan-access,omitempty" jsonschema:"description=LAN access configuration (currently only '*' is supported)"`
 	Ports     RawPortSlice `toml:"ports,omitempty" json:"ports,omitempty"`
+	Proxy     string       `toml:"proxy,omitempty" json:"proxy,omitempty" jsonschema:"description=Transparent proxy address (host:port). All container TCP/UDP traffic is redirected via nftables DNAT. Supports ${alca:HOST_IP} token."`
 }
 
 // Caps represents container capability configuration (resolved form).
@@ -433,6 +436,13 @@ func LoadConfig(env *util.Env, path string, expandEnv func(string) (string, erro
 	// Validate port mappings
 	if err := ValidatePorts(cfg.Network.Ports); err != nil {
 		return Config{}, fmt.Errorf("network: %w", err)
+	}
+
+	// Validate proxy address (AGD-037)
+	if cfg.Network.Proxy != "" {
+		if err := ValidateProxyAddress(cfg.Network.Proxy); err != nil {
+			return Config{}, fmt.Errorf("network.proxy: %w", err)
+		}
 	}
 
 	// Apply default caps if not specified (AGD-026)

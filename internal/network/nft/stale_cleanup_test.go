@@ -26,7 +26,7 @@ func TestCleanupStaleFiles_DirRenameWithTransactFs(t *testing.T) {
 	oldProjectDir := "/path/old-name"
 
 	// Old nft file on "disk" from previous run
-	oldRuleset := generateRuleset("alca-old123", "172.17.0.2", nil, "filter - 1", oldProjectDir, projectID)
+	oldRuleset := generateRuleset("alca-old123", "172.17.0.2", nil, nil, false, "filter - 1", oldProjectDir, projectID)
 	_ = afero.WriteFile(actualFs, dir+"/"+nftFileName(oldProjectDir), []byte(oldRuleset), 0644)
 
 	// Old dir does NOT exist (user renamed it)
@@ -63,7 +63,7 @@ func TestCleanupStaleFiles_RunsIndependentOfLANAccessRules(t *testing.T) {
 
 	// Stale project: directory no longer exists
 	staleDir := "/home/user/deleted-project"
-	staleRuleset := generateRuleset("alca-stale", "172.17.0.2", nil, "filter - 1", staleDir, "stale-uuid")
+	staleRuleset := generateRuleset("alca-stale", "172.17.0.2", nil, nil, false, "filter - 1", staleDir, "stale-uuid")
 	_ = afero.WriteFile(mockFs, dir+"/"+nftFileName(staleDir), []byte(staleRuleset), 0644)
 
 	// Active project with lan-access = ["*"] (HasAllLAN=true)
@@ -71,7 +71,7 @@ func TestCleanupStaleFiles_RunsIndependentOfLANAccessRules(t *testing.T) {
 	_ = mockFs.MkdirAll(activeDir+"/.alca", 0755)
 	_ = afero.WriteFile(mockFs, activeDir+"/.alca/state.json",
 		[]byte(`{"project_id":"active-uuid"}`), 0644)
-	activeRuleset := generateRuleset("alca-active", "172.17.0.3", nil, "filter - 1", activeDir, "active-uuid")
+	activeRuleset := generateRuleset("alca-active", "172.17.0.3", nil, nil, false, "filter - 1", activeDir, "active-uuid")
 	_ = afero.WriteFile(mockFs, dir+"/"+nftFileName(activeDir), []byte(activeRuleset), 0644)
 
 	// CleanupStaleFiles operates on the firewall instance, not on lan-access rules.
@@ -101,6 +101,46 @@ func TestCleanupStaleFiles_RunsIndependentOfLANAccessRules(t *testing.T) {
 	}
 }
 
+// TestCleanupStaleFiles_WithProxyTable verifies that when a stale ruleset includes
+// a proxy table (ip family), CleanupStaleFiles deletes both the inet isolation table
+// and the ip proxy table.
+func TestCleanupStaleFiles_WithProxyTable(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner()
+	defer mockCmd.AssertAllExpectationsMet(t)
+
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/current/project", "", runtime.PlatformLinux)
+	n := New(env).(*NFTables)
+
+	dir := nftDirOnLinux()
+	_ = mockFs.MkdirAll(dir, 0755)
+
+	// Stale project with proxy configured — project dir does NOT exist
+	staleDir := "/gone/proxy-project"
+	proxy := &shared.ProxyConfig{Host: "10.0.0.1", Port: 1080}
+	staleRuleset := generateRuleset("alca-proxystale", "172.17.0.2", nil, proxy, false, "filter - 1", staleDir, "proj-proxy-stale")
+	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(staleDir)), []byte(staleRuleset), 0644)
+
+	// Expect delete commands for BOTH tables — inet isolation AND ip proxy
+	mockCmd.ExpectSuccess("sudo nft delete table inet alca-proxystale", nil)
+	mockCmd.ExpectSuccess("sudo nft delete table ip alca-proxy-proxystale", nil)
+
+	count, err := n.CleanupStaleFiles(context.Background())
+	if err != nil {
+		t.Fatalf("CleanupStaleFiles() error = %v", err)
+	}
+
+	if count != 1 {
+		t.Errorf("CleanupStaleFiles() count = %d, want 1", count)
+	}
+
+	// Verify stale file was removed
+	exists, _ := afero.Exists(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(staleDir)))
+	if exists {
+		t.Error("stale nft file with proxy should be deleted")
+	}
+}
+
 // TestCleanupStaleFiles_TwoFilesForSameProjectID verifies that when two nft files
 // exist for the same project ID (old path + new path), the old one is cleaned up.
 func TestCleanupStaleFiles_TwoFilesForSameProjectID(t *testing.T) {
@@ -113,11 +153,11 @@ func TestCleanupStaleFiles_TwoFilesForSameProjectID(t *testing.T) {
 	newDir := "/home/user/new-name"
 
 	// Old nft file (project dir no longer exists)
-	oldRuleset := generateRuleset("alca-old", "172.17.0.2", nil, "filter - 1", oldDir, projectID)
+	oldRuleset := generateRuleset("alca-old", "172.17.0.2", nil, nil, false, "filter - 1", oldDir, projectID)
 	_ = afero.WriteFile(mockFs, dir+"/"+nftFileName(oldDir), []byte(oldRuleset), 0644)
 
 	// New nft file (project dir exists with matching state)
-	newRuleset := generateRuleset("alca-new", "172.17.0.3", nil, "filter - 1", newDir, projectID)
+	newRuleset := generateRuleset("alca-new", "172.17.0.3", nil, nil, false, "filter - 1", newDir, projectID)
 	_ = afero.WriteFile(mockFs, dir+"/"+nftFileName(newDir), []byte(newRuleset), 0644)
 	_ = mockFs.MkdirAll(newDir+"/.alca", 0755)
 	_ = afero.WriteFile(mockFs, newDir+"/.alca/state.json",

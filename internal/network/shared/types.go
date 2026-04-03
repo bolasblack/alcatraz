@@ -64,16 +64,25 @@ func (t Type) String() string {
 	}
 }
 
+// ProxyConfig holds parsed transparent proxy configuration (AGD-037).
+// nil means no proxy is configured.
+type ProxyConfig struct {
+	Host string
+	Port int
+}
+
 // Firewall manages network isolation rules for containers.
 type Firewall interface {
-	// ApplyRules applies network isolation with optional allow rules.
+	// ApplyRules applies network rules for a container: isolation (lan-access)
+	// and optional transparent proxy (AGD-037).
 	// containerID is used to create an isolated ruleset that can be cleaned up.
 	// containerIP is the container's IP address.
 	// rules are parsed lan-access entries (allow-listed destinations).
 	// If rules is empty, all RFC1918 traffic is blocked.
 	// If any rule has AllLAN=true, no blocking is applied.
+	// proxy is the transparent proxy config; nil means no proxy.
 	// Returns PostCommitAction that MUST be called after TransactFs.Commit().
-	ApplyRules(containerID string, containerIP string, rules []LANAccessRule) (*PostCommitAction, error)
+	ApplyRules(containerID string, containerIP string, rules []LANAccessRule, proxy *ProxyConfig) (*PostCommitAction, error)
 
 	// Cleanup removes all firewall rules for a container.
 	// Returns PostCommitAction that MUST be called after TransactFs.Commit().

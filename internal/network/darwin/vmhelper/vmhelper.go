@@ -7,6 +7,7 @@ package vmhelper
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +22,12 @@ import (
 
 //go:embed entry.sh
 var entryScript string
+
+// ErrRuleLoad is returned when loading an nft rule file into the VM fails.
+var ErrRuleLoad = errors.New("vmhelper: rule load failed")
+
+// ErrTableDelete is returned when deleting an nftables table from the VM fails.
+var ErrTableDelete = errors.New("vmhelper: table delete failed")
 
 const (
 	entryFileName = "entry.sh"
@@ -175,7 +182,7 @@ func LoadRuleFile(ctx context.Context, env *VMHelperEnv, containerPath string) e
 	script := fmt.Sprintf("nsenter -t 1 -m -u -n -i sh -c 'nft -f /dev/stdin' < '%s'", containerPath)
 	output, err := env.Cmd.RunQuiet(ctx, "docker", "exec", ContainerName, "sh", "-c", script)
 	if err != nil {
-		return fmt.Errorf("vmhelper: failed to load rule file %s: %w: %s", containerPath, err, strings.TrimSpace(string(output)))
+		return fmt.Errorf("%w: %s: %s", ErrRuleLoad, containerPath, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -190,7 +197,7 @@ func DeleteTable(ctx context.Context, env *VMHelperEnv, family string, table str
 		if strings.Contains(combined, "No such file or directory") {
 			return nil
 		}
-		return fmt.Errorf("vmhelper: failed to delete table %s %s: %w: %s", family, table, err, strings.TrimSpace(string(output)))
+		return fmt.Errorf("%w: %s %s: %s", ErrTableDelete, family, table, strings.TrimSpace(string(output)))
 	}
 	return nil
 }

@@ -13,7 +13,8 @@
     "naming",
     "state",
     "patterns",
-    "runtime"
+    "runtime",
+    "network-proxy"
   ],
   "disableAutoUpdateScripts": []
 }

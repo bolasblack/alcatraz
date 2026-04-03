@@ -39,3 +39,4 @@ decisions/AGD-033_extends-includes-directives.md: #config
 decisions/AGD-034_command-append.md: #config
 decisions/AGD-035_git-preset-support.md: #config, #cli
 decisions/AGD-036_lan-access-token-expansion.md: #config, #network-isolation
+decisions/AGD-037_transparent-proxy-for-containers.md: #network-proxy, #network-isolation, #security, #config

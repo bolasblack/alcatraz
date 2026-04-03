@@ -56,11 +56,14 @@ $(BIN_DIR)/alca-darwin-arm64: $(BUILD_SRC)
 	GOOS=darwin GOARCH=arm64 go build -o $@ ./cmd/alca
 
 # ========= Testing =========
-.PHONY: test
+.PHONY: test test-integration
 
 test:
 	go test -coverprofile=out_coverage ./...
 	go tool cover -html=out_coverage -o out_coverage.html
+
+test-integration: build\:$(shell go env GOOS)\:$(shell go env GOARCH)
+	ALCA_BIN=$(BIN_DIR)/alca-$(shell go env GOOS)-$(shell go env GOARCH) bash test_integration/run.sh
 
 # ========= Linting =========
 .PHONY: lint

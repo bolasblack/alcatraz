@@ -7,7 +7,7 @@ out
 out_*
 
 .alca
-.alca.cache
+.alca.mounts
 .alca.local.toml
 .alca.*.local.toml
 

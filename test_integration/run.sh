@@ -17,6 +17,7 @@ source "$SCRIPT_DIR/test_cleanup.sh"
 source "$SCRIPT_DIR/test_init.sh"
 source "$SCRIPT_DIR/test_subdir.sh"
 source "$SCRIPT_DIR/test_restart_policy.sh"
+source "$SCRIPT_DIR/test_proxy.sh"
 
 # Prerequisites
 if [[ ! -x "$ALCA_BIN" ]]; then
@@ -100,61 +101,94 @@ cleanup_network_helper() {
 
 ensure_network_helper
 
+# ---------------------------------------------------------------------------
+# Group filter: TEST_GROUP=12 runs only Group 12, unset runs all.
+# ---------------------------------------------------------------------------
+should_run_group() {
+  [[ -z "${TEST_GROUP:-}" ]] || [[ "${TEST_GROUP}" == "$1" ]]
+}
+
 # Group 1: Config (no container runtime needed)
-echo "=== Group 1: Config ==="
-test_config_validation
-test_init_template
-test_init_template_unknown
+if should_run_group 1; then
+  echo "=== Group 1: Config ==="
+  test_config_validation
+  test_init_template
+  test_init_template_unknown
+fi
 
-# Groups 2-9: require container runtime (Docker or Podman)
+# Groups 2+: require container runtime (Docker or Podman)
 if container_runtime_available; then
-  echo ""
-  echo "Container runtime: $CONTAINER_RUNTIME"
-  echo ""
-  echo "=== Group 2: Lifecycle ==="
-  test_lifecycle_basic
+  if should_run_group 2; then
+    echo ""
+    echo "=== Group 2: Lifecycle ==="
+    test_lifecycle_basic
+  fi
 
-  echo ""
-  echo "=== Group 3: Status Variations ==="
-  test_status_not_running
+  if should_run_group 3; then
+    echo ""
+    echo "=== Group 3: Status Variations ==="
+    test_status_not_running
+  fi
 
-  echo ""
-  echo "=== Group 4: Config Drift Detection ==="
-  test_config_drift
+  if should_run_group 4; then
+    echo ""
+    echo "=== Group 4: Config Drift Detection ==="
+    test_config_drift
+  fi
 
-  echo ""
-  echo "=== Group 5: Enter Command ==="
-  test_run_enter_command
+  if should_run_group 5; then
+    echo ""
+    echo "=== Group 5: Enter Command ==="
+    test_run_enter_command
+  fi
 
-  echo ""
-  echo "=== Group 6: Mounts ==="
-  test_mount_persistence
-  test_workdir_exclude
+  if should_run_group 6; then
+    echo ""
+    echo "=== Group 6: Mounts ==="
+    test_mount_persistence
+    test_workdir_exclude
+  fi
 
-  echo ""
-  echo "=== Group 7: Network ==="
-  test_network_allow_all
-  test_network_isolation
+  if should_run_group 7; then
+    echo ""
+    echo "=== Group 7: Network ==="
+    test_network_allow_all
+    test_network_isolation
+  fi
 
-  echo ""
-  echo "=== Group 8: Port Mapping ==="
-  test_ports_mapping
+  if should_run_group 8; then
+    echo ""
+    echo "=== Group 8: Port Mapping ==="
+    test_ports_mapping
+  fi
 
-  echo ""
-  echo "=== Group 9: Cleanup ==="
-  test_cleanup_no_orphans
+  if should_run_group 9; then
+    echo ""
+    echo "=== Group 9: Cleanup ==="
+    test_cleanup_no_orphans
+  fi
 
-  echo ""
-  echo "=== Group 10: Subdirectory Discovery ==="
-  test_subdir_status
-  test_subdir_run
+  if should_run_group 10; then
+    echo ""
+    echo "=== Group 10: Subdirectory Discovery ==="
+    test_subdir_status
+    test_subdir_run
+  fi
 
+  if should_run_group 11; then
+    echo ""
+    echo "=== Group 11: Restart Policy ==="
+    test_restart_policy
+  fi
+
+  if should_run_group 12; then
+    echo ""
+    echo "=== Group 12: Transparent Proxy ==="
+    test_proxy_redirect
+  fi
+elif [[ -z "${TEST_GROUP:-}" ]]; then
   echo ""
-  echo "=== Group 11: Restart Policy ==="
-  test_restart_policy
-else
-  echo ""
-  skip "No container runtime (Docker/Podman) available — skipping Groups 2-11"
+  skip "No container runtime (Docker/Podman) available — skipping Groups 2-12"
 fi
 
 # Summary

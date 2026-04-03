@@ -230,6 +230,7 @@ func enforceConfigFieldCompleteness(cfg *config.Config) {
 	type fieldsNetwork struct {
 		LANAccess []string
 		Ports     []config.PortConfig
+		Proxy     string
 	}
 	_ = fieldsNetwork(cfg.Network)
 
@@ -290,7 +291,8 @@ func enforceConfigFieldCompleteness(cfg *config.Config) {
 // Intentionally excluded fields (don't require rebuild):
 //   - Commands.Enter: only affects enter behavior
 //   - EnvValue.OverrideOnEnter: only affects enter behavior
-//   - Network.LANAccess: pf rules are external, no container rebuild needed
+//   - Network.LANAccess: nftables rules are external, no container rebuild needed
+//   - Network.Proxy: nftables DNAT rules are external, no container rebuild needed
 func compareConfigs(old, new *config.Config) *DriftChanges {
 	// Each field is compared explicitly. This is intentional: the AGD-015
 	// exhaustiveness check in enforceConfigFieldCompleteness ensures new

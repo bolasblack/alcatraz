@@ -7,8 +7,9 @@ import (
 )
 
 // NewHelperForProject creates a platform-specific NetworkHelper based on the runtime platform.
+// Returns non-nil when network helper is needed: lan-access rules or proxy configured.
 func NewHelperForProject(cfg config.Network, platform runtime.RuntimePlatform) shared.NetworkHelper {
-	if !hasLANAccess(cfg.LANAccess) {
+	if !hasLANAccess(cfg.LANAccess) && cfg.Proxy == "" {
 		return nil
 	}
 	return NewHelperForSystem(platform)

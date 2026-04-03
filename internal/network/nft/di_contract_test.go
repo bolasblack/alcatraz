@@ -33,7 +33,7 @@ func TestApplyRules_UsesInjectedFs(t *testing.T) {
 		{IP: "192.168.1.100", Port: 80, Protocol: shared.ProtoTCP},
 	}
 
-	_, err := firewall.ApplyRules("container123", "172.17.0.2", rules)
+	_, err := firewall.ApplyRules("container123", "172.17.0.2", rules, nil)
 	if err != nil {
 		t.Fatalf("ApplyRules failed: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestApplyRules_UsesInjectedCmd(t *testing.T) {
 		{IP: "192.168.1.100", Port: 80, Protocol: shared.ProtoTCP},
 	}
 
-	action, _ := firewall.ApplyRules("container123", "172.17.0.2", rules)
+	action, _ := firewall.ApplyRules("container123", "172.17.0.2", rules, nil)
 
 	// Run post-commit action to trigger the nft command
 	if action != nil && action.Run != nil {
@@ -86,7 +86,7 @@ func TestApplyRules_CmdReceivesCorrectArgs(t *testing.T) {
 		{IP: "10.0.0.1", Port: 443, Protocol: shared.ProtoTCP},
 	}
 
-	action, _ := firewall.ApplyRules("abc123", "172.17.0.2", rules)
+	action, _ := firewall.ApplyRules("abc123", "172.17.0.2", rules, nil)
 
 	// Run post-commit action to trigger the nft command
 	if action != nil && action.Run != nil {
@@ -135,7 +135,7 @@ func TestApplyRules_FsReceivesCorrectContent(t *testing.T) {
 		{IP: "192.168.1.100", Port: 8080, Protocol: shared.ProtoTCP},
 	}
 
-	_, err := firewall.ApplyRules("testcontainer", "172.17.0.2", rules)
+	_, err := firewall.ApplyRules("testcontainer", "172.17.0.2", rules, nil)
 	if err != nil {
 		t.Fatalf("ApplyRules failed: %v", err)
 	}
@@ -252,6 +252,144 @@ func TestCleanup_CmdReceivesDeleteArgs(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// Task 2: Cleanup deletes BOTH tables (inet isolation + ip proxy)
+// =============================================================================
+
+// TestCleanup_DeletesBothInetAndProxyTables verifies that cleanupOnLinux
+// deletes both the inet isolation table AND the ip proxy table.
+func TestCleanup_DeletesBothInetAndProxyTables(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner()
+	defer mockCmd.AssertAllExpectationsMet(t)
+
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "", "")
+	firewall := New(env)
+
+	containerID := "abc123def456"
+	expectedInetTable := "alca-abc123def456"
+	expectedProxyTable := "alca-proxy-abc123def456"
+
+	// Expect both delete commands
+	mockCmd.ExpectSuccess("sudo nft delete table inet "+expectedInetTable, nil)
+	mockCmd.ExpectSuccess("sudo nft delete table ip "+expectedProxyTable, nil)
+
+	action, err := firewall.Cleanup(containerID)
+	if err != nil {
+		t.Fatalf("Cleanup() error = %v", err)
+	}
+
+	// Run post-commit action to trigger the nft commands
+	if action != nil && action.Run != nil {
+		err = action.Run(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("PostCommitAction.Run() error = %v", err)
+		}
+	}
+}
+
+// =============================================================================
+// Task 3: tryDeleteTablesFromContent tests
+// =============================================================================
+
+// TestTryDeleteTablesFromContent_DeletesBothTables verifies that tryDeleteTablesFromContent
+// deletes both the inet isolation table and the ip proxy table from content.
+func TestTryDeleteTablesFromContent_DeletesBothTables(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner()
+	defer mockCmd.AssertAllExpectationsMet(t)
+
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "", "")
+	n := New(env).(*NFTables)
+
+	content := "#!/usr/sbin/nft -f\n# Alcatraz container rules for table: alca-abc123def456\n\ntable inet alca-abc123def456 {}\n"
+
+	// Expect delete of both inet and ip proxy tables
+	mockCmd.ExpectSuccess("sudo nft delete table inet alca-abc123def456", nil)
+	mockCmd.ExpectSuccess("sudo nft delete table ip alca-proxy-abc123def456", nil)
+
+	n.tryDeleteTablesFromContent(context.Background(), content)
+}
+
+// TestTryDeleteTablesFromContent_NoTableName verifies that tryDeleteTablesFromContent
+// handles content without a table name comment gracefully — no commands, no panics.
+func TestTryDeleteTablesFromContent_NoTableName(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner()
+	defer mockCmd.AssertAllExpectationsMet(t)
+
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "", "")
+	n := New(env).(*NFTables)
+
+	content := "#!/usr/sbin/nft -f\nsome random content\n"
+
+	// Should not panic, should not call any commands
+	n.tryDeleteTablesFromContent(context.Background(), content)
+}
+
+// TestTryDeleteTablesFromContent_NonAlcaPrefix verifies that proxy table derivation
+// still works correctly for non-standard table names (without "alca-" prefix).
+func TestTryDeleteTablesFromContent_NonAlcaPrefix(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner()
+	defer mockCmd.AssertAllExpectationsMet(t)
+
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "", "")
+	n := New(env).(*NFTables)
+
+	// Table name without "alca-" prefix — inet table should be deleted,
+	// but proxy table derivation should be skipped (no "alca-" prefix).
+	content := "#!/usr/sbin/nft -f\n# Alcatraz container rules for table: custom-table-name\n\ntable inet custom-table-name {}\n"
+
+	// Only inet table deletion expected — proxy derivation skipped due to missing "alca-" prefix
+	mockCmd.ExpectSuccess("sudo nft delete table inet custom-table-name", nil)
+
+	n.tryDeleteTablesFromContent(context.Background(), content)
+}
+
+// =============================================================================
+// Task 4: DI Contract test with non-nil ProxyConfig
+// =============================================================================
+
+// TestApplyRules_WithProxy_WritesProxyDNATRules verifies that passing a non-nil
+// ProxyConfig to ApplyRules results in the written file containing proxy DNAT rules.
+func TestApplyRules_WithProxy_WritesProxyDNATRules(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "", "")
+	firewall := New(env)
+
+	proxy := &shared.ProxyConfig{Host: "10.0.0.1", Port: 1080}
+
+	_, err := firewall.ApplyRules("container123", "172.17.0.2", nil, proxy)
+	if err != nil {
+		t.Fatalf("ApplyRules failed: %v", err)
+	}
+
+	// Read the file content from mockFs
+	content, err := afero.ReadFile(mockFs, "/etc/nftables.d/alcatraz/"+nftFileName("/test/project"))
+	if err != nil {
+		t.Fatalf("Failed to read rule file from mockFs: %v", err)
+	}
+
+	contentStr := string(content)
+
+	// Verify proxy DNAT rules are present
+	if !strings.Contains(contentStr, "table ip alca-proxy-") {
+		t.Errorf("Rule file should contain proxy table declaration, got:\n%s", contentStr)
+	}
+	if !strings.Contains(contentStr, "dnat to 10.0.0.1:1080") {
+		t.Errorf("Rule file should contain DNAT rule, got:\n%s", contentStr)
+	}
+	if !strings.Contains(contentStr, "type nat hook prerouting priority dstnat") {
+		t.Errorf("Rule file should contain NAT prerouting chain, got:\n%s", contentStr)
+	}
+	// Verify routing loop prevention
+	if !strings.Contains(contentStr, "ip saddr 172.17.0.2 ip daddr 10.0.0.1 tcp dport 1080 accept") {
+		t.Errorf("Rule file should contain routing loop prevention, got:\n%s", contentStr)
+	}
+}
+
 // TestApplyRules_ReturnsErrorFromInjectedCmd verifies that errors from
 // the injected Cmd are properly propagated.
 func TestApplyRules_ReturnsErrorFromInjectedCmd(t *testing.T) {
@@ -264,7 +402,7 @@ func TestApplyRules_ReturnsErrorFromInjectedCmd(t *testing.T) {
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "/test/project", "", "")
 	firewall := New(env)
 
-	action, err := firewall.ApplyRules("container123", "172.17.0.2", nil)
+	action, err := firewall.ApplyRules("container123", "172.17.0.2", nil, nil)
 	if err != nil {
 		t.Fatalf("ApplyRules file write phase should not error: %v", err)
 	}
@@ -290,7 +428,7 @@ func TestApplyRules_SkipsWhenAllLAN(t *testing.T) {
 		{AllLAN: true},
 	}
 
-	_, err := firewall.ApplyRules("container123", "172.17.0.2", rules)
+	_, err := firewall.ApplyRules("container123", "172.17.0.2", rules, nil)
 
 	if err != nil {
 		t.Errorf("ApplyRules with AllLAN should not error, got: %v", err)
@@ -322,7 +460,7 @@ func TestApplyRules_CreatesDirViaInjectedFs(t *testing.T) {
 		t.Fatal("Setup error: directory should not exist initially")
 	}
 
-	_, _ = firewall.ApplyRules("container123", "172.17.0.2", nil)
+	_, _ = firewall.ApplyRules("container123", "172.17.0.2", nil, nil)
 
 	// Directory should now exist on mockFs
 	exists, _ = afero.DirExists(mockFs, "/etc/nftables.d/alcatraz")

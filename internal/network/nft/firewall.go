@@ -53,69 +53,6 @@ func chainPriority(rt runtime.RuntimePlatform) string {
 	return "filter - 1"
 }
 
-// writeIdempotentHeader writes the nft shebang and idempotent create/delete table pattern.
-func writeIdempotentHeader(sb *strings.Builder, comment string, table string) {
-	sb.WriteString("#!/usr/sbin/nft -f\n")
-	fmt.Fprintf(sb, "# %s\n\n", comment)
-	sb.WriteString("# Delete table if exists (idempotent)\n")
-	fmt.Fprintf(sb, "table inet %s\n", table)
-	fmt.Fprintf(sb, "delete table inet %s\n\n", table)
-}
-
-// writeAllowRules writes per-container allow rules, skipping AllLAN entries.
-func writeAllowRules(sb *strings.Builder, containerIP string, containerIsV6 bool, rules []shared.LANAccessRule, comment string) {
-	if len(rules) == 0 {
-		return
-	}
-	fmt.Fprintf(sb, "\t\t# %s\n", comment)
-	for _, rule := range rules {
-		if rule.AllLAN {
-			continue
-		}
-		writeNftAllowRule(sb, containerIP, containerIsV6, rule)
-	}
-	sb.WriteString("\n")
-}
-
-// generateRuleset generates the nftables ruleset for a container with allow rules.
-// If rules is empty, blocks all RFC1918 traffic.
-// Uses idempotent flush+recreate pattern per AGD-028.
-// This is a pure function for testability.
-func generateRuleset(tableName string, containerIP string, rules []shared.LANAccessRule, priority string, projectDir string, projectID string) string {
-	var sb strings.Builder
-
-	containerIsV6 := shared.IsIPv6(containerIP)
-
-	writeIdempotentHeader(&sb, fmt.Sprintf("Alcatraz container rules for table: %s", tableName), tableName)
-	fmt.Fprintf(&sb, "# project-dir: %s\n", projectDir)
-	fmt.Fprintf(&sb, "# project-id: %s\n\n", projectID)
-
-	// Create fresh table with rules
-	sb.WriteString("# Create fresh table with rules\n")
-	fmt.Fprintf(&sb, "table inet %s {\n", tableName)
-	sb.WriteString("\tchain forward {\n")
-	fmt.Fprintf(&sb, "\t\ttype filter hook forward priority %s; policy accept;\n\n", priority)
-	sb.WriteString("\t\t# Allow established/related connections (return traffic)\n")
-	sb.WriteString("\t\tct state established,related accept\n\n")
-
-	writeAllowRules(&sb, containerIP, containerIsV6, rules, "Allow rules from lan-access configuration")
-
-	// Block RFC1918 and private ranges
-	sb.WriteString("\t\t# Block RFC1918 and other private ranges from container\n")
-	if containerIsV6 {
-		for _, cidr := range shared.PrivateIPv6Ranges {
-			fmt.Fprintf(&sb, "\t\tip6 saddr %s ip6 daddr %s drop\n", containerIP, cidr)
-		}
-	} else {
-		for _, cidr := range shared.PrivateIPv4Ranges {
-			fmt.Fprintf(&sb, "\t\tip saddr %s ip daddr %s drop\n", containerIP, cidr)
-		}
-	}
-
-	sb.WriteString("\t}\n}\n")
-	return sb.String()
-}
-
 // writeNftAllowRule writes an nftables accept rule for a LANAccessRule.
 func writeNftAllowRule(sb *strings.Builder, containerIP string, containerIsV6 bool, rule shared.LANAccessRule) {
 	// Determine IP command based on source (container) and destination (rule)
@@ -223,20 +160,22 @@ func parseTableName(content string) string {
 	return ""
 }
 
-// ApplyRules creates nftables rules to apply network isolation with allow rules.
+// ApplyRules creates nftables rules for network isolation and optional transparent proxy.
 // On Linux: persisted to /etc/nftables.d/alcatraz/<container-id>.nft, loaded via `nft -f`.
 // On macOS: persisted to ~/.alcatraz/files/alcatraz_nft/<container-table>.nft, reload via docker exec.
 // Returns PostCommitAction that MUST be called after TransactFs.Commit().
-func (n *NFTables) ApplyRules(containerID string, containerIP string, rules []shared.LANAccessRule) (*shared.PostCommitAction, error) {
-	// If any rule allows all LAN, skip firewall entirely
-	if shared.HasAllLAN(rules) {
+func (n *NFTables) ApplyRules(containerID string, containerIP string, rules []shared.LANAccessRule, proxy *shared.ProxyConfig) (*shared.PostCommitAction, error) {
+	// Call once and store — used for early return and passed to platform-specific methods.
+	allLAN := shared.HasAllLAN(rules)
+
+	// If all LAN is allowed and no proxy, skip entirely
+	if allLAN && proxy == nil {
 		return &shared.PostCommitAction{}, nil
 	}
-
 	if n.isDarwin() {
-		return n.applyRulesOnDarwin(containerID, containerIP, rules)
+		return n.applyRulesOnDarwin(containerID, containerIP, rules, proxy, allLAN)
 	}
-	return n.applyRulesOnLinux(containerID, containerIP, rules)
+	return n.applyRulesOnLinux(containerID, containerIP, rules, proxy, allLAN)
 }
 
 // writeRuleFile creates the directory and writes the ruleset file atomically.
@@ -253,9 +192,9 @@ func writeRuleFile(fs afero.Fs, dir string, fileName string, ruleset string) (st
 
 // applyRulesOnLinux applies per-container rules on Linux.
 // Writes the rule file via Fs, returns PostCommitAction to load rules via nft.
-func (n *NFTables) applyRulesOnLinux(containerID string, containerIP string, rules []shared.LANAccessRule) (*shared.PostCommitAction, error) {
+func (n *NFTables) applyRulesOnLinux(containerID string, containerIP string, rules []shared.LANAccessRule, proxy *shared.ProxyConfig, allLAN bool) (*shared.PostCommitAction, error) {
 	table := tableName(containerID)
-	ruleset := generateRuleset(table, containerIP, rules, "filter - 1", n.env.ProjectDir, n.env.ProjectID)
+	ruleset := generateRuleset(table, containerIP, rules, proxy, allLAN, "filter - 1", n.env.ProjectDir, n.env.ProjectID)
 
 	rulePath, err := writeRuleFile(n.env.Fs, nftDirOnLinux(), nftFileName(n.env.ProjectDir), ruleset)
 	if err != nil {
@@ -275,26 +214,29 @@ func (n *NFTables) applyRulesOnLinux(containerID string, containerIP string, rul
 }
 
 // applyRulesOnDarwin applies per-container rules on macOS per AGD-030.
-// Writes the rule file via Fs, returns PostCommitAction to reload network helper.
-func (n *NFTables) applyRulesOnDarwin(containerID string, containerIP string, rules []shared.LANAccessRule) (*shared.PostCommitAction, error) {
+// Writes the rule file via Fs, returns PostCommitAction to load rules synchronously.
+func (n *NFTables) applyRulesOnDarwin(containerID string, containerIP string, rules []shared.LANAccessRule, proxy *shared.ProxyConfig, allLAN bool) (*shared.PostCommitAction, error) {
 	table := tableName(containerID)
-	ruleset := generateRuleset(table, containerIP, rules, chainPriority(n.env.Runtime), n.env.ProjectDir, n.env.ProjectID)
+	ruleset := generateRuleset(table, containerIP, rules, proxy, allLAN, chainPriority(n.env.Runtime), n.env.ProjectDir, n.env.ProjectID)
 
 	dir, err := nftDirOnDarwin()
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine nft directory: %w", err)
 	}
 
-	rulePath, err := writeRuleFile(n.env.Fs, dir, nftFileName(n.env.ProjectDir), ruleset)
+	fileName := nftFileName(n.env.ProjectDir)
+	rulePath, err := writeRuleFile(n.env.Fs, dir, fileName, ruleset)
 	if err != nil {
 		return nil, err
 	}
 
-	// Post-commit: trigger reload via network helper container
+	// Post-commit: load rule file synchronously via helper container.
+	// The file is on a volume mount visible inside the container.
+	containerRulePath := filepath.Join(shared.NftDirInContainer, fileName)
 	return &shared.PostCommitAction{
 		Run: func(ctx context.Context, _ shared.ProgressFunc) error {
-			if err := n.reloadNetworkHelper(ctx); err != nil {
-				return fmt.Errorf("failed to trigger nft reload on darwin for %s: %w", rulePath, err)
+			if err := vmhelper.LoadRuleFile(ctx, n.vmHelperEnv, containerRulePath); err != nil {
+				return fmt.Errorf("failed to load nft rules on darwin for %s: %w", rulePath, err)
 			}
 			return nil
 		},
@@ -319,17 +261,22 @@ func (n *NFTables) cleanupOnLinux(containerID string) (*shared.PostCommitAction,
 	rulePath := filepath.Join(nftDirOnLinux(), nftFileName(n.env.ProjectDir))
 	_ = n.env.Fs.Remove(rulePath)
 
-	// Post-commit: delete nftables table
+	// Post-commit: delete nftables tables (isolation + proxy)
 	table := tableName(containerID)
+	pTable := proxyTableName(containerID)
 	return &shared.PostCommitAction{
 		Run: func(ctx context.Context, _ shared.ProgressFunc) error {
-			return n.deleteTable(ctx, table)
+			if err := n.deleteTable(ctx, table); err != nil {
+				return err
+			}
+			return n.deleteTableFamily(ctx, "ip", pTable)
 		},
 	}, nil
 }
 
 // cleanupOnDarwin removes per-container rules on macOS.
-// Removes the rule file via Fs, returns PostCommitAction to reload network helper.
+// Removes the rule file via Fs, returns PostCommitAction to delete tables
+// directly via the helper container — symmetric with cleanupOnLinux.
 func (n *NFTables) cleanupOnDarwin(containerID string) (*shared.PostCommitAction, error) {
 	dir, err := nftDirOnDarwin()
 	if err != nil {
@@ -339,21 +286,58 @@ func (n *NFTables) cleanupOnDarwin(containerID string) (*shared.PostCommitAction
 	rulePath := filepath.Join(dir, nftFileName(n.env.ProjectDir))
 	_ = n.env.Fs.Remove(rulePath)
 
-	// Post-commit: trigger reload via network helper container
+	// Post-commit: delete nftables tables via helper container (isolation + proxy)
+	table := tableName(containerID)
+	pTable := proxyTableFromIsolationTable(table)
 	return &shared.PostCommitAction{
 		Run: func(ctx context.Context, _ shared.ProgressFunc) error {
-			if err := n.reloadNetworkHelper(ctx); err != nil {
-				return fmt.Errorf("failed to trigger nft reload on darwin after cleanup of %s: %w", rulePath, err)
+			if err := vmhelper.DeleteTable(ctx, n.vmHelperEnv, "inet", table); err != nil {
+				return err
+			}
+			if pTable != "" {
+				return vmhelper.DeleteTable(ctx, n.vmHelperEnv, "ip", pTable)
 			}
 			return nil
 		},
 	}, nil
 }
 
-// deleteTable removes an nftables table. Returns nil if table doesn't exist.
+// tryDeleteTablesFromContent attempts to delete all nftables tables referenced in a rule file.
+// A single file may contain both an inet isolation table and an ip proxy table.
+// Errors are intentionally ignored (fire-and-forget): during stale cleanup, tables may
+// already be gone, and partial failure should not block cleanup of other stale files.
+func (n *NFTables) tryDeleteTablesFromContent(ctx context.Context, content string) {
+	table := parseTableName(content)
+	if table == "" {
+		return
+	}
+
+	proxyTable := proxyTableFromIsolationTable(table)
+
+	if n.isDarwin() {
+		// On macOS, nft runs inside the VM — must go through the helper container.
+		_ = vmhelper.DeleteTable(ctx, n.vmHelperEnv, "inet", table)
+		if proxyTable != "" {
+			_ = vmhelper.DeleteTable(ctx, n.vmHelperEnv, "ip", proxyTable)
+		}
+	} else {
+		// On Linux, nft is available directly on the host.
+		_ = n.deleteTable(ctx, table)
+		if proxyTable != "" {
+			_ = n.deleteTableFamily(ctx, "ip", proxyTable)
+		}
+	}
+}
+
+// deleteTable removes an nftables inet table. Returns nil if table doesn't exist.
 func (n *NFTables) deleteTable(ctx context.Context, table string) error {
+	return n.deleteTableFamily(ctx, "inet", table)
+}
+
+// deleteTableFamily removes an nftables table of the given family. Returns nil if table doesn't exist.
+func (n *NFTables) deleteTableFamily(ctx context.Context, family string, table string) error {
 	// Requires sudo for nftables access
-	output, err := n.env.Cmd.SudoRunQuiet(ctx, "nft", "delete", "table", "inet", table)
+	output, err := n.env.Cmd.SudoRunQuiet(ctx, "nft", "delete", "table", family, table)
 	if err != nil {
 		// Table doesn't exist — not an error during cleanup.
 		// Check both command output and error message for the kernel error string.
@@ -361,7 +345,7 @@ func (n *NFTables) deleteTable(ctx context.Context, table string) error {
 		if strings.Contains(combined, "No such file or directory") {
 			return nil
 		}
-		return fmt.Errorf("failed to delete table %s: %w: %s", table, err, strings.TrimSpace(string(output)))
+		return fmt.Errorf("failed to delete table %s %s: %w: %s", family, table, err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -403,10 +387,7 @@ func (n *NFTables) CleanupStaleFiles(ctx context.Context) (int, error) {
 		projectDir := parseProjectDir(string(content))
 		if projectDir == "" {
 			// Old format file without project-dir comment — treat as stale
-			tableName := parseTableName(string(content))
-			if tableName != "" {
-				_ = n.deleteTable(ctx, tableName)
-			}
+			n.tryDeleteTablesFromContent(ctx, string(content))
 			if err := n.env.Fs.Remove(filePath); err != nil {
 				continue
 			}
@@ -416,10 +397,7 @@ func (n *NFTables) CleanupStaleFiles(ctx context.Context) (int, error) {
 
 		projectID := parseProjectID(string(content))
 		if isStaleProject(n.env.Fs, projectDir, projectID) {
-			tableName := parseTableName(string(content))
-			if tableName != "" {
-				_ = n.deleteTable(ctx, tableName)
-			}
+			n.tryDeleteTablesFromContent(ctx, string(content))
 			if err := n.env.Fs.Remove(filePath); err != nil {
 				continue
 			}

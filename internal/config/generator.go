@@ -336,6 +336,14 @@ func mountsToRaw(mounts []MountConfig) RawMountSlice {
 // networkToRaw converts Network to RawNetwork for TOML serialization.
 // Ports are kept in object form (map[string]any) for TOML round-trip fidelity.
 func networkToRaw(n Network) RawNetwork {
+	// Mirror type ensures all Network fields are explicitly handled (AGD-015).
+	type networkFields struct {
+		LANAccess []string
+		Ports     []PortConfig
+		Proxy     string
+	}
+	_ = networkFields(n)
+
 	var rawPorts RawPortSlice
 	if len(n.Ports) > 0 {
 		rawPorts = make(RawPortSlice, len(n.Ports))
@@ -346,6 +354,7 @@ func networkToRaw(n Network) RawNetwork {
 	return RawNetwork{
 		LANAccess: n.LANAccess,
 		Ports:     rawPorts,
+		Proxy:     n.Proxy,
 	}
 }
 

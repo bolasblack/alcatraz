@@ -2,7 +2,8 @@
 
 - `make build` — full build: all platform binaries + schema + man pages + shell completions
 - `make build:all` — build all platform binaries only
-- `make test` — run tests
+- `make test` — run unit tests
+- `make test-integration` — build and run integration tests (requires Docker)
 - `make lint` — run linter
 - `make schema` — regenerate `alca-config.schema.json`
 - `make docs` — generate all docs (markdown + man pages + shell completions)

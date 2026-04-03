@@ -235,6 +235,10 @@
         },
         "ports": {
           "$ref": "#/$defs/RawPortSlice"
+        },
+        "proxy": {
+          "type": "string",
+          "description": "Transparent proxy address (host:port). All container TCP/UDP traffic is redirected via nftables DNAT. Supports ${alca:HOST_IP} token."
         }
       },
       "additionalProperties": false,

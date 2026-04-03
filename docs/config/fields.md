@@ -575,6 +575,29 @@ The `${alca:HOST_IP}` token expands to the actual host gateway IP at runtime (Do
 
 See [Network Configuration](./network.md) for platform behavior, the network helper, and why nftables inside the VM is necessary on macOS.
 
+## network.proxy
+
+Route all container traffic (TCP and UDP) through a transparent proxy using nftables DNAT. This intercepts **all** outbound connections, not just HTTP — including git+ssh, database clients, DNS, and any other protocol. The proxy can run on the host, a LAN server, or any address reachable from the container.
+
+```toml
+[network]
+proxy = "${alca:HOST_IP}:1080"
+```
+
+- **Type**: string (`host:port`)
+- **Required**: No
+- **Default**: None (no proxying)
+- **Notes**:
+  - Supports `${alca:HOST_IP}` token for portable config (common case: proxy on the host)
+  - Host must be an IP address, not a hostname
+  - Requires a redirect-mode transparent proxy (e.g., [sing-box](https://github.com/sagernet/sing-box)) at the configured address
+  - The proxy address is automatically allowed through LAN isolation rules (RFC1918 block rules won't prevent reaching the proxy)
+  - Uses nftables `ct timeout` (300s) for reliable UDP proxying
+  - DNAT operates at the network layer — no SOCKS5/HTTP CONNECT authentication support. If your upstream proxy requires auth, run a local redirect-mode proxy that handles authentication to the upstream server
+  - See [AGD-037](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-037_transparent-proxy-for-containers.md) for design rationale
+
+See [Network Configuration](./network.md#transparent-proxy) for proxy setup, limitations, and examples.
+
 ## Runtime-Specific Notes
 
 ### Docker / Podman

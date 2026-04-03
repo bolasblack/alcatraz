@@ -2,11 +2,11 @@ package nft
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
-	"github.com/stretchr/testify/assert"
 
 	"github.com/bolasblack/alcatraz/internal/network/darwin/vmhelper"
 	"github.com/bolasblack/alcatraz/internal/network/shared"
@@ -66,7 +66,7 @@ func TestGenerateRulesetWithPriority(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ruleset := generateRuleset("alca-test", "172.17.0.2", nil, tt.priority, "/test/project", "")
+			ruleset := generateRuleset("alca-test", "172.17.0.2", nil, nil, false, tt.priority, "/test/project", "")
 			if !strings.Contains(ruleset, tt.expected) {
 				t.Errorf("ruleset should contain %q\nGot:\n%s", tt.expected, ruleset)
 			}
@@ -88,7 +88,7 @@ func TestApplyRulesOnDarwin_WritesPerContainerFile(t *testing.T) {
 		{IP: "192.168.1.100", Port: 80, Protocol: shared.ProtoTCP},
 	}
 
-	_, err := firewall.ApplyRules("container123", "172.17.0.2", rules)
+	_, err := firewall.ApplyRules("container123", "172.17.0.2", rules, nil)
 	if err != nil {
 		t.Fatalf("ApplyRules failed: %v", err)
 	}
@@ -105,45 +105,61 @@ func TestApplyRulesOnDarwin_WritesPerContainerFile(t *testing.T) {
 	}
 }
 
-func TestApplyRulesOnDarwin_TriggersReload(t *testing.T) {
+func TestApplyRulesOnDarwin_LoadsRuleSynchronously(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, []byte("true\n"))
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", "", runtime.PlatformMacOrbStack)
 	firewall := New(env)
 
-	action, _ := firewall.ApplyRules("container123", "172.17.0.2", nil)
+	action, _ := firewall.ApplyRules("container123", "172.17.0.2", nil, nil)
 
-	// Run post-commit action to trigger reload
+	// Run post-commit action to load rules synchronously
 	if action != nil && action.Run != nil {
 		_ = action.Run(context.Background(), nil)
 	}
 
-	// Verify docker exec was called for reload
-	mockCmd.AssertCalled(t, "docker exec "+vmhelper.ContainerName+" sh -c kill -HUP 1")
+	// Verify synchronous nft load via docker exec (not SIGHUP).
+	// Assert key semantic elements rather than exact command string.
+	calls := mockCmd.CallKeys()
+	found := false
+	for _, call := range calls {
+		if strings.Contains(call, "docker exec") &&
+			strings.Contains(call, "nft -f") &&
+			strings.Contains(call, nftFileName("/Users/alice/myproject")) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected synchronous nft load via docker exec, calls: %v", calls)
+	}
+
+	// Must NOT use async SIGHUP reload
+	mockCmd.AssertNotCalled(t, "docker exec "+vmhelper.ContainerName+" sh -c kill -HUP 1")
 }
 
-func TestApplyRulesOnDarwin_ReloadFailsWhenHelperNotInstalled(t *testing.T) {
+func TestApplyRulesOnDarwin_LoadFailsReturnsError(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
-	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	// docker inspect fails → container not found
-	mockCmd.ExpectFailure("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, assert.AnError)
+	// Don't call AllowUnexpected() — all commands fail by default.
+	// This makes LoadRuleFile's docker exec fail without needing
+	// to match the exact command string.
+	mockCmd := util.NewMockCommandRunner()
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", "", runtime.PlatformMacOrbStack)
 	firewall := New(env)
 
-	action, err := firewall.ApplyRules("container123", "172.17.0.2", nil)
+	action, err := firewall.ApplyRules("container123", "172.17.0.2", nil, nil)
 	if err != nil {
 		t.Fatalf("ApplyRules should not fail (file write phase): %v", err)
 	}
 
-	// Post-commit reload should fail with descriptive error
+	// Post-commit load should fail with sentinel error
 	if action != nil && action.Run != nil {
 		err = action.Run(context.Background(), nil)
 		if err == nil {
-			t.Fatal("reloadNetworkHelper should fail when helper is not installed")
+			t.Fatal("LoadRuleFile should fail when docker exec fails")
 		}
-		if !strings.Contains(err.Error(), "not installed") {
-			t.Errorf("error should mention 'not installed', got: %v", err)
+		if !errors.Is(err, vmhelper.ErrRuleLoad) {
+			t.Errorf("expected ErrRuleLoad, got: %v", err)
 		}
 	}
 }
@@ -158,7 +174,7 @@ func TestApplyRulesOnDarwin_WritesPerContainerRuleset(t *testing.T) {
 		{IP: "192.168.1.100", Port: 8080, Protocol: shared.ProtoTCP},
 	}
 
-	_, err := firewall.ApplyRules("container123", "172.17.0.2", rules)
+	_, err := firewall.ApplyRules("container123", "172.17.0.2", rules, nil)
 	if err != nil {
 		t.Fatalf("ApplyRules failed: %v", err)
 	}
@@ -187,7 +203,6 @@ func TestApplyRulesOnDarwin_WritesPerContainerRuleset(t *testing.T) {
 func TestCleanupOnDarwin_RemovesPerContainerFile(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	mockCmd := util.NewMockCommandRunner().AllowUnexpected()
-	mockCmd.ExpectSuccess("docker inspect --format {{.State.Running}} "+vmhelper.ContainerName, []byte("true\n"))
 	env := shared.NewNetworkEnv(mockFs, mockCmd, "/Users/alice/myproject", "", runtime.PlatformMacOrbStack)
 	firewall := New(env)
 
@@ -208,13 +223,14 @@ func TestCleanupOnDarwin_RemovesPerContainerFile(t *testing.T) {
 		t.Error("Cleanup (mac) must remove the per-container rule file")
 	}
 
-	// Run post-commit action to trigger reload
+	// Run post-commit action to delete tables directly
 	if action != nil && action.Run != nil {
 		_ = action.Run(context.Background(), nil)
 	}
 
-	// Verify reload was triggered
-	mockCmd.AssertCalled(t, "docker exec "+vmhelper.ContainerName+" sh -c kill -HUP 1")
+	// Verify tables were deleted via helper container (not SIGHUP reload)
+	table := tableName("container123")
+	mockCmd.AssertCalled(t, "docker exec "+vmhelper.ContainerName+" nsenter -t 1 -m -u -n -i nft delete table inet "+table)
 }
 
 func TestApplyRulesOnDarwin_SkipsWhenAllLAN(t *testing.T) {
@@ -227,7 +243,7 @@ func TestApplyRulesOnDarwin_SkipsWhenAllLAN(t *testing.T) {
 		{AllLAN: true},
 	}
 
-	_, err := firewall.ApplyRules("container123", "172.17.0.2", rules)
+	_, err := firewall.ApplyRules("container123", "172.17.0.2", rules, nil)
 	if err != nil {
 		t.Errorf("ApplyRules with AllLAN should not error, got: %v", err)
 	}

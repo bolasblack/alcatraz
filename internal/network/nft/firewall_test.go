@@ -98,7 +98,7 @@ func TestGenerateRulesetNoRules(t *testing.T) {
 	table := "alca-abc123def456"
 	containerIP := "172.17.0.2"
 
-	ruleset := generateRuleset(table, containerIP, nil, "filter - 1", "/test/project", "")
+	ruleset := generateRuleset(table, containerIP, nil, nil, false, "filter - 1", "/test/project", "")
 
 	// Verify idempotent header (shebang and delete pattern)
 	if !strings.Contains(ruleset, "#!/usr/sbin/nft -f") {
@@ -155,7 +155,7 @@ func TestGenerateRulesetWithAllowRules(t *testing.T) {
 		{IP: "10.0.0.0/8", Port: 0, Protocol: shared.ProtoAll, IsIPv6: false},
 	}
 
-	ruleset := generateRuleset(table, containerIP, rules, "filter - 1", "/test/project", "")
+	ruleset := generateRuleset(table, containerIP, rules, nil, false, "filter - 1", "/test/project", "")
 
 	// Verify allow rules are present
 	if !strings.Contains(ruleset, "ip saddr 172.17.0.2 ip daddr 192.168.1.100 tcp dport 8080 accept") {
@@ -187,7 +187,7 @@ func TestGenerateRulesetIPv6Container(t *testing.T) {
 	table := "alca-test"
 	containerIP := "2001:db8::2"
 
-	ruleset := generateRuleset(table, containerIP, nil, "filter - 1", "/test/project", "")
+	ruleset := generateRuleset(table, containerIP, nil, nil, false, "filter - 1", "/test/project", "")
 
 	// Verify IPv6 private ranges are blocked
 	if !strings.Contains(ruleset, "ip6 saddr 2001:db8::2 ip6 daddr fe80::/10 drop") {
@@ -248,7 +248,7 @@ func TestGenerateRulesetProtocolVariants(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ruleset := generateRuleset(table, containerIP, []shared.LANAccessRule{tt.rule}, "filter - 1", "/test/project", "")
+			ruleset := generateRuleset(table, containerIP, []shared.LANAccessRule{tt.rule}, nil, false, "filter - 1", "/test/project", "")
 
 			for _, exp := range tt.expected {
 				if !strings.Contains(ruleset, exp) {
@@ -269,7 +269,7 @@ func TestGenerateRulesetSkipsAllLANRule(t *testing.T) {
 		{IP: "10.0.0.1", Port: 443, Protocol: shared.ProtoTCP, IsIPv6: false},
 	}
 
-	ruleset := generateRuleset(table, containerIP, rules, "filter - 1", "/test/project", "")
+	ruleset := generateRuleset(table, containerIP, rules, nil, false, "filter - 1", "/test/project", "")
 
 	// Verify normal rules are present
 	if !strings.Contains(ruleset, "192.168.1.100 tcp dport 8080 accept") {
@@ -291,7 +291,7 @@ func TestGenerateRulesetIPv6AllowRule(t *testing.T) {
 		{IP: "fe80::1", Port: 8080, Protocol: shared.ProtoTCP, IsIPv6: true},
 	}
 
-	ruleset := generateRuleset(table, containerIP, rules, "filter - 1", "/test/project", "")
+	ruleset := generateRuleset(table, containerIP, rules, nil, false, "filter - 1", "/test/project", "")
 
 	// IPv6 container to IPv6 destination
 	if !strings.Contains(ruleset, "ip6 saddr 2001:db8::2 ip6 daddr fe80::1 tcp dport 8080 accept") {
@@ -308,7 +308,7 @@ func TestGenerateRulesetMixedIPVersionAllowRules(t *testing.T) {
 		{IP: "fe80::1", Port: 443, Protocol: shared.ProtoTCP, IsIPv6: true},
 	}
 
-	ruleset := generateRuleset(table, containerIP, rules, "filter - 1", "/test/project", "")
+	ruleset := generateRuleset(table, containerIP, rules, nil, false, "filter - 1", "/test/project", "")
 
 	// IPv4 container to IPv4 destination
 	if !strings.Contains(ruleset, "ip saddr 172.17.0.2 ip daddr 192.168.1.100 tcp dport 8080 accept") {
@@ -600,7 +600,7 @@ func TestNew_VMHelperEnvNilForEmptyPlatform(t *testing.T) {
 // =============================================================================
 
 func TestGenerateRulesetIncludesProjectDir(t *testing.T) {
-	ruleset := generateRuleset("alca-test", "172.17.0.2", nil, "filter - 1", "/Users/alice/myproject", "")
+	ruleset := generateRuleset("alca-test", "172.17.0.2", nil, nil, false, "filter - 1", "/Users/alice/myproject", "")
 
 	if !strings.Contains(ruleset, "# project-dir: /Users/alice/myproject") {
 		t.Errorf("ruleset should contain project-dir comment\nGot:\n%s", ruleset)
@@ -608,7 +608,7 @@ func TestGenerateRulesetIncludesProjectDir(t *testing.T) {
 }
 
 func TestGenerateRulesetIncludesProjectID(t *testing.T) {
-	ruleset := generateRuleset("alca-test", "172.17.0.2", nil, "filter - 1", "/test/project", "test-uuid-1234")
+	ruleset := generateRuleset("alca-test", "172.17.0.2", nil, nil, false, "filter - 1", "/test/project", "test-uuid-1234")
 
 	if !strings.Contains(ruleset, "# project-id: test-uuid-1234") {
 		t.Errorf("ruleset should contain project-id comment\nGot:\n%s", ruleset)
@@ -800,12 +800,12 @@ func TestCleanupStaleFiles(t *testing.T) {
 	existingDir := "/existing/project"
 	_ = mockFs.MkdirAll(existingDir+"/.alca", 0755)
 	_ = afero.WriteFile(mockFs, existingDir+"/.alca/state.json", []byte(`{"project_id":"proj-aaa"}`), 0644)
-	rulesetA := generateRuleset("alca-aaa", "172.17.0.2", nil, "filter - 1", existingDir, "proj-aaa")
+	rulesetA := generateRuleset("alca-aaa", "172.17.0.2", nil, nil, false, "filter - 1", existingDir, "proj-aaa")
 	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(existingDir)), []byte(rulesetA), 0644)
 
 	// File b: project-dir does NOT exist → should be deleted
 	missingDir := "/missing/project"
-	rulesetB := generateRuleset("alca-bbb", "172.17.0.3", nil, "filter - 1", missingDir, "proj-bbb")
+	rulesetB := generateRuleset("alca-bbb", "172.17.0.3", nil, nil, false, "filter - 1", missingDir, "proj-bbb")
 	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(missingDir)), []byte(rulesetB), 0644)
 
 	// File c: old format without project-dir comment → should be deleted (stale)
@@ -853,16 +853,18 @@ func TestCleanupStaleFiles_DeletesInMemoryTables(t *testing.T) {
 
 	// File a: stale project — project dir does NOT exist → should be deleted
 	staleDir := "/gone/project1"
-	staleRuleset := generateRuleset("alca-stale1", "172.17.0.2", nil, "filter - 1", staleDir, "proj-stale1")
+	staleRuleset := generateRuleset("alca-stale1", "172.17.0.2", nil, nil, false, "filter - 1", staleDir, "proj-stale1")
 	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(staleDir)), []byte(staleRuleset), 0644)
 
 	// File b: old-format file without project-dir comment → treated as stale
 	oldContent := "#!/usr/sbin/nft -f\n# Alcatraz container rules for table: alca-oldformat\ntable inet alca-oldformat {}\n"
 	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/old-format.nft", dir), []byte(oldContent), 0644)
 
-	// Expect exact delete commands for both stale tables
+	// Expect exact delete commands for both stale tables (inet isolation + ip proxy)
 	mockCmd.ExpectSuccess("sudo nft delete table inet alca-stale1", nil)
+	mockCmd.ExpectSuccess("sudo nft delete table ip alca-proxy-stale1", nil)
 	mockCmd.ExpectSuccess("sudo nft delete table inet alca-oldformat", nil)
+	mockCmd.ExpectSuccess("sudo nft delete table ip alca-proxy-oldformat", nil)
 
 	count, err := n.CleanupStaleFiles(context.Background())
 	if err != nil {
@@ -886,7 +888,7 @@ func TestCleanupStaleFiles_StateJsonMissing(t *testing.T) {
 	// Dir exists but no .alca/state.json → stale
 	projectDir := "/orphan/project"
 	_ = mockFs.MkdirAll(projectDir, 0755)
-	ruleset := generateRuleset("alca-orphan", "172.17.0.2", nil, "filter - 1", projectDir, "some-id")
+	ruleset := generateRuleset("alca-orphan", "172.17.0.2", nil, nil, false, "filter - 1", projectDir, "some-id")
 	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(projectDir)), []byte(ruleset), 0644)
 
 	count, err := n.CleanupStaleFiles(context.Background())
@@ -911,7 +913,7 @@ func TestCleanupStaleFiles_ProjectIDMismatch(t *testing.T) {
 	projectDir := "/reused/project"
 	_ = mockFs.MkdirAll(projectDir+"/.alca", 0755)
 	_ = afero.WriteFile(mockFs, projectDir+"/.alca/state.json", []byte(`{"project_id":"new-id"}`), 0644)
-	ruleset := generateRuleset("alca-reused", "172.17.0.2", nil, "filter - 1", projectDir, "old-id")
+	ruleset := generateRuleset("alca-reused", "172.17.0.2", nil, nil, false, "filter - 1", projectDir, "old-id")
 	_ = afero.WriteFile(mockFs, fmt.Sprintf("%s/%s", dir, nftFileName(projectDir)), []byte(ruleset), 0644)
 
 	count, err := n.CleanupStaleFiles(context.Background())

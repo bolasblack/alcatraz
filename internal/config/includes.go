@@ -150,6 +150,7 @@ func rawToConfig(raw RawConfig, expandEnv func(string) (string, error)) (Config,
 		Network        RawNetwork
 		Caps           RawCaps
 	}
+	// Verify: if a field is added to RawConfig but not here, this line fails to compile.
 	_ = rawConfigFields(raw)
 
 	// Convert raw envs to EnvValue
@@ -190,6 +191,27 @@ func rawToConfig(raw RawConfig, expandEnv func(string) (string, error)) (Config,
 		return Config{}, err
 	}
 
+	// Mirror type ensures all RawNetwork fields are explicitly handled (AGD-015).
+	type rawNetworkFields struct {
+		LANAccess []string
+		Ports     RawPortSlice
+		Proxy     string
+	}
+	_ = rawNetworkFields(raw.Network)
+
+	// Mirror type ensures all Network fields are explicitly handled (AGD-015).
+	type networkFields struct {
+		LANAccess []string
+		Ports     []PortConfig
+		Proxy     string
+	}
+	network := Network{
+		LANAccess: raw.Network.LANAccess,
+		Ports:     ports,
+		Proxy:     raw.Network.Proxy,
+	}
+	_ = networkFields(network)
+
 	return Config{
 		Image:          raw.Image,
 		Workdir:        raw.Workdir,
@@ -199,11 +221,8 @@ func rawToConfig(raw RawConfig, expandEnv func(string) (string, error)) (Config,
 		Mounts:         mounts,
 		Resources:      raw.Resources,
 		Envs:           envs,
-		Network: Network{
-			LANAccess: raw.Network.LANAccess,
-			Ports:     ports,
-		},
-		Caps: caps,
+		Network:        network,
+		Caps:           caps,
 	}, nil
 }
 
@@ -333,6 +352,7 @@ func mergeConfigs(base, overlay Config) Config {
 	result.Mounts = slices.Clone(base.Mounts)
 	result.Network.LANAccess = slices.Clone(base.Network.LANAccess)
 	result.Network.Ports = slices.Clone(base.Network.Ports)
+	// Network.Proxy is a string — no cloning needed
 
 	// Simple fields: overlay wins if non-empty
 	if overlay.Image != "" {
@@ -380,6 +400,10 @@ func mergeConfigs(base, overlay Config) Config {
 	// Ports: overlay replaces if non-empty (complete specification, not append)
 	if len(overlay.Network.Ports) > 0 {
 		result.Network.Ports = overlay.Network.Ports
+	}
+	// Proxy: overlay wins if non-empty
+	if overlay.Network.Proxy != "" {
+		result.Network.Proxy = overlay.Network.Proxy
 	}
 
 	// Caps: overlay wins if non-empty (full replacement, not merge)

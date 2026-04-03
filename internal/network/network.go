@@ -40,6 +40,8 @@ type (
 	Protocol = shared.Protocol
 	// LANAccessRule represents a parsed lan-access configuration entry.
 	LANAccessRule = shared.LANAccessRule
+	// ProxyConfig holds parsed transparent proxy configuration (AGD-037).
+	ProxyConfig = shared.ProxyConfig
 )
 
 // Re-export constants from shared package.

@@ -5,7 +5,7 @@ includes = ['./.alca.*.toml']
 image = "nixos/nix"
 
 workdir_exclude = [
-  ".alca.cache",
+  ".alca.mounts",
   "out",
   "out_*",
   "vendor",
@@ -13,8 +13,10 @@ workdir_exclude = [
 ]
 
 mounts = [
-  ".alca.cache/go:/root/go",
-  ".alca.cache/mise:/root/.local/share/mise",
+  ".alca.mounts/go:/root/go",
+  ".alca.mounts/mise:/root/.local/share/mise",
+  '.alca.mounts/extra-bin:/extra-bin',
+  '.alca.mounts/extra-scripts:/extra-scripts'
 ]
 
 [commands]

@@ -31,6 +31,7 @@ type ApplyRulesCall struct {
 	ContainerID string
 	ContainerIP string
 	Rules       []shared.LANAccessRule
+	Proxy       *shared.ProxyConfig
 }
 
 // CleanupCall records a call to Cleanup()
@@ -41,11 +42,12 @@ type CleanupCall struct {
 // Compile-time interface assertion.
 var _ Firewall = (*MockFirewall)(nil)
 
-func (m *MockFirewall) ApplyRules(containerID string, containerIP string, rules []LANAccessRule) (*PostCommitAction, error) {
+func (m *MockFirewall) ApplyRules(containerID string, containerIP string, rules []LANAccessRule, proxy *ProxyConfig) (*PostCommitAction, error) {
 	m.ApplyRulesCalls = append(m.ApplyRulesCalls, ApplyRulesCall{
 		ContainerID: containerID,
 		ContainerIP: containerIP,
 		Rules:       rules,
+		Proxy:       proxy,
 	})
 	return &PostCommitAction{}, m.ReturnApplyError
 }

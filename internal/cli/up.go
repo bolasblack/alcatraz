@@ -283,13 +283,10 @@ func setupNetwork(ctx context.Context, nh network.NetworkHelper, networkEnv *net
 	return nil
 }
 
-// setupFirewall applies firewall rules for network isolation.
-// Only applies when:
-// - A firewall backend is available (nftables on Linux, nftables via VM on macOS)
-// - lan-access is NOT ["*"] (user wants network isolation)
-// See AGD-027 for design decisions.
+// setupFirewall applies firewall rules for network isolation and transparent proxy.
+// Handles both lan-access isolation (AGD-027) and proxy DNAT (AGD-037) in one call.
 //
-// On success, returns a Network with expanded LANAccess (alca tokens resolved to IPs).
+// On success, returns a Network with expanded fields (alca tokens resolved to IPs).
 // The caller should persist this expanded config — not the raw cfg.Network — so that
 // state reflects what was actually applied.
 func setupFirewall(ctx context.Context, fw network.Firewall, fwType network.Type, networkEnv *network.NetworkEnv, env *util.Env, tfs *transact.TransactFs, runtimeEnv *runtime.RuntimeEnv, netCfg config.Network, rt runtime.Runtime, st *state.State, nh network.NetworkHelper, out io.Writer) (config.Network, error) {
@@ -303,13 +300,31 @@ func setupFirewall(ctx context.Context, fw network.Firewall, fwType network.Type
 		}
 	}
 
+	// Create token resolver once for both lan-access and proxy expansion.
+	// HOST_IP is resolved at most once via the resolver's internal cache,
+	// avoiding duplicate resolution when both lan-access and proxy are configured.
+	resolver := newAlcaTokenResolver(ctx, runtimeEnv, rt)
+
 	// Expand alca tokens in lan-access rules before parsing (AGD-036)
-	expandedLANAccess, err := expandAlcaTokensInRules(ctx, runtimeEnv, rt, netCfg.LANAccess)
+	expandedLANAccess, err := config.ExpandAlcaTokensInStrings(netCfg.LANAccess, resolver)
 	if err != nil {
 		return config.Network{}, fmt.Errorf("expanding lan-access tokens: %w", err)
 	}
 
-	expandedNet := config.Network{LANAccess: expandedLANAccess}
+	// Mirror type ensures all Network fields are carried forward (AGD-015).
+	// Missing a field here causes false drift detection on every `alca up`.
+	type networkFields struct {
+		LANAccess []string
+		Ports     []config.PortConfig
+		Proxy     string
+	}
+
+	expandedNet := config.Network{
+		LANAccess: expandedLANAccess,
+		Ports:     netCfg.Ports,
+		Proxy:     netCfg.Proxy,
+	}
+	_ = networkFields(expandedNet) // AGD-015: compile-time check on actual value
 
 	// Parse lan-access rules
 	rules, err := network.ParseLANAccessRules(expandedLANAccess)
@@ -317,31 +332,65 @@ func setupFirewall(ctx context.Context, fw network.Firewall, fwType network.Type
 		return config.Network{}, fmt.Errorf("invalid lan-access configuration: %w", err)
 	}
 
-	// lan-access = ["*"] means allow all, no firewall needed
-	if network.HasAllLAN(rules) {
+	// Expand and parse proxy config (AGD-037)
+	var proxy *network.ProxyConfig
+	if netCfg.Proxy != "" {
+		expandedProxy, err := config.ExpandAlcaTokens(netCfg.Proxy, resolver)
+		if err != nil {
+			return config.Network{}, fmt.Errorf("expanding proxy address tokens: %w", err)
+		}
+		expandedNet.Proxy = expandedProxy
+		proxyHost, proxyPort, err := config.ParseProxyAddress(expandedProxy)
+		if err != nil {
+			return config.Network{}, fmt.Errorf("invalid proxy address after expansion: %w", err)
+		}
+		// Mirror type ensures ProxyConfig field drift is caught at compile time (AGD-015).
+		type proxyFields struct {
+			Host string
+			Port int
+		}
+		_ = proxyFields(network.ProxyConfig{})
+		proxy = &network.ProxyConfig{Host: proxyHost, Port: proxyPort}
+	}
+
+	// Determine if any nftables work is needed
+	hasIsolation := !network.HasAllLAN(rules)
+	hasProxy := proxy != nil
+	if !hasIsolation && !hasProxy {
 		return expandedNet, nil
 	}
 
 	// The network helper must be installed for nft reload.
-	// If setupNetwork didn't run (e.g. lan-access is empty), the helper may not be installed.
 	if err := ensureNetworkHelper(ctx, nh, networkEnv, env, tfs, out); err != nil {
 		return config.Network{}, err
 	}
 
 	if fwType == network.TypeNone {
-		// No firewall available - emit warning per AGD-027
+		feature := "Network isolation"
+		if hasProxy && hasIsolation {
+			feature = "Network isolation and transparent proxy"
+		} else if hasProxy {
+			feature = "Transparent proxy"
+		}
+		proxyFallbackHint := ""
+		if hasProxy {
+			proxyFallbackHint = `
+Alternatively, set HTTP_PROXY/HTTPS_PROXY environment variables in your
+config to route traffic through your proxy without nftables.
+`
+		}
 		util.ProgressStep(out, `
-⚠️  Network isolation not available
+⚠️  %s not available
 
 Your system does not have a supported firewall backend.
-The container will start WITHOUT network isolation - it can access LAN.
+The container will start WITHOUT network rules.
 
 On Linux, install nftables:
   1. Install nftables: sudo apt install nftables  # or yum/dnf/pacman
   2. Ensure kernel version >= 3.13: uname -r
   3. Restart Alcatraz
-
-`)
+%s
+`, feature, proxyFallbackHint)
 		return expandedNet, nil
 	}
 
@@ -361,10 +410,18 @@ On Linux, install nftables:
 		return config.Network{}, fmt.Errorf("failed to get container IP: %w", err)
 	}
 
-	util.ProgressStep(out, "Applying network isolation rules...\n")
+	if hasIsolation {
+		util.ProgressStep(out, "Applying network isolation rules...\n")
+	}
+	if hasProxy {
+		util.ProgressStep(out, "Applying transparent proxy rules (→ %s:%d)...\n", proxy.Host, proxy.Port)
+	}
 
-	// Apply firewall rules with lan-access allowlist (writes files via tfs)
-	action, err := fw.ApplyRules(status.ID, containerIP, rules)
+	// Apply all firewall rules — isolation + proxy (writes files via tfs)
+	// NOTE: ApplyRules has 4 positional params (containerID, containerIP, rules, proxy).
+	// If more params are added, consider a params struct to improve readability and
+	// reduce positional coupling. Not refactored now to avoid cross-module churn.
+	action, err := fw.ApplyRules(status.ID, containerIP, rules, proxy)
 	if err != nil {
 		return config.Network{}, fmt.Errorf("failed to apply firewall rules: %w", err)
 	}
@@ -381,7 +438,12 @@ On Linux, install nftables:
 		}
 	}
 
-	util.ProgressStep(out, "Network isolation enabled\n")
+	if hasIsolation {
+		util.ProgressStep(out, "Network isolation enabled\n")
+	}
+	if hasProxy {
+		util.ProgressStep(out, "Transparent proxy enabled\n")
+	}
 	return expandedNet, nil
 }
 
@@ -424,16 +486,14 @@ func ensureNetworkHelper(ctx context.Context, nh network.NetworkHelper, networkE
 	return nil
 }
 
-// expandAlcaTokensInRules expands ${alca:...} tokens in lan-access rule strings.
-// Resolves HOST_IP once (cached) via rt.GetHostIP, then expands all rules.
-// Rules without alca tokens are passed through unchanged.
-func expandAlcaTokensInRules(ctx context.Context, runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime, rules []string) ([]string, error) {
-	// Cache resolved values so each token is resolved at most once
+// newAlcaTokenResolver creates a resolver func for ${alca:...} tokens.
+// Caches HOST_IP resolution so it's resolved at most once per call site.
+func newAlcaTokenResolver(ctx context.Context, runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime) func(string) (string, error) {
 	var hostIP string
 	var hostIPErr error
 	var hostIPResolved bool
 
-	resolver := func(name string) (string, error) {
+	return func(name string) (string, error) {
 		if name != "HOST_IP" {
 			return "", fmt.Errorf("unhandled alca token %q", name)
 		}
@@ -443,8 +503,13 @@ func expandAlcaTokensInRules(ctx context.Context, runtimeEnv *runtime.RuntimeEnv
 		}
 		return hostIP, hostIPErr
 	}
+}
 
-	return config.ExpandAlcaTokensInStrings(rules, resolver)
+// expandAlcaTokensInRules expands ${alca:...} tokens in lan-access rule strings.
+// Resolves HOST_IP once (cached) via rt.GetHostIP, then expands all rules.
+// Rules without alca tokens are passed through unchanged.
+func expandAlcaTokensInRules(ctx context.Context, runtimeEnv *runtime.RuntimeEnv, rt runtime.Runtime, rules []string) ([]string, error) {
+	return config.ExpandAlcaTokensInStrings(rules, newAlcaTokenResolver(ctx, runtimeEnv, rt))
 }
 
 // saveNetworkState selectively persists the network config section to state.
