@@ -2,7 +2,7 @@
 &lt;h3 id="added"&gt;Added&lt;a class="anchor" href="#added"&gt;#&lt;/a&gt;&lt;/h3&gt;
 &lt;ul&gt;
 &lt;li&gt;
-&lt;p&gt;Add transparent proxy for containers via &lt;code&gt;network.proxy&lt;/code&gt; (&lt;a href="https://github.com/bolasblack/alcatraz/commit/ff6b051"&gt;&lt;code&gt;ff6b051&lt;/code&gt;&lt;/a&gt;)&lt;/p&gt;
+&lt;p&gt;Add transparent proxy for containers via &lt;code&gt;network.proxy&lt;/code&gt; (&lt;a href="https://github.com/bolasblack/alcatraz/commit/115276b"&gt;&lt;code&gt;115276b&lt;/code&gt;&lt;/a&gt;)&lt;/p&gt;
 &lt;p&gt;Route all container TCP/UDP traffic through a transparent proxy using nftables DNAT. Works with any redirect-mode proxy (e.g., sing-box). The proxy address is automatically allowed through LAN isolation rules.&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#272822;background-color:#fafafa;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"&gt;&lt;code class="language-toml" data-lang="toml"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#111"&gt;[&lt;/span&gt;&lt;span style="color:#75af00"&gt;network&lt;/span&gt;&lt;span style="color:#111"&gt;]&lt;/span&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#75af00"&gt;proxy&lt;/span&gt; &lt;span style="color:#111"&gt;=&lt;/span&gt; &lt;span style="color:#d88200"&gt;&amp;#34;${alca:HOST_IP}:1080&amp;#34;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;See &lt;a href="https://bolasblack.github.io/alcatraz/config/fields/#networkproxy"&gt;network.proxy&lt;/a&gt; and &lt;a href="https://bolasblack.github.io/alcatraz/config/network/#transparent-proxy"&gt;Transparent Proxy&lt;/a&gt;.&lt;/p&gt;
