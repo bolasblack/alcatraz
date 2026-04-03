@@ -62,6 +62,12 @@
  &lt;td&gt;Yes&lt;/td&gt;
  &lt;td&gt;&lt;code&gt;lan-access = [&amp;quot;*&amp;quot;]&lt;/code&gt;&lt;/td&gt;
  &lt;/tr&gt;
+ &lt;tr&gt;
+ &lt;td&gt;Transparent proxy&lt;/td&gt;
+ &lt;td&gt;Via proxy&lt;/td&gt;
+ &lt;td&gt;Via proxy&lt;/td&gt;
+ &lt;td&gt;&lt;code&gt;proxy = &amp;quot;host:port&amp;quot;&lt;/code&gt;&lt;/td&gt;
+ &lt;/tr&gt;
  &lt;/tbody&gt;
 &lt;/table&gt;
 &lt;h2 id="why-nftables-inside-the-vm"&gt;Why nftables Inside the VM?&lt;a class="anchor" href="#why-nftables-inside-the-vm"&gt;#&lt;/a&gt;&lt;/h2&gt;
