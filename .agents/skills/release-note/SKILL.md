@@ -30,11 +30,12 @@ If `svu` is not available, ask the user for the version.
 
 Weight determines sort order in the docs site (newer versions sort first).
 
-Pattern: multiply the minor version by `-10`. Examples:
+Formula: `-(major × 100 + minor × 10 + patch)`. Examples:
 - v0.1.0 → weight: -10
-- v0.2.0 → weight: -20
+- v0.2.2 → weight: -22
 - v0.3.0 → weight: -30
 - v1.0.0 → weight: -100
+- v1.2.3 → weight: -123
 
 ### Step 3: Gather Changes
 
@@ -46,10 +47,9 @@ git describe --tags --abbrev=0
 
 # Commits since last tag (one-line format)
 git log $(git describe --tags --abbrev=0)..HEAD --oneline
-
-# Full diff since last tag (for understanding scope)
-git diff $(git describe --tags --abbrev=0)..HEAD --stat
 ```
+
+Read individual commits (via `git show`) as needed when writing entries — don't bulk-diff upfront.
 
 ### Step 4: Read Style Reference
 
@@ -120,19 +120,17 @@ weight: {WEIGHT}
 [{VERSION_NO_V}]: https://github.com/bolasblack/alcatraz/releases/tag/v{VERSION}
 ```
 
-### Step 8: Remind User
+### Step 8: Next Steps
 
-After generating, tell the user:
+**Do NOT commit the changelog file.** After generating, tell the user:
 
 1. Review the generated changelog for accuracy
-2. To generate GitHub Release notes, run:
-   ```bash
-   make release-notes VERSION=v{VERSION}
-   ```
-3. To tag and release:
-   ```bash
-   make release-patch  # or release-minor / release-major
-   ```
+2. Suggest the appropriate release command based on the changes:
+   - **New features** → `make release-minor`
+   - **Bug fixes only** → `make release-patch`
+   - **Breaking changes** → `make release-major`
+3. The release target handles everything: updates `flake.nix` version, commits, tags, and pushes
+4. CI automatically generates GitHub Release notes from the changelog (`make release-notes` runs in `.github/workflows/release.yml`)
 
 ## Important Rules
 
@@ -143,4 +141,5 @@ After generating, tell the user:
 
 ## Version History
 
+- v1.2.0 (2026-04-03): Fix weight formula to -(major×100+minor×10+patch); drop upfront --stat diff
 - v1.0.0 (2026-03-02): Initial version
