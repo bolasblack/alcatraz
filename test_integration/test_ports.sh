@@ -5,7 +5,7 @@
 # Helper: get container name from state.json
 # ---------------------------------------------------------------------------
 
-get_container_name() {
+ports__get_container_name() {
   local state_file=".alca/state.json"
   if [[ ! -f "$state_file" ]]; then
     echo ""
@@ -23,7 +23,7 @@ get_container_name() {
 # Helper: get port mappings from container runtime
 # ---------------------------------------------------------------------------
 
-get_port_mappings() {
+ports__get_port_mappings() {
   local container_name="$1"
   $CONTAINER_RUNTIME port "$container_name" 2>&1 || true
 }
@@ -59,8 +59,8 @@ TOML
 
   # Verify port 8080 is mapped
   local container_name port_output
-  container_name=$(get_container_name)
-  port_output=$(get_port_mappings "$container_name")
+  container_name=$(ports__get_container_name)
+  port_output=$(ports__get_port_mappings "$container_name")
 
   if echo "$port_output" | grep -q "8080"; then
     pass "ports_mapping: port 8080 mapped"

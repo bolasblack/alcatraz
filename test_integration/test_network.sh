@@ -33,14 +33,14 @@ test_network_allow_all() {
 
 # Platform-agnostic check: uses 'alca network-helper status' which works on both
 # Linux (nftables) and macOS (helper container). Exits 0 with "Installed: Yes/No".
-network_helper_installed() {
+network__helper_installed() {
   local output
   output=$("$ALCA_BIN" network-helper status 2>&1 || true)
   echo "$output" | grep -qF "Installed: Yes"
 }
 
 test_network_isolation() {
-  if ! network_helper_installed; then
+  if ! network__helper_installed; then
     skip "test_network_isolation — network helper not installed"
     return
   fi

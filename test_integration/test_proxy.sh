@@ -5,38 +5,38 @@
 # Uses a listener INSIDE a Docker container (not on the host) to avoid
 # macOS firewall issues. All traffic stays within the Docker network.
 
-PROXY_LISTENER_NAME="alca-test-proxy-listener"
+PROXY__LISTENER_NAME="alca-test-proxy-listener"
 
-cleanup_proxy_listener() {
-  $CONTAINER_RUNTIME rm -f "$PROXY_LISTENER_NAME" 2>/dev/null || true
+proxy__cleanup_listener() {
+  $CONTAINER_RUNTIME rm -f "$PROXY__LISTENER_NAME" 2>/dev/null || true
 }
 
 # test_proxy_redirect: container TCP traffic is DNATed to proxy address
 test_proxy_redirect() {
-  if ! network_helper_installed; then
+  if ! network__helper_installed; then
     skip "test_proxy_redirect — network helper not installed"
     return
   fi
 
   setup_test_dir
-  cleanup_proxy_listener
+  proxy__cleanup_listener
 
   local proxy_port=19876
 
   # Start a listener in a separate container on the Docker bridge network.
   # nc -l -p PORT listens for one connection, saves data, then sleep keeps
   # the container alive so we can read the file.
-  $CONTAINER_RUNTIME run -d --name "$PROXY_LISTENER_NAME" alpine \
+  $CONTAINER_RUNTIME run -d --name "$PROXY__LISTENER_NAME" alpine \
     sh -c "nc -l -p $proxy_port > /tmp/received 2>/dev/null; sleep 30" >/dev/null 2>&1
 
   sleep 1
 
   # Get the listener container's IP on the bridge network
   local listener_ip
-  listener_ip=$($CONTAINER_RUNTIME inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$PROXY_LISTENER_NAME" 2>/dev/null)
+  listener_ip=$($CONTAINER_RUNTIME inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$PROXY__LISTENER_NAME" 2>/dev/null)
   if [[ -z "$listener_ip" ]]; then
     fail "proxy_redirect: get listener IP" "could not get listener container IP"
-    cleanup_proxy_listener
+    proxy__cleanup_listener
     teardown_test_dir
     return
   fi
@@ -62,7 +62,7 @@ TOML
   run_with_timeout 120 "$ALCA_BIN" up -q 2>&1 || up_exit=$?
   if [[ $up_exit -ne 0 ]]; then
     fail "proxy_redirect: alca up" "alca up failed"
-    cleanup_proxy_listener
+    proxy__cleanup_listener
     teardown_test_dir
     return
   fi
@@ -77,7 +77,7 @@ TOML
 
   # Read what the listener captured
   local received
-  received=$($CONTAINER_RUNTIME exec "$PROXY_LISTENER_NAME" cat /tmp/received 2>/dev/null || true)
+  received=$($CONTAINER_RUNTIME exec "$PROXY__LISTENER_NAME" cat /tmp/received 2>/dev/null || true)
 
   if echo "$received" | grep -qF "$marker"; then
     pass "proxy_redirect: traffic redirected to proxy"
@@ -85,6 +85,6 @@ TOML
     fail "proxy_redirect: traffic redirected to proxy" "listener did not receive marker '$marker'"
   fi
 
-  cleanup_proxy_listener
+  proxy__cleanup_listener
   teardown_test_dir
 }

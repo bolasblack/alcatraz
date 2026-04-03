@@ -18,3 +18,11 @@
 - Each function: setup_test_dir → write config → run alca commands → assert outcomes → teardown_test_dir
 - Use run_with_timeout for all alca commands
 - Use assert helpers from helpers.sh (grep -F for literal matching)
+
+## Naming Convention
+
+All test files are sourced into a single shell — function names share a global namespace.
+
+- **Test functions**: `test_<name>` — exported API, called from run.sh
+- **Helper functions**: `<file>__<name>()` — prefix with the file's feature name (e.g., `ports__get_container_name`, `network__helper_installed`)
+- **Variables**: `<FILE>__<NAME>` for file-scoped globals (e.g., `PROXY__LISTENER_NAME`)

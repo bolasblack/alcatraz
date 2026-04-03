@@ -4,7 +4,7 @@
 # test_mount_persistence: bind mount data survives restart
 # test_workdir_exclude: excluded files not visible inside container (requires Mutagen)
 
-mutagen_available() {
+mounts__mutagen_available() {
   command -v mutagen >/dev/null 2>&1
 }
 
@@ -53,7 +53,7 @@ TOML
 }
 
 test_workdir_exclude() {
-  if ! mutagen_available; then
+  if ! mounts__mutagen_available; then
     skip "test_workdir_exclude — Mutagen not installed"
     return
   fi
