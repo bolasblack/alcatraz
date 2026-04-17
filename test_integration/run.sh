@@ -18,6 +18,7 @@ source "$SCRIPT_DIR/test_init.sh"
 source "$SCRIPT_DIR/test_subdir.sh"
 source "$SCRIPT_DIR/test_restart_policy.sh"
 source "$SCRIPT_DIR/test_proxy.sh"
+source "$SCRIPT_DIR/test_hooks.sh"
 
 # Prerequisites
 if [[ ! -x "$ALCA_BIN" ]]; then
@@ -186,9 +187,15 @@ if container_runtime_available; then
     echo "=== Group 12: Transparent Proxy ==="
     test_proxy_redirect
   fi
+
+  if should_run_group 13; then
+    echo ""
+    echo "=== Group 13: Lifecycle Hooks ==="
+    test_hooks_run
+  fi
 elif [[ -z "${TEST_GROUP:-}" ]]; then
   echo ""
-  skip "No container runtime (Docker/Podman) available — skipping Groups 2-12"
+  skip "No container runtime (Docker/Podman) available — skipping Groups 2-13"
 fi
 
 # Summary
