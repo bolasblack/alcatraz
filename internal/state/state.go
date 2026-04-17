@@ -189,11 +189,13 @@ type DriftChanges struct {
 	CommandUp      *[2]string
 	Memory         *[2]string
 	CPUs           *[2]int
-	WorkdirExclude bool // true if changed (slice comparison, no diff detail)
-	Mounts         bool // true if changed (slice comparison, no diff detail)
-	Envs           bool // true if changed (map comparison, no diff detail)
-	Caps           bool // true if changed (struct comparison, no diff detail)
-	Ports          bool // true if changed (slice comparison, no diff detail)
+	HooksPostUp    *[2]string // [old, new] if changed
+	HooksPreDown   *[2]string // [old, new] if changed
+	WorkdirExclude bool       // true if changed (slice comparison, no diff detail)
+	Mounts         bool       // true if changed (slice comparison, no diff detail)
+	Envs           bool       // true if changed (map comparison, no diff detail)
+	Caps           bool       // true if changed (struct comparison, no diff detail)
+	Ports          bool       // true if changed (slice comparison, no diff detail)
 }
 
 // DetectConfigDrift compares the state's config with the given config.
@@ -224,8 +226,15 @@ func enforceConfigFieldCompleteness(cfg *config.Config) {
 		Envs           map[string]config.EnvValue
 		Network        config.Network
 		Caps           config.Caps
+		Hooks          config.Hooks
 	}
 	_ = fields(*cfg)
+
+	type fieldsHooks struct {
+		PostUp  string
+		PreDown string
+	}
+	_ = fieldsHooks(cfg.Hooks)
 
 	type fieldsNetwork struct {
 		LANAccess []string
@@ -334,6 +343,12 @@ func compareConfigs(old, new *config.Config) *DriftChanges {
 	}
 	if !config.PortsEqual(old.Network.Ports, new.Network.Ports) {
 		c.Ports = true
+	}
+	if old.Hooks.PostUp != new.Hooks.PostUp {
+		c.HooksPostUp = &[2]string{old.Hooks.PostUp, new.Hooks.PostUp}
+	}
+	if old.Hooks.PreDown != new.Hooks.PreDown {
+		c.HooksPreDown = &[2]string{old.Hooks.PreDown, new.Hooks.PreDown}
 	}
 
 	if c == (DriftChanges{}) {

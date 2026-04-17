@@ -48,6 +48,13 @@ type Commands struct {
 	Enter CommandValue `json:"enter,omitempty"`
 }
 
+// Hooks defines host-side lifecycle hooks that run on the host machine.
+// These commands execute outside the container and are triggered by alca lifecycle events.
+type Hooks struct {
+	PostUp  string `toml:"post_up,omitempty" json:"post_up,omitempty" jsonschema:"description=Command to run on the host after the container starts"`
+	PreDown string `toml:"pre_down,omitempty" json:"pre_down,omitempty" jsonschema:"description=Command to run on the host before the container stops"`
+}
+
 // RawCommandValue is the raw type for command values in TOML.
 // Supports string format ("cmd") or struct format ({command = "cmd", append = true}).
 type RawCommandValue = any
@@ -218,6 +225,18 @@ func CapsEqual(a, b Caps) bool {
 	return true
 }
 
+// HooksEqual compares two Hooks structs for equality.
+func HooksEqual(a, b Hooks) bool {
+	// Mirror type ensures all Hooks fields are checked (AGD-015).
+	type fields struct {
+		PostUp  string
+		PreDown string
+	}
+	_ = fields(a)
+
+	return a.PostUp == b.PostUp && a.PreDown == b.PreDown
+}
+
 // StringSlicesEqual checks if two string slices are equal.
 func StringSlicesEqual(a, b []string) bool {
 	if len(a) != len(b) {
@@ -244,6 +263,7 @@ type Config struct {
 	Envs           map[string]EnvValue
 	Network        Network
 	Caps           Caps
+	Hooks          Hooks
 }
 
 // HasMutagenSync returns true if the config has any sync excludes configured,
@@ -393,6 +413,7 @@ type RawConfig struct {
 	Envs           RawEnvValueMap `toml:"envs,omitempty" json:"envs,omitempty"`
 	Network        RawNetwork     `toml:"network,omitempty" json:"network,omitempty" jsonschema:"description=Network configuration"`
 	Caps           RawCaps        `toml:"caps,omitempty" json:"caps,omitempty"`
+	Hooks          Hooks          `toml:"hooks,omitempty" json:"hooks,omitempty" jsonschema:"description=Host-side lifecycle hooks (run on host machine)"`
 }
 
 // LoadConfig reads and parses a configuration file from the given path.

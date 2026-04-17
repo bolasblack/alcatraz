@@ -149,6 +149,7 @@ func rawToConfig(raw RawConfig, expandEnv func(string) (string, error)) (Config,
 		Envs           RawEnvValueMap
 		Network        RawNetwork
 		Caps           RawCaps
+		Hooks          Hooks
 	}
 	// Verify: if a field is added to RawConfig but not here, this line fails to compile.
 	_ = rawConfigFields(raw)
@@ -223,6 +224,7 @@ func rawToConfig(raw RawConfig, expandEnv func(string) (string, error)) (Config,
 		Envs:           envs,
 		Network:        network,
 		Caps:           caps,
+		Hooks:          raw.Hooks,
 	}, nil
 }
 
@@ -341,6 +343,7 @@ func mergeConfigs(base, overlay Config) Config {
 		Envs           map[string]EnvValue
 		Network        Network
 		Caps           Caps
+		Hooks          Hooks
 	}
 	_ = configFields(base)
 	_ = configFields(overlay)
@@ -409,6 +412,14 @@ func mergeConfigs(base, overlay Config) Config {
 	// Caps: overlay wins if non-empty (full replacement, not merge)
 	if len(overlay.Caps.Drop) > 0 || len(overlay.Caps.Add) > 0 {
 		result.Caps = overlay.Caps
+	}
+
+	// Hooks: overlay wins per field
+	if overlay.Hooks.PostUp != "" {
+		result.Hooks.PostUp = overlay.Hooks.PostUp
+	}
+	if overlay.Hooks.PreDown != "" {
+		result.Hooks.PreDown = overlay.Hooks.PreDown
 	}
 
 	return result

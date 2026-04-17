@@ -16,6 +16,9 @@ type CommandRunner interface {
 	// RunQuiet executes a command without streaming, returning combined stdout/stderr.
 	RunQuiet(ctx context.Context, name string, args ...string) (output []byte, err error)
 
+	// RunInDir executes a command in the specified directory with inherited stdout/stderr.
+	RunInDir(ctx context.Context, dir string, name string, args ...string) error
+
 	// SudoRun runs a command with sudo, connecting stdin/stdout/stderr.
 	SudoRun(ctx context.Context, name string, args ...string) error
 
@@ -54,6 +57,14 @@ func (r *DefaultCommandRunner) Run(ctx context.Context, name string, args ...str
 func (r *DefaultCommandRunner) RunQuiet(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...) //nolint:fslint // CommandRunner is the abstraction layer
 	return cmd.CombinedOutput()
+}
+
+func (r *DefaultCommandRunner) RunInDir(ctx context.Context, dir string, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:fslint // CommandRunner is the abstraction layer
+	cmd.Dir = dir
+	cmd.Stdout = r.stdout
+	cmd.Stderr = r.stderr
+	return cmd.Run()
 }
 
 func (r *DefaultCommandRunner) SudoRun(ctx context.Context, name string, args ...string) error {

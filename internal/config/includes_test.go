@@ -1650,3 +1650,43 @@ image = "b:latest"
 		t.Fatalf("expected ErrCircularReference, got: %v", err)
 	}
 }
+
+func TestLoadWithIncludes_HooksMerge(t *testing.T) {
+	env, memFs := newTestEnv(t)
+
+	// Base config: has both hooks
+	base := `
+image = "ubuntu:latest"
+[hooks]
+post_up = "base-post-up"
+pre_down = "base-pre-down"
+`
+	// Overlay (includes): overrides only post_up
+	overlay := `
+[hooks]
+post_up = "overlay-post-up"
+`
+	// Main config: extends base, includes overlay
+	main := `
+extends = ["base.toml"]
+includes = ["overlay.toml"]
+image = "alpine:latest"
+`
+	_ = afero.WriteFile(memFs, "/project/base.toml", []byte(base), 0644)
+	_ = afero.WriteFile(memFs, "/project/overlay.toml", []byte(overlay), 0644)
+	_ = afero.WriteFile(memFs, "/project/main.toml", []byte(main), 0644)
+
+	cfg, err := LoadWithIncludes(env, "/project/main.toml", StrictExpandEnv)
+	if err != nil {
+		t.Fatalf("LoadWithIncludes() error: %v", err)
+	}
+
+	// post_up: overlay wins over base
+	if cfg.Hooks.PostUp != "overlay-post-up" {
+		t.Errorf("Hooks.PostUp = %q, want %q (overlay should win)", cfg.Hooks.PostUp, "overlay-post-up")
+	}
+	// pre_down: base preserved (overlay didn't set it)
+	if cfg.Hooks.PreDown != "base-pre-down" {
+		t.Errorf("Hooks.PreDown = %q, want %q (base should be preserved)", cfg.Hooks.PreDown, "base-pre-down")
+	}
+}

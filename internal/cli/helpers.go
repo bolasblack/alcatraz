@@ -142,6 +142,12 @@ func displayConfigDrift(w io.Writer, drift *state.DriftChanges, runtimeChanged b
 		if drift.Ports {
 			_, _ = fmt.Fprintf(w, "  Ports: changed\n")
 		}
+		if drift.HooksPostUp != nil {
+			_, _ = fmt.Fprintf(w, "  Hooks.post_up: changed\n")
+		}
+		if drift.HooksPreDown != nil {
+			_, _ = fmt.Fprintf(w, "  Hooks.pre_down: changed\n")
+		}
 	}
 
 	return true
@@ -329,6 +335,16 @@ func checkProjectPathConsistency(ctx context.Context, runtimeEnv *runtime.Runtim
 	}
 
 	return fmt.Errorf("%s: %w", msg, errProjectPathMismatch)
+}
+
+// runHook executes a host-side lifecycle hook command via "sh -c".
+// The command runs in the project directory with inherited stdout/stderr.
+// Returns nil if hook is empty (no-op).
+func runHook(ctx context.Context, cmdRunner util.CommandRunner, hook string, cwd string) error {
+	if hook == "" {
+		return nil
+	}
+	return cmdRunner.RunInDir(ctx, cwd, "sh", "-c", hook)
 }
 
 // progressFunc returns a progress callback that writes to the given writer.

@@ -2,6 +2,20 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$ref": "#/$defs/RawConfig",
   "$defs": {
+    "Hooks": {
+      "properties": {
+        "post_up": {
+          "type": "string",
+          "description": "Command to run on the host after the container starts"
+        },
+        "pre_down": {
+          "type": "string",
+          "description": "Command to run on the host before the container stops"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "RawCommands": {
       "properties": {
         "up": true,
@@ -150,6 +164,10 @@
             }
           ],
           "description": "Container capability configuration. Array = additive mode, Object = full control mode."
+        },
+        "hooks": {
+          "$ref": "#/$defs/Hooks",
+          "description": "Host-side lifecycle hooks (run on host machine)"
         }
       },
       "additionalProperties": false,

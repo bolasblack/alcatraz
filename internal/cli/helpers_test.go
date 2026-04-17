@@ -14,6 +14,7 @@ import (
 	"github.com/bolasblack/alcatraz/internal/config"
 	"github.com/bolasblack/alcatraz/internal/runtime"
 	"github.com/bolasblack/alcatraz/internal/state"
+	"github.com/bolasblack/alcatraz/internal/util"
 )
 
 func TestDisplayConfigDrift(t *testing.T) {
@@ -321,6 +322,74 @@ var _ runtime.Runtime = (*pathCheckMockRuntime)(nil)
 
 func (m *pathCheckMockRuntime) ListContainers(_ context.Context, _ *runtime.RuntimeEnv) ([]runtime.ContainerInfo, error) {
 	return m.containers, m.listErr
+}
+
+func TestRunHook_EmptyIsNoop(t *testing.T) {
+	cmd := util.NewMockCommandRunner()
+	err := runHook(context.Background(), cmd, "", "/tmp")
+	if err != nil {
+		t.Errorf("expected nil error for empty hook, got: %v", err)
+	}
+	if len(cmd.Calls) != 0 {
+		t.Errorf("expected no calls for empty hook, got %d", len(cmd.Calls))
+	}
+}
+
+func TestRunHook_ExecutesViaSh(t *testing.T) {
+	cmd := util.NewMockCommandRunner()
+	cmd.ExpectSuccess("sh -c echo hello", nil)
+	defer cmd.AssertAllExpectationsMet(t)
+
+	err := runHook(context.Background(), cmd, "echo hello", "/my/project")
+	if err != nil {
+		t.Errorf("expected nil error, got: %v", err)
+	}
+	// Verify working directory was passed to RunInDir
+	if len(cmd.Calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(cmd.Calls))
+	}
+	if cmd.Calls[0].Dir != "/my/project" {
+		t.Errorf("expected Dir=%q, got %q", "/my/project", cmd.Calls[0].Dir)
+	}
+}
+
+func TestRunHook_ReturnsError(t *testing.T) {
+	cmdErr := errors.New("exit status 1")
+	cmd := util.NewMockCommandRunner()
+	cmd.ExpectFailure("sh -c exit 1", cmdErr)
+
+	err := runHook(context.Background(), cmd, "exit 1", "/tmp")
+	if !errors.Is(err, cmdErr) {
+		t.Fatalf("expected command error to propagate, got: %v", err)
+	}
+}
+
+func TestDisplayConfigDrift_HooksPostUp(t *testing.T) {
+	var buf bytes.Buffer
+	drift := &state.DriftChanges{
+		HooksPostUp: &[2]string{"echo old", "echo new"},
+	}
+	result := displayConfigDrift(&buf, drift, false, "", "")
+	if !result {
+		t.Error("expected output")
+	}
+	if !strings.Contains(buf.String(), "Hooks.post_up: changed") {
+		t.Errorf("expected Hooks.post_up in output, got: %s", buf.String())
+	}
+}
+
+func TestDisplayConfigDrift_HooksPreDown(t *testing.T) {
+	var buf bytes.Buffer
+	drift := &state.DriftChanges{
+		HooksPreDown: &[2]string{"pkill old", "pkill new"},
+	}
+	result := displayConfigDrift(&buf, drift, false, "", "")
+	if !result {
+		t.Error("expected output")
+	}
+	if !strings.Contains(buf.String(), "Hooks.pre_down: changed") {
+		t.Errorf("expected Hooks.pre_down in output, got: %s", buf.String())
+	}
 }
 
 func TestCheckProjectPathConsistency(t *testing.T) {

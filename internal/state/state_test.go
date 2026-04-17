@@ -661,6 +661,96 @@ func TestDetectConfigDrift_EnvsChange(t *testing.T) {
 	}
 }
 
+func TestDetectConfigDrift_HooksPostUpChange(t *testing.T) {
+	state := &State{
+		Config: &config.Config{
+			Hooks: config.Hooks{PostUp: "echo start"},
+		},
+	}
+	current := &config.Config{
+		Hooks: config.Hooks{PostUp: "sing-box run &"},
+	}
+
+	changes := state.DetectConfigDrift(current)
+	if changes == nil || changes.HooksPostUp == nil {
+		t.Fatal("expected HooksPostUp change")
+	}
+	if (*changes.HooksPostUp)[0] != "echo start" || (*changes.HooksPostUp)[1] != "sing-box run &" {
+		t.Errorf("HooksPostUp change: got [%q, %q], want [%q, %q]",
+			(*changes.HooksPostUp)[0], (*changes.HooksPostUp)[1], "echo start", "sing-box run &")
+	}
+}
+
+func TestDetectConfigDrift_HooksPreDownChange(t *testing.T) {
+	state := &State{
+		Config: &config.Config{
+			Hooks: config.Hooks{PreDown: "pkill old"},
+		},
+	}
+	current := &config.Config{
+		Hooks: config.Hooks{PreDown: "pkill sing-box"},
+	}
+
+	changes := state.DetectConfigDrift(current)
+	if changes == nil || changes.HooksPreDown == nil {
+		t.Fatal("expected HooksPreDown change")
+	}
+	if (*changes.HooksPreDown)[0] != "pkill old" || (*changes.HooksPreDown)[1] != "pkill sing-box" {
+		t.Errorf("HooksPreDown change: got [%q, %q], want [%q, %q]",
+			(*changes.HooksPreDown)[0], (*changes.HooksPreDown)[1], "pkill old", "pkill sing-box")
+	}
+}
+
+func TestDetectConfigDrift_HooksUnchanged(t *testing.T) {
+	hooks := config.Hooks{PostUp: "echo start", PreDown: "echo stop"}
+	state := &State{
+		Config: &config.Config{Hooks: hooks},
+	}
+	current := &config.Config{Hooks: hooks}
+
+	changes := state.DetectConfigDrift(current)
+	if changes != nil {
+		t.Errorf("expected no drift for identical hooks, got %+v", changes)
+	}
+}
+
+func TestDetectConfigDrift_HooksRemovedToEmpty(t *testing.T) {
+	state := &State{
+		Config: &config.Config{
+			Hooks: config.Hooks{PostUp: "sing-box run &", PreDown: "pkill sing-box"},
+		},
+	}
+	current := &config.Config{}
+
+	changes := state.DetectConfigDrift(current)
+	if changes == nil {
+		t.Fatal("expected drift when hooks removed")
+	}
+	if changes.HooksPostUp == nil {
+		t.Error("expected HooksPostUp change")
+	}
+	if changes.HooksPreDown == nil {
+		t.Error("expected HooksPreDown change")
+	}
+}
+
+func TestDetectConfigDrift_HooksAddedFromEmpty(t *testing.T) {
+	state := &State{
+		Config: &config.Config{},
+	}
+	current := &config.Config{
+		Hooks: config.Hooks{PostUp: "sing-box run &"},
+	}
+
+	changes := state.DetectConfigDrift(current)
+	if changes == nil || changes.HooksPostUp == nil {
+		t.Fatal("expected HooksPostUp change when added from empty")
+	}
+	if (*changes.HooksPostUp)[0] != "" {
+		t.Errorf("old value should be empty, got %q", (*changes.HooksPostUp)[0])
+	}
+}
+
 // TestDetectConfigDrift_MultipleChanges_EnvsAndCommandUp verifies that when both
 // envs and commands.up change, BOTH are reported. Regression test for bug where
 // adding envs to a config that previously had none was not detected as drift.

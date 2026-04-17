@@ -522,3 +522,65 @@ enter = "bash"
 		})
 	}
 }
+
+func TestLoadConfig_Hooks(t *testing.T) {
+	content := `
+image = "ubuntu:latest"
+
+[hooks]
+post_up = "sing-box run -c config.json &"
+pre_down = "pkill sing-box"
+`
+	env, memFs := newTestEnv(t)
+	_ = afero.WriteFile(memFs, "/project/.alca.toml", []byte(content), 0644)
+
+	cfg, err := LoadConfig(env, "/project/.alca.toml", StrictExpandEnv)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	if cfg.Hooks.PostUp != "sing-box run -c config.json &" {
+		t.Errorf("Hooks.PostUp = %q, want %q", cfg.Hooks.PostUp, "sing-box run -c config.json &")
+	}
+	if cfg.Hooks.PreDown != "pkill sing-box" {
+		t.Errorf("Hooks.PreDown = %q, want %q", cfg.Hooks.PreDown, "pkill sing-box")
+	}
+}
+
+func TestLoadConfig_HooksEmpty(t *testing.T) {
+	content := `image = "ubuntu:latest"`
+	env, memFs := newTestEnv(t)
+	_ = afero.WriteFile(memFs, "/project/.alca.toml", []byte(content), 0644)
+
+	cfg, err := LoadConfig(env, "/project/.alca.toml", StrictExpandEnv)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	if cfg.Hooks.PostUp != "" || cfg.Hooks.PreDown != "" {
+		t.Errorf("expected empty hooks, got PostUp=%q PreDown=%q", cfg.Hooks.PostUp, cfg.Hooks.PreDown)
+	}
+}
+
+func TestHooksEqual(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b Hooks
+		want bool
+	}{
+		{"both empty", Hooks{}, Hooks{}, true},
+		{"identical", Hooks{PostUp: "a", PreDown: "b"}, Hooks{PostUp: "a", PreDown: "b"}, true},
+		{"post_up differs", Hooks{PostUp: "a"}, Hooks{PostUp: "b"}, false},
+		{"pre_down differs", Hooks{PreDown: "a"}, Hooks{PreDown: "b"}, false},
+		{"one empty", Hooks{PostUp: "a"}, Hooks{}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := HooksEqual(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("HooksEqual() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

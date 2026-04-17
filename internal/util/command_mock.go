@@ -37,6 +37,7 @@ type CommandCall struct {
 	Name string
 	Args []string
 	Key  string // "name arg1 arg2 ..."
+	Dir  string // working directory (set by RunInDir, empty otherwise)
 }
 
 // NewMockCommandRunner creates a mock that fails on unexpected commands.
@@ -114,6 +115,37 @@ func (m *MockCommandRunner) Run(_ context.Context, name string, args ...string) 
 // RunQuiet implements CommandRunner.
 func (m *MockCommandRunner) RunQuiet(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return m.Run(ctx, name, args...)
+}
+
+// RunInDir implements CommandRunner.
+// Records the dir in the call's Args[0] position for test assertions.
+func (m *MockCommandRunner) RunInDir(ctx context.Context, dir string, name string, args ...string) error {
+	// Record dir as part of the call for assertions.
+	// The call key is still based on name+args (same as Run) so that
+	// ExpectSuccess/ExpectFailure work without needing dir in the key.
+	key := name
+	if len(args) > 0 {
+		key = name + " " + strings.Join(args, " ")
+	}
+	m.Calls = append(m.Calls, CommandCall{
+		Name: name,
+		Args: args,
+		Key:  key,
+		Dir:  dir,
+	})
+
+	if seq, ok := m.commandSequences[key]; ok && len(seq) > 0 {
+		result := seq[0]
+		m.commandSequences[key] = seq[1:]
+		return result.Err
+	}
+	if result, ok := m.commands[key]; ok {
+		return result.Err
+	}
+	if m.defaultError != nil {
+		return fmt.Errorf("%w: %s", m.defaultError, key)
+	}
+	return nil
 }
 
 // SudoRun implements CommandRunner.

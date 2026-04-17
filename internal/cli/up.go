@@ -166,6 +166,14 @@ func runUp(cmd *cobra.Command, args []string) error {
 	syncEnv := sync.NewSyncEnv(afero.NewOsFs(), deps.CmdRunner, runtime.NewMutagenSyncClient(runtimeEnv))
 	showSyncBanner(ctx, syncEnv, st.ProjectID, cwd, os.Stderr)
 
+	// Execute post_up hook on host (runs after container and all setup is ready)
+	if cfg.Hooks.PostUp != "" {
+		util.ProgressStep(out, "Running post_up hook...\n")
+		if err := runHook(ctx, deps.CmdRunner, cfg.Hooks.PostUp, cwd); err != nil {
+			return fmt.Errorf("post_up hook failed: %w", err)
+		}
+	}
+
 	util.ProgressDone(out, "Environment ready\n")
 	return nil
 }

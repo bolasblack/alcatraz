@@ -75,6 +75,14 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Execute pre_down hook on host (runs before any teardown)
+	if cfg.Hooks.PreDown != "" {
+		util.ProgressStep(out, "Running pre_down hook...\n")
+		if err := runHook(ctx, deps.CmdRunner, cfg.Hooks.PreDown, cwd); err != nil {
+			util.ProgressStep(out, "Warning: pre_down hook failed: %v\n", err)
+		}
+	}
+
 	platform := runtime.DetectPlatform(ctx, runtimeEnv)
 
 	// Create shared network env once for all network operations (AGD-029)

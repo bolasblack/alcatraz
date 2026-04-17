@@ -140,7 +140,7 @@ export PATH="/extra-bin:$PATH"
 mise trust -a
 mise install
 
-[ -x /extra-scripts/init.sh ] && /extra-scripts/init.sh`},
+[ -x /extra-scripts/init.sh ] && /extra-scripts/init.sh || true`},
 					Enter: CommandValue{Command: "[ -x /extra-scripts/source.sh ] && . /extra-scripts/source.sh\n. ~/.profile"},
 				},
 				Envs: map[string]EnvValue{
@@ -172,7 +172,7 @@ export PATH="/extra-bin:$PATH"
 mise trust -a
 mise install
 
-[ -x /extra-scripts/init.sh ] && /extra-scripts/init.sh`},
+[ -x /extra-scripts/init.sh ] && /extra-scripts/init.sh || true`},
 					Enter: CommandValue{Command: "[ -x /extra-scripts/source.sh ] && source /extra-scripts/source.sh\n. ~/.bashrc\n"},
 				},
 				Envs: map[string]EnvValue{
@@ -201,7 +201,7 @@ export PATH="/extra-bin:$PATH"
 
 [ -x /extra-scripts/source.sh ] && source /extra-scripts/source.sh
 
-[ -x /extra-scripts/init.sh ] && /extra-scripts/init.sh`},
+[ -x /extra-scripts/init.sh ] && /extra-scripts/init.sh || true`},
 					Enter: CommandValue{Command: "[ -x /extra-scripts/source.sh ] && source /extra-scripts/source.sh\n. ~/.bashrc\n"},
 				},
 				Envs: map[string]EnvValue{
@@ -274,6 +274,7 @@ func configToRaw(c Config) RawConfig {
 		Envs           map[string]EnvValue
 		Network        Network
 		Caps           Caps
+		Hooks          Hooks
 	}
 	_ = configFields(c)
 
@@ -296,6 +297,7 @@ func configToRaw(c Config) RawConfig {
 		Envs:           envsToRaw(c.Envs),
 		Network:        networkToRaw(c.Network),
 		Caps:           capsToRaw(c.Caps),
+		Hooks:          c.Hooks,
 	}
 }
 
