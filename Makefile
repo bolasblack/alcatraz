@@ -4,8 +4,8 @@ LINT_DIR := out_lint
 OUT_DIR := out
 BIN_DIR := $(OUT_DIR)/bin
 
-GO_SRC := $(shell find . -name '*.go' -type f -not -path './.alca.cache/*' -not -path './vendor/*' -not -path './.git/*')
-EMBED_SRC := $(shell find . -name '*.sh' -type f -not -path './.alca.cache/*' -not -path './vendor/*' -not -path './.git/*')
+GO_SRC := $(shell find . -name '*.go' -type f -not -path './.alca.cache/*' -not -path './.alca.mounts/*' -not -path './vendor/*' -not -path './.git/*')
+EMBED_SRC := $(shell find . -name '*.sh' -type f -not -path './.alca.cache/*' -not -path './.alca.mounts/*' -not -path './vendor/*' -not -path './.git/*')
 BUILD_SRC := $(GO_SRC) $(EMBED_SRC)
 
 clean:
