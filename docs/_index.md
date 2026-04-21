@@ -73,3 +73,10 @@ See the [Quickstart guide](./quickstart.md) for all installation methods and det
   Detect and resolve file sync conflicts when using selective file mounting.
 
 {{% /columns %}}
+{{% columns %}}
+
+- ### [Cookbook](./cookbook/_index.md)
+
+  Ready-to-adapt recipes — transparent proxy with sing-box, and more.
+
+{{% /columns %}}

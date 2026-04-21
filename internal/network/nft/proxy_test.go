@@ -46,21 +46,21 @@ func TestGenerateRuleset_WithProxy(t *testing.T) {
 	assert.Contains(t, ruleset, "table ip alca-proxy-abc123")
 	assert.Contains(t, ruleset, "delete table ip alca-proxy-abc123")
 
-	// Verify ct timeout for UDP reliability
-	assert.Contains(t, ruleset, "ct timeout proxy-udp-timeout")
-	assert.Contains(t, ruleset, "unreplied : 300")
-	assert.Contains(t, ruleset, "replied : 300")
-
-	// Verify routing loop prevention
+	// Filter-table allow rules stay in place for both TCP and UDP so the
+	// container can still reach the proxy address directly (e.g., a UDP DNS
+	// server living on the same host), even though only TCP is DNAT'd.
 	assert.Contains(t, ruleset, "ip saddr 172.17.0.2 ip daddr 172.17.0.1 tcp dport 1080 accept")
 	assert.Contains(t, ruleset, "ip saddr 172.17.0.2 ip daddr 172.17.0.1 udp dport 1080 accept")
 
-	// Verify ct timeout is applied to UDP
-	assert.Contains(t, ruleset, `ip saddr 172.17.0.2 udp dport 1-65535 ct timeout set "proxy-udp-timeout"`)
-
-	// Verify DNAT rules for both TCP and UDP
+	// TCP DNAT rule + its loop-prevention rule are present.
 	assert.Contains(t, ruleset, "ip saddr 172.17.0.2 tcp dport 1-65535 dnat to 172.17.0.1:1080")
-	assert.Contains(t, ruleset, "ip saddr 172.17.0.2 udp dport 1-65535 dnat to 172.17.0.1:1080")
+
+	// UDP must NOT be DNAT'd — AGD-037 scopes the transparent proxy to TCP
+	// because UDP has no working transparent-proxy path under container
+	// networking today, so UDP egresses the container's normal way.
+	assert.NotContains(t, ruleset, "udp dport 1-65535 dnat to")
+	assert.NotContains(t, ruleset, "ct timeout proxy-udp-timeout")
+	assert.NotContains(t, ruleset, `ct timeout set "proxy-udp-timeout"`)
 
 	// Verify proxy chain uses nat hook with dstnat priority
 	assert.Contains(t, ruleset, "type nat hook prerouting priority dstnat - 1")
@@ -83,9 +83,10 @@ func TestGenerateRuleset_WithoutProxy(t *testing.T) {
 	// Proxy table deletion should NOT be present when proxy is nil
 	assert.NotContains(t, ruleset, "delete table ip alca-proxy-abc123")
 
-	// No proxy DNAT rules
+	// No proxy DNAT rules when no proxy is configured
 	assert.NotContains(t, ruleset, "dnat to")
 	assert.NotContains(t, ruleset, "proxy-udp-timeout")
+	assert.NotContains(t, ruleset, "table ip alca-proxy-abc123 {")
 }
 
 func TestGenerateRuleset_WithProxyIPv6ContainerNoProxyDNAT(t *testing.T) {
@@ -129,7 +130,7 @@ func TestGenerateRuleset_WithProxy_AutoAllowsProxyInFilterTable(t *testing.T) {
 	// Split the ruleset at the proxy table boundary.
 	// The inet filter table must contain an allow rule for the proxy address
 	// BEFORE the RFC1918 block rules, so the container can reach a LAN proxy.
-	parts := strings.SplitN(ruleset, "# Transparent proxy DNAT rules", 2)
+	parts := strings.SplitN(ruleset, "# Transparent TCP proxy DNAT rules", 2)
 	require.Len(t, parts, 2, "ruleset should contain both filter and proxy sections")
 
 	filterSection := parts[0] // everything before the proxy nat table
@@ -157,10 +158,10 @@ func TestGenerateRuleset_WithProxyAndAllLAN(t *testing.T) {
 	assert.NotContains(t, ruleset, "172.16.0.0/12 drop")
 	assert.NotContains(t, ruleset, "192.168.0.0/16 drop")
 
-	// (b) Proxy DNAT rules ARE present
+	// (b) Proxy TCP DNAT rule IS present; UDP is not DNAT'd (AGD-037: TCP-only).
 	assert.Contains(t, ruleset, "table ip alca-proxy-abc123")
 	assert.Contains(t, ruleset, "ip saddr 172.17.0.2 tcp dport 1-65535 dnat to 172.17.0.1:1080")
-	assert.Contains(t, ruleset, "ip saddr 172.17.0.2 udp dport 1-65535 dnat to 172.17.0.1:1080")
+	assert.NotContains(t, ruleset, "udp dport 1-65535 dnat to")
 
 	// (c) Proxy allow rule in filter table IS present
 	assert.Contains(t, ruleset, "ip saddr 172.17.0.2 ip daddr 172.17.0.1 tcp dport 1080 accept")

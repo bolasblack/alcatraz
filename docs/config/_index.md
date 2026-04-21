@@ -55,6 +55,8 @@ Running `alca status` from `my-project/src/pkg/` finds and uses `my-project/.alc
 | `envs`               | table            | No       | See below                                | Environment variables for the container        |
 | `network.lan-access` | array            | No       | `[]`                                     | LAN access configuration                       |
 | `caps`               | array/table      | No       | See below                                | Container Linux capabilities configuration     |
+| `hooks.post_up`      | string           | No       | `""`                                     | Host command to run after `alca up`            |
+| `hooks.pre_down`     | string           | No       | `""`                                     | Host command to run before `alca down`         |
 
 ## Full Example
 

@@ -14,7 +14,7 @@ By default, Alcatraz containers can access the internet but **cannot access your
 | Default (no config)       | Yes      | No               | None                 |
 | Allow specific LAN access | Yes      | Configured hosts | `lan-access = [...]` |
 | Allow all LAN access      | Yes      | Yes              | `lan-access = ["*"]` |
-| Transparent proxy         | Via proxy| Via proxy        | `proxy = "host:port"`|
+| Transparent TCP proxy     | TCP via proxy; UDP direct | Via proxy (TCP) | `proxy = "host:port"`|
 
 ## Why nftables Inside the VM?
 
@@ -157,7 +157,9 @@ For design rationale, see [AGD-030](https://github.com/bolasblack/alcatraz/blob/
 
 ## Transparent Proxy
 
-Route all container traffic through a transparent proxy using nftables DNAT rules. This intercepts **all** outbound TCP and UDP connections — not just HTTP. The proxy can run on the host, a LAN server, or any address reachable from the container.
+Route all outbound container **TCP** traffic through a transparent proxy using nftables DNAT rules. Any TCP port, any protocol — git+ssh, database clients, plain HTTP, custom protocols — is redirected, not just what respects `HTTP_PROXY`. The proxy can run on the host, a LAN server, or any address reachable from the container.
+
+> **Scope: TCP only.** Container UDP traffic is *not* redirected to the proxy; it egresses via the container's normal network path. Transparent UDP proxying inside a container runtime has no working path on Linux today — we are still researching alternatives. See [UDP: why it's not proxied](#udp-why-its-not-proxied) below.
 
 ### Configuration
 
@@ -179,8 +181,7 @@ The `${alca:HOST_IP}` token resolves to the container host's gateway IP at runti
 
 1. On `alca up`, if `proxy` is configured:
    - Expands `${alca:HOST_IP}` to the actual host gateway IP (if used)
-   - Writes nftables DNAT rules to redirect all container TCP/UDP traffic to the proxy
-   - Applies a 300-second conntrack timeout for reliable UDP proxying
+   - Writes nftables DNAT rules that redirect container **TCP** traffic to the proxy
    - Automatically allows the proxy address through LAN isolation rules (so RFC1918 block rules don't prevent reaching the proxy)
 
 2. On `alca down`:
@@ -188,26 +189,33 @@ The `${alca:HOST_IP}` token resolves to the container host's gateway IP at runti
 
 ### Proxy Requirement
 
-The proxy must run in **redirect mode** (transparent proxy) so it can determine the original destination of redirected packets via `SO_ORIGINAL_DST`. [sing-box](https://github.com/sagernet/sing-box) is recommended:
+The proxy must run in **redirect mode** (transparent TCP proxy) so it can determine the original destination of each connection via `SO_ORIGINAL_DST` — a `getsockopt` call that queries conntrack. [sing-box](https://github.com/sagernet/sing-box) is recommended; see the [Transparent TCP Proxy with sing-box](../cookbook/transparent-proxy-sing-box.md) cookbook recipe for a working setup that wires `hooks` and `network.proxy` together.
 
-```json
-{
-  "inbounds": [
-    {
-      "type": "redirect",
-      "listen": "0.0.0.0",
-      "listen_port": 1080,
-      "sniff": true
-    }
-  ]
-}
-```
+The proxy must run in the **same network namespace** as the Alcatraz nftables rules (the host on Linux, the container-runtime VM on macOS) so `SO_ORIGINAL_DST` can resolve the original destination from conntrack. Running sing-box as a host-networked sidecar container is the simplest cross-platform way to satisfy this.
+
+### UDP: why it's not proxied
+
+Short version: two independent Linux limitations combine, and neither has a clean workaround that fits alcatraz's constraints:
+
+1. **DNAT + UDP loses the original destination for proxies that read the packet header.** The usual transparent-proxy recovery API for UDP is `IP_RECVORIGDSTADDR`, which reads the destination straight from the packet's IP header. nftables DNAT rewrites that header before the socket sees it, so the proxy sees its own address as the "original" destination — not the user's intent. Mainstream transparent proxies (sing-box, v2ray, clash) all use this API.
+
+2. **TPROXY — the obvious alternative — does not deliver packets to a local socket when the traffic is routed through a Linux bridge.** Docker (and OrbStack / Docker Desktop) attaches containers via a bridge, so every container packet traverses the bridged path. In that path, TPROXY's socket lookup fails silently: the rule fires and the packet continues forwarding instead of being handed to the local listener. We verified this by comparing an isolated veth test (TPROXY works) against a bridge-based test in the same kernel (TPROXY does not deliver).
+
+The rest of the landscape is worse: in-container TUN devices would require `CAP_NET_ADMIN` and `/dev/net/tun` (rejected by [AGD-037](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-037_transparent-proxy-for-containers.md) because it weakens the sandbox), and embedding our own conntrack-querying UDP relay turns alcatraz into a data-plane participant with significant correctness and maintenance cost.
+
+Full write-up and the options we considered live in [AGD-037](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-037_transparent-proxy-for-containers.md). We expect to revisit this if the situation changes upstream (e.g., sing-box or another proxy adds UDP conntrack lookup support).
+
+**In the meantime**, to handle UDP-heavy workloads:
+
+- **DNS**: point the container at a TCP-capable DNS resolver (DoT/DoH, or `options use-vc` in `resolv.conf`) so queries ride TCP through the proxy.
+- **QUIC (HTTP/3)**: disable it in the client so it falls back to HTTPS over TCP.
+- **A specific UDP-speaking app**: configure it to speak SOCKS5 UDP ASSOCIATE to sing-box directly, no transparent redirection.
 
 ### Limitations
 
 Alcatraz operates at the network layer (nftables DNAT) and does not participate in proxy protocol negotiation. This means:
 
-- **No SOCKS5/HTTP CONNECT authentication** — DNAT'd packets arrive at the proxy as raw TCP/UDP without any proxy protocol handshake. If your upstream proxy requires authentication, run a local redirect-mode proxy (e.g., sing-box) that handles authentication to the upstream server:
+- **No SOCKS5/HTTP CONNECT authentication** — DNAT'd packets arrive at the proxy as raw TCP without any proxy protocol handshake. If your upstream proxy requires authentication, run a local redirect-mode proxy (e.g., sing-box) that handles authentication to the upstream server:
 
   ```
   Container → DNAT → local sing-box (redirect, no auth)
@@ -217,7 +225,7 @@ Alcatraz operates at the network layer (nftables DNAT) and does not participate 
 
   Configure `proxy = "${alca:HOST_IP}:1080"` pointing to the local sing-box, which forwards to the authenticated upstream. Authentication is between the local proxy and the remote server — transparent to the container.
 
-- **No per-protocol filtering** — all TCP and UDP traffic is proxied. If you need to proxy only specific protocols, configure that on the proxy side.
+- **No per-protocol filtering** — all outbound TCP is proxied. If you need to proxy only specific protocols, configure that on the proxy side.
 
 ### Why Not HTTP_PROXY?
 
@@ -226,11 +234,10 @@ Setting `HTTP_PROXY`/`HTTPS_PROXY` environment variables only works for applicat
 - `git` over SSH
 - Database clients (psql, mysql, redis-cli)
 - Custom TCP protocols
-- DNS queries (UDP)
 
-nftables DNAT operates at the network layer, intercepting **every** packet regardless of what application sends it.
+nftables DNAT operates at the network layer, intercepting **every** TCP packet regardless of what application sends it.
 
-For design rationale, see [AGD-037](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-037_transparent-proxy-for-containers.md).
+For design rationale and the TCP-only scoping decision, see [AGD-037](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-037_transparent-proxy-for-containers.md).
 
 ## Without Alcatraz
 

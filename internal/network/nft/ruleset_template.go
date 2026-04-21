@@ -58,17 +58,17 @@ table inet {{.TableName}} {
 }
 {{- if .Proxy}}
 
-# Transparent proxy DNAT rules (AGD-037)
-# NOTE: Proxy DNAT uses the "ip" family (IPv4 only). IPv6 container IPs are not
-# supported for transparent proxy. This is a known limitation — nftables DNAT
-# requires separate ip/ip6 families and Docker containers typically use IPv4.
+# Transparent TCP proxy DNAT rules (AGD-037).
+#
+# TCP only: DNAT to the proxy; the proxy recovers the original destination via
+# SO_ORIGINAL_DST (conntrack lookup). UDP is intentionally NOT DNAT'd — see
+# AGD-037's "Why only TCP" for why transparent UDP proxying of container
+# traffic has no working path on Linux today (bridged packets + TPROXY, and
+# IP_RECVORIGDSTADDR returning the post-DNAT address, both block it).
+#
+# NOTE: this table uses the "ip" family (IPv4 only). IPv6 container IPs are not
+# supported for transparent proxy.
 table ip {{.ProxyTable}} {
-	ct timeout proxy-udp-timeout {
-		protocol udp
-		l3proto ip
-		policy = { unreplied : 300, replied : 300 }
-	}
-
 	chain prerouting {
 		# Priority dstnat - 1 (-101) to run BEFORE Docker's iptables PREROUTING (-100).
 		# Docker defaults to iptables for networking on most distros. NAT rules are
@@ -81,20 +81,12 @@ table ip {{.ProxyTable}} {
 		#   null_binding source: https://github.com/torvalds/linux/blob/master/net/netfilter/nf_nat_core.c
 		type nat hook prerouting priority dstnat - 1; policy accept;
 
-		# Rule ordering is critical: routing loop prevention rules MUST come before
-		# the DNAT wildcard rules (dport 1-65535) which would otherwise match traffic
-		# destined for the proxy itself, creating an infinite redirect loop.
-
-		# Prevent routing loop
+		# Loop prevention MUST come before the DNAT wildcard rule — traffic to the
+		# proxy's own TCP port otherwise matches the wildcard and redirects to itself.
 		ip saddr {{.ContainerIP}} ip daddr {{.Proxy.Host}} tcp dport {{.Proxy.Port}} accept
-		ip saddr {{.ContainerIP}} ip daddr {{.Proxy.Host}} udp dport {{.Proxy.Port}} accept
 
-		# Extended conntrack timeout for UDP reliability
-		ip saddr {{.ContainerIP}} udp dport 1-65535 ct timeout set "proxy-udp-timeout"
-
-		# DNAT all outbound TCP+UDP to proxy
+		# DNAT all outbound TCP to the proxy.
 		ip saddr {{.ContainerIP}} tcp dport 1-65535 dnat to {{.ProxyAddr}}
-		ip saddr {{.ContainerIP}} udp dport 1-65535 dnat to {{.ProxyAddr}}
 	}
 }
 {{- end}}
