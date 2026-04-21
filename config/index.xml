@@ -63,9 +63,9 @@
  &lt;td&gt;&lt;code&gt;lan-access = [&amp;quot;*&amp;quot;]&lt;/code&gt;&lt;/td&gt;
  &lt;/tr&gt;
  &lt;tr&gt;
- &lt;td&gt;Transparent proxy&lt;/td&gt;
- &lt;td&gt;Via proxy&lt;/td&gt;
- &lt;td&gt;Via proxy&lt;/td&gt;
+ &lt;td&gt;Transparent TCP proxy&lt;/td&gt;
+ &lt;td&gt;TCP via proxy; UDP direct&lt;/td&gt;
+ &lt;td&gt;Via proxy (TCP)&lt;/td&gt;
  &lt;td&gt;&lt;code&gt;proxy = &amp;quot;host:port&amp;quot;&lt;/code&gt;&lt;/td&gt;
  &lt;/tr&gt;
  &lt;/tbody&gt;

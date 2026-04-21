@@ -452,6 +452,44 @@ drop = ["NET_RAW", "MKNOD", "SYS_CHROOT"]
 | `Operation not permitted` with setuid     | Ensure `SETUID` and `SETGID` are in add list (included by default) |
 | Package manager fails to change ownership | Ensure `CHOWN` and `FOWNER` are in add list                        |
 
+## hooks.post_up
+
+Host-side command executed after `alca up` completes, once the container is running and all setup (network, sync, etc.) is ready.
+
+```toml
+[hooks]
+post_up = "sing-box run -c ./sing-box.json &"
+```
+
+- **Type**: string
+- **Required**: No
+- **Default**: `""` (no-op)
+- **Execution**: runs on the **host**, not inside the container, via `sh -c` with the project directory as cwd
+- **Failure behavior**: if the hook exits non-zero, `alca up` returns an error
+
+Use this for host-side services that should be co-located with the sandbox lifecycle — for example, starting a local transparent proxy that the container will route through via [`network.proxy`](#networkproxy).
+
+## hooks.pre_down
+
+Host-side command executed at the start of `alca down`, before any container teardown.
+
+```toml
+[hooks]
+pre_down = "pkill sing-box"
+```
+
+- **Type**: string
+- **Required**: No
+- **Default**: `""` (no-op)
+- **Execution**: runs on the **host**, not inside the container, via `sh -c` with the project directory as cwd
+- **Failure behavior**: failures are logged as a warning but do **not** abort `alca down` (teardown always proceeds)
+
+Use this to clean up host-side services started by `post_up` so they don't outlive the sandbox.
+
+Changes to either hook are reported by `alca status` drift detection.
+
+For a complete, working pairing of `hooks` with [`network.proxy`](#networkproxy), see the [Transparent Proxy with sing-box](../cookbook/transparent-proxy-sing-box.md) recipe.
+
 ## extends
 
 Extend other configuration files. The declaring file overrides extended files.
@@ -577,7 +615,7 @@ See [Network Configuration](./network.md) for platform behavior, the network hel
 
 ## network.proxy
 
-Route all container traffic (TCP and UDP) through a transparent proxy using nftables DNAT. This intercepts **all** outbound connections, not just HTTP — including git+ssh, database clients, DNS, and any other protocol. The proxy can run on the host, a LAN server, or any address reachable from the container.
+Route all container outbound **TCP** traffic through a transparent proxy using nftables DNAT. This intercepts **all** TCP connections regardless of port or protocol — git+ssh, database clients, plain HTTP, anything — not just what respects `HTTP_PROXY`. UDP is not redirected (see **UDP** note below).
 
 ```toml
 [network]
@@ -590,13 +628,12 @@ proxy = "${alca:HOST_IP}:1080"
 - **Notes**:
   - Supports `${alca:HOST_IP}` token for portable config (common case: proxy on the host)
   - Host must be an IP address, not a hostname
-  - Requires a redirect-mode transparent proxy (e.g., [sing-box](https://github.com/sagernet/sing-box)) at the configured address
+  - Requires a redirect-mode TCP proxy (e.g., [sing-box](https://github.com/sagernet/sing-box) with a `redirect` inbound) at the configured address
   - The proxy address is automatically allowed through LAN isolation rules (RFC1918 block rules won't prevent reaching the proxy)
-  - Uses nftables `ct timeout` (300s) for reliable UDP proxying
   - DNAT operates at the network layer — no SOCKS5/HTTP CONNECT authentication support. If your upstream proxy requires auth, run a local redirect-mode proxy that handles authentication to the upstream server
-  - See [AGD-037](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-037_transparent-proxy-for-containers.md) for design rationale
+  - **UDP**: container UDP traffic is **not** redirected to the proxy — it goes out via the container's normal network path. Transparent UDP proxying in a container runtime has no working path on Linux today; we are still researching alternatives. See [AGD-037](https://github.com/bolasblack/alcatraz/blob/master/.agents/decisions/AGD-037_transparent-proxy-for-containers.md) for background.
 
-See [Network Configuration](./network.md#transparent-proxy) for proxy setup, limitations, and examples.
+See [Network Configuration](./network.md#transparent-proxy) for proxy setup, limitations, and the [Transparent TCP Proxy with sing-box](../cookbook/transparent-proxy-sing-box.md) cookbook recipe for a working example.
 
 ## Runtime-Specific Notes
 

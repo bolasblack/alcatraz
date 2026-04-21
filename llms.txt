@@ -32,6 +32,11 @@ Alcatraz (CLI: `alca`) lets you run AI coding agents like Claude Code, Codex, or
 - [alca experimental reload](./commands/alca_experimental_reload.md): Reload sandbox config without full rebuild
 - [alca experimental sync](./commands/alca_experimental_sync.md): Check for or resolve file sync conflicts
 
+## Cookbook
+
+- [Cookbook Index](./cookbook/_index.md): Ready-to-adapt recipes for common setups
+- [Transparent Proxy with sing-box](./cookbook/transparent-proxy-sing-box.md): Route all container TCP/UDP traffic through a sing-box sidecar forwarding to an upstream proxy
+
 ## Optional
 
 - [Runtimes](./runtimes.md): Details on Docker, OrbStack, and Podman support
