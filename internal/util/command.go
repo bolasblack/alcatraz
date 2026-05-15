@@ -19,6 +19,10 @@ type CommandRunner interface {
 	// RunInDir executes a command in the specified directory with inherited stdout/stderr.
 	RunInDir(ctx context.Context, dir string, name string, args ...string) error
 
+	// RunInDirWithEnv executes a command in dir with the given KEY=VALUE env
+	// entries appended to the parent environment. Stdout/stderr are inherited.
+	RunInDirWithEnv(ctx context.Context, dir string, env []string, name string, args ...string) error
+
 	// SudoRun runs a command with sudo, connecting stdin/stdout/stderr.
 	SudoRun(ctx context.Context, name string, args ...string) error
 
@@ -60,8 +64,15 @@ func (r *DefaultCommandRunner) RunQuiet(ctx context.Context, name string, args .
 }
 
 func (r *DefaultCommandRunner) RunInDir(ctx context.Context, dir string, name string, args ...string) error {
+	return r.RunInDirWithEnv(ctx, dir, nil, name, args...)
+}
+
+func (r *DefaultCommandRunner) RunInDirWithEnv(ctx context.Context, dir string, env []string, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...) //nolint:fslint // CommandRunner is the abstraction layer
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	cmd.Stdout = r.stdout
 	cmd.Stderr = r.stderr
 	return cmd.Run()

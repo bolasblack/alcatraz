@@ -169,7 +169,8 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// Execute post_up hook on host (runs after container and all setup is ready)
 	if cfg.Hooks.PostUp != "" {
 		util.ProgressStep(out, "Running post_up hook...\n")
-		if err := runHook(ctx, deps.CmdRunner, cfg.Hooks.PostUp, cwd); err != nil {
+		he := resolveHookEnv(ctx, rt, runtimeEnv, cwd, st)
+		if err := runHook(ctx, deps.CmdRunner, cfg.Hooks.PostUp, cwd, he); err != nil {
 			return fmt.Errorf("post_up hook failed: %w", err)
 		}
 	}

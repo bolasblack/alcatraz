@@ -326,7 +326,7 @@ func (m *pathCheckMockRuntime) ListContainers(_ context.Context, _ *runtime.Runt
 
 func TestRunHook_EmptyIsNoop(t *testing.T) {
 	cmd := util.NewMockCommandRunner()
-	err := runHook(context.Background(), cmd, "", "/tmp")
+	err := runHook(context.Background(), cmd, "", "/tmp", hookEnv{})
 	if err != nil {
 		t.Errorf("expected nil error for empty hook, got: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestRunHook_ExecutesViaSh(t *testing.T) {
 	cmd.ExpectSuccess("sh -c echo hello", nil)
 	defer cmd.AssertAllExpectationsMet(t)
 
-	err := runHook(context.Background(), cmd, "echo hello", "/my/project")
+	err := runHook(context.Background(), cmd, "echo hello", "/my/project", hookEnv{})
 	if err != nil {
 		t.Errorf("expected nil error, got: %v", err)
 	}
@@ -351,6 +351,9 @@ func TestRunHook_ExecutesViaSh(t *testing.T) {
 	if cmd.Calls[0].Dir != "/my/project" {
 		t.Errorf("expected Dir=%q, got %q", "/my/project", cmd.Calls[0].Dir)
 	}
+	if len(cmd.Calls[0].Env) != 0 {
+		t.Errorf("expected no env for empty hookEnv, got %v", cmd.Calls[0].Env)
+	}
 }
 
 func TestRunHook_ReturnsError(t *testing.T) {
@@ -358,10 +361,63 @@ func TestRunHook_ReturnsError(t *testing.T) {
 	cmd := util.NewMockCommandRunner()
 	cmd.ExpectFailure("sh -c exit 1", cmdErr)
 
-	err := runHook(context.Background(), cmd, "exit 1", "/tmp")
+	err := runHook(context.Background(), cmd, "exit 1", "/tmp", hookEnv{})
 	if !errors.Is(err, cmdErr) {
 		t.Fatalf("expected command error to propagate, got: %v", err)
 	}
+}
+
+func TestRunHook_ExportsContainerIdentity(t *testing.T) {
+	cmd := util.NewMockCommandRunner()
+	cmd.ExpectSuccess("sh -c echo hi", nil)
+	defer cmd.AssertAllExpectationsMet(t)
+
+	he := hookEnv{ContainerName: "alca-abc123def456", ContainerID: "sha256deadbeef"}
+	err := runHook(context.Background(), cmd, "echo hi", "/proj", he)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cmd.Calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(cmd.Calls))
+	}
+	gotEnv := cmd.Calls[0].Env
+	wantNameEntry := "ALCA_CONTAINER_NAME=alca-abc123def456"
+	wantIDEntry := "ALCA_CONTAINER_ID=sha256deadbeef"
+	if !containsEntry(gotEnv, wantNameEntry) {
+		t.Errorf("env missing %q; got %v", wantNameEntry, gotEnv)
+	}
+	if !containsEntry(gotEnv, wantIDEntry) {
+		t.Errorf("env missing %q; got %v", wantIDEntry, gotEnv)
+	}
+}
+
+func TestRunHook_OmitsEmptyIdentityFields(t *testing.T) {
+	cmd := util.NewMockCommandRunner()
+	cmd.ExpectSuccess("sh -c :", nil)
+	defer cmd.AssertAllExpectationsMet(t)
+
+	// Name known, ID not resolved yet (e.g., Status failed).
+	he := hookEnv{ContainerName: "alca-xyz"}
+	_ = runHook(context.Background(), cmd, ":", "/proj", he)
+
+	gotEnv := cmd.Calls[0].Env
+	if !containsEntry(gotEnv, "ALCA_CONTAINER_NAME=alca-xyz") {
+		t.Errorf("expected ALCA_CONTAINER_NAME, got %v", gotEnv)
+	}
+	for _, e := range gotEnv {
+		if strings.HasPrefix(e, "ALCA_CONTAINER_ID=") {
+			t.Errorf("expected ALCA_CONTAINER_ID to be omitted when empty, got %q", e)
+		}
+	}
+}
+
+func containsEntry(env []string, want string) bool {
+	for _, e := range env {
+		if e == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestDisplayConfigDrift_HooksPostUp(t *testing.T) {

@@ -167,6 +167,7 @@ if container_runtime_available; then
     echo ""
     echo "=== Group 9: Cleanup ==="
     test_cleanup_no_orphans
+    test_cleanup_nft_file_removed_when_container_gone
   fi
 
   if should_run_group 10; then
@@ -192,6 +193,7 @@ if container_runtime_available; then
     echo ""
     echo "=== Group 13: Lifecycle Hooks ==="
     test_hooks_run
+    test_hooks_container_env
   fi
 elif [[ -z "${TEST_GROUP:-}" ]]; then
   echo ""

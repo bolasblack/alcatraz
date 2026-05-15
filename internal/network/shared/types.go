@@ -88,6 +88,14 @@ type Firewall interface {
 	// Returns PostCommitAction that MUST be called after TransactFs.Commit().
 	Cleanup(containerID string) (*PostCommitAction, error)
 
+	// CleanupForProject removes the per-project rule file and the nftables
+	// tables referenced by it, without requiring a live container. Use this on
+	// `alca down` when the container has already been removed out-of-band so
+	// that the rule file (and the DNAT/TPROXY rules it carries) don't outlive
+	// the container and hijack whoever inherits the container's IP next.
+	// Returns PostCommitAction that MUST be called after TransactFs.Commit().
+	CleanupForProject(ctx context.Context) (*PostCommitAction, error)
+
 	// CleanupStaleFiles removes rule files for projects whose directory no longer exists.
 	// Returns the count of cleaned-up files.
 	CleanupStaleFiles(ctx context.Context) (int, error)

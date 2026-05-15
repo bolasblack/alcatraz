@@ -337,14 +337,54 @@ func checkProjectPathConsistency(ctx context.Context, runtimeEnv *runtime.Runtim
 	return fmt.Errorf("%s: %w", msg, errProjectPathMismatch)
 }
 
+// hookEnv carries container identity exposed to host-side lifecycle hooks.
+// Fields map to ALCA_CONTAINER_NAME / ALCA_CONTAINER_ID env vars. An empty
+// field means "do not export" — the caller couldn't resolve it in time.
+type hookEnv struct {
+	ContainerName string
+	ContainerID   string
+}
+
+// envSlice renders the struct as KEY=VALUE entries, omitting empty values.
+func (h hookEnv) envSlice() []string {
+	var env []string
+	if h.ContainerName != "" {
+		env = append(env, "ALCA_CONTAINER_NAME="+h.ContainerName)
+	}
+	if h.ContainerID != "" {
+		env = append(env, "ALCA_CONTAINER_ID="+h.ContainerID)
+	}
+	return env
+}
+
+// resolveHookEnv builds the hookEnv for the given project. ContainerName comes
+// from persisted state; ContainerID is resolved live via runtime.Status. If the
+// container isn't running or Status fails, ContainerID is left empty — the hook
+// still runs, callers just shouldn't rely on the id being set in every flow.
+func resolveHookEnv(ctx context.Context, rt runtime.Runtime, runtimeEnv *runtime.RuntimeEnv, cwd string, st *state.State) hookEnv {
+	he := hookEnv{}
+	if st != nil {
+		he.ContainerName = st.ContainerName
+	}
+	if rt == nil || st == nil {
+		return he
+	}
+	status, err := rt.Status(ctx, runtimeEnv, cwd, st)
+	if err == nil && status.ID != "" {
+		he.ContainerID = status.ID
+	}
+	return he
+}
+
 // runHook executes a host-side lifecycle hook command via "sh -c".
 // The command runs in the project directory with inherited stdout/stderr.
-// Returns nil if hook is empty (no-op).
-func runHook(ctx context.Context, cmdRunner util.CommandRunner, hook string, cwd string) error {
+// Returns nil if hook is empty (no-op). Container identity (when non-empty)
+// is exported as ALCA_CONTAINER_NAME / ALCA_CONTAINER_ID.
+func runHook(ctx context.Context, cmdRunner util.CommandRunner, hook string, cwd string, he hookEnv) error {
 	if hook == "" {
 		return nil
 	}
-	return cmdRunner.RunInDir(ctx, cwd, "sh", "-c", hook)
+	return cmdRunner.RunInDirWithEnv(ctx, cwd, he.envSlice(), "sh", "-c", hook)
 }
 
 // progressFunc returns a progress callback that writes to the given writer.

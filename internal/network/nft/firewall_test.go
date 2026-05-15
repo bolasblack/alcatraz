@@ -966,3 +966,70 @@ func TestCleanupStaleFiles_EmptyDir(t *testing.T) {
 		t.Errorf("CleanupStaleFiles() count = %d, want 0", count)
 	}
 }
+
+// =============================================================================
+// CleanupForProject tests
+// =============================================================================
+
+func TestCleanupForProject_RemovesFileAndDeletesTable(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner()
+	defer mockCmd.AssertAllExpectationsMet(t)
+
+	projectDir := "/my/project"
+	env := shared.NewNetworkEnv(mockFs, mockCmd, projectDir, "proj-xyz", runtime.PlatformLinux)
+	n := New(env).(*NFTables)
+
+	dir := nftDirOnLinux()
+	_ = mockFs.MkdirAll(dir, 0755)
+
+	// Write a realistic rule file carrying an isolation table and a proxy table.
+	ruleset := generateRuleset("alca-deadbeef", "172.17.0.2", nil, nil, false, "filter - 1", projectDir, "proj-xyz")
+	rulePath := fmt.Sprintf("%s/%s", dir, nftFileName(projectDir))
+	_ = afero.WriteFile(mockFs, rulePath, []byte(ruleset), 0644)
+
+	// Expect table deletions during post-commit.
+	mockCmd.ExpectSuccess("sudo nft delete table inet alca-deadbeef", nil)
+	mockCmd.ExpectSuccess("sudo nft delete table ip alca-proxy-deadbeef", nil)
+
+	action, err := n.CleanupForProject(context.Background())
+	if err != nil {
+		t.Fatalf("CleanupForProject() error = %v", err)
+	}
+	if action == nil {
+		t.Fatal("expected non-nil action")
+	}
+
+	// File removal is staged; with a plain MemMapFs (no TransactFs wrapper) the
+	// Fs.Remove should take effect immediately.
+	if exists, _ := afero.Exists(mockFs, rulePath); exists {
+		t.Error("expected rule file to be removed")
+	}
+
+	if action.Run == nil {
+		t.Fatal("expected action.Run to be set when file existed")
+	}
+	if err := action.Run(context.Background(), nil); err != nil {
+		t.Fatalf("action.Run() error = %v", err)
+	}
+}
+
+func TestCleanupForProject_NoFileIsNoOp(t *testing.T) {
+	mockFs := afero.NewMemMapFs()
+	mockCmd := util.NewMockCommandRunner()
+	defer mockCmd.AssertAllExpectationsMet(t)
+
+	env := shared.NewNetworkEnv(mockFs, mockCmd, "/no/such/project", "proj-none", runtime.PlatformLinux)
+	n := New(env).(*NFTables)
+
+	action, err := n.CleanupForProject(context.Background())
+	if err != nil {
+		t.Fatalf("CleanupForProject() error = %v", err)
+	}
+	if action == nil {
+		t.Fatal("expected non-nil (empty) action when file missing")
+	}
+	if action.Run != nil {
+		t.Error("expected action.Run to be nil when no file existed (nothing to delete)")
+	}
+}

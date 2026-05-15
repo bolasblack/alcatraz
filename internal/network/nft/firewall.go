@@ -350,6 +350,46 @@ func (n *NFTables) deleteTableFamily(ctx context.Context, family string, table s
 	return nil
 }
 
+// CleanupForProject removes the per-project .nft file and deletes the nftables
+// tables it references, based only on the project's path. This is the cleanup
+// path to use when the container has already been removed out-of-band — we no
+// longer have a container ID, but the file is named by project dir and carries
+// its table names in a comment, so we can still fully unwind the rules.
+func (n *NFTables) CleanupForProject(ctx context.Context) (*shared.PostCommitAction, error) {
+	dir, err := n.projectNftDir()
+	if err != nil {
+		return nil, err
+	}
+
+	rulePath := filepath.Join(dir, nftFileName(n.env.ProjectDir))
+
+	content, readErr := afero.ReadFile(n.env.Fs, rulePath)
+	if readErr != nil {
+		// No file — nothing to clean up. Symmetric with Cleanup's best-effort
+		// Fs.Remove semantics.
+		return &shared.PostCommitAction{}, nil
+	}
+
+	// Remove the file via Fs (staged); committed before the post-commit action runs.
+	_ = n.env.Fs.Remove(rulePath)
+
+	ruleContent := string(content)
+	return &shared.PostCommitAction{
+		Run: func(actionCtx context.Context, _ shared.ProgressFunc) error {
+			n.tryDeleteTablesFromContent(actionCtx, ruleContent)
+			return nil
+		},
+	}, nil
+}
+
+// projectNftDir returns the platform-specific nft rule directory.
+func (n *NFTables) projectNftDir() (string, error) {
+	if n.isDarwin() {
+		return nftDirOnDarwin()
+	}
+	return nftDirOnLinux(), nil
+}
+
 // CleanupStaleFiles scans the nft rule directory and removes files whose
 // project directory no longer exists on disk. Returns the count of cleaned-up
 // files. This handles orphaned files from projects that were moved/deleted

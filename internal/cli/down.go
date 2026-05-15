@@ -78,7 +78,8 @@ func runDown(cmd *cobra.Command, args []string) error {
 	// Execute pre_down hook on host (runs before any teardown)
 	if cfg.Hooks.PreDown != "" {
 		util.ProgressStep(out, "Running pre_down hook...\n")
-		if err := runHook(ctx, deps.CmdRunner, cfg.Hooks.PreDown, cwd); err != nil {
+		he := resolveHookEnv(ctx, rt, runtimeEnv, cwd, st)
+		if err := runHook(ctx, deps.CmdRunner, cfg.Hooks.PreDown, cwd, he); err != nil {
 			util.ProgressStep(out, "Warning: pre_down hook failed: %v\n", err)
 		}
 	}
@@ -175,14 +176,25 @@ func cleanupFirewall(ctx context.Context, fw network.Firewall, env *util.Env, tf
 
 	// Get container status to find the container ID
 	status, err := rt.Status(ctx, runtimeEnv, "", st)
-	if err != nil || status.State == runtime.StateNotFound {
-		return nil
-	}
+	containerGone := err != nil || status.State == runtime.StateNotFound
 
-	// Cleanup firewall rules (removes files via tfs)
-	action, err := fw.Cleanup(status.ID)
-	if err != nil {
-		return fmt.Errorf("cleanup firewall rules: %w", err)
+	// When the container is already gone (removed out-of-band), we still need
+	// to unwind this project's rule file so its DNAT/TPROXY rules don't get
+	// reloaded against whoever inherits our IP next — see AGD-037 + the
+	// docs_internal UDP-proxy experiment notes. The file name is derived from
+	// the project path and the table names are carried in the file itself, so
+	// we don't need the container ID to finish cleanup.
+	var action *network.PostCommitAction
+	if containerGone {
+		action, err = fw.CleanupForProject(ctx)
+		if err != nil {
+			return fmt.Errorf("cleanup firewall rules: %w", err)
+		}
+	} else {
+		action, err = fw.Cleanup(status.ID)
+		if err != nil {
+			return fmt.Errorf("cleanup firewall rules: %w", err)
+		}
 	}
 
 	// Commit tfs to remove files from real disk

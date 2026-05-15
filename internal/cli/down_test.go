@@ -98,10 +98,7 @@ func TestCleanupFirewall_StatusError(t *testing.T) {
 }
 
 func TestCleanupFirewall_ContainerNotFound(t *testing.T) {
-	cmd := util.NewMockCommandRunner()
-	cmd.ExpectSuccess("which nft", []byte("/usr/sbin/nft"))
-	cmd.ExpectSuccess("sudo nft list tables", []byte(""))
-	defer cmd.AssertAllExpectationsMet(t)
+	cmd := util.NewMockCommandRunner().AllowUnexpected()
 
 	fs := afero.NewMemMapFs()
 	tfs := transact.New(transact.WithActualFs(fs))
@@ -119,10 +116,69 @@ func TestCleanupFirewall_ContainerNotFound(t *testing.T) {
 	var buf bytes.Buffer
 	err := cleanupFirewall(context.Background(), fw, env, tfs, runtimeEnv, rt, st, &buf)
 
-	// StateNotFound causes early return nil
+	// StateNotFound no longer short-circuits — CleanupForProject runs so the
+	// per-project rule file is removed even when the container is gone.
 	if err != nil {
 		t.Errorf("expected nil error when container not found, got: %v", err)
 	}
+}
+
+// TestCleanupFirewall_ContainerGoneTriggersProjectCleanup documents the key
+// invariant for the nft-file-cleanup fix (see docs_internal/udp-proxy-sidecar-tun-plan.md
+// Phase 2): when a container is already gone at `alca down` time, alcatraz must
+// still unwind the per-project rule file so its rules don't hijack whoever
+// inherits the container's IP next. The actual file-and-table removal is unit
+// tested in internal/network/nft; here we just pin the control-flow: Cleanup is
+// not called (we have no container ID), CleanupForProject is.
+func TestCleanupFirewall_ContainerGoneTriggersProjectCleanup(t *testing.T) {
+	cmd := util.NewMockCommandRunner().AllowUnexpected()
+	fs := afero.NewMemMapFs()
+	tfs := transact.New(transact.WithActualFs(fs))
+	env := &util.Env{Fs: tfs, Cmd: cmd}
+	runtimeEnv := runtime.NewRuntimeEnv(cmd)
+
+	fw := &trackingFirewall{}
+	rt := &mockRuntime{statusResult: runtime.ContainerStatus{State: runtime.StateNotFound}}
+	st := &state.State{ProjectID: "proj-gone", ContainerName: "alca-gone"}
+
+	var buf bytes.Buffer
+	if err := cleanupFirewall(context.Background(), fw, env, tfs, runtimeEnv, rt, st, &buf); err != nil {
+		t.Fatalf("cleanupFirewall() error = %v", err)
+	}
+
+	if fw.cleanupCalls != 0 {
+		t.Errorf("expected Cleanup not to be called when container is gone, got %d calls", fw.cleanupCalls)
+	}
+	if fw.cleanupForProjectCalls != 1 {
+		t.Errorf("expected CleanupForProject to be called exactly once, got %d", fw.cleanupForProjectCalls)
+	}
+}
+
+// trackingFirewall records calls to satisfy the control-flow test above.
+// Kept local to avoid pulling a package-level test double into the CLI package.
+type trackingFirewall struct {
+	cleanupCalls           int
+	cleanupForProjectCalls int
+}
+
+var _ network.Firewall = (*trackingFirewall)(nil)
+
+func (f *trackingFirewall) ApplyRules(_ string, _ string, _ []network.LANAccessRule, _ *network.ProxyConfig) (*network.PostCommitAction, error) {
+	return &network.PostCommitAction{}, nil
+}
+
+func (f *trackingFirewall) Cleanup(_ string) (*network.PostCommitAction, error) {
+	f.cleanupCalls++
+	return &network.PostCommitAction{}, nil
+}
+
+func (f *trackingFirewall) CleanupForProject(_ context.Context) (*network.PostCommitAction, error) {
+	f.cleanupForProjectCalls++
+	return &network.PostCommitAction{}, nil
+}
+
+func (f *trackingFirewall) CleanupStaleFiles(_ context.Context) (int, error) {
+	return 0, nil
 }
 
 func TestGuardSyncConflicts_BlocksWhenConflictsExist(t *testing.T) {

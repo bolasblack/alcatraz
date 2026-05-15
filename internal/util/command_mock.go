@@ -36,8 +36,9 @@ type MockResult struct {
 type CommandCall struct {
 	Name string
 	Args []string
-	Key  string // "name arg1 arg2 ..."
-	Dir  string // working directory (set by RunInDir, empty otherwise)
+	Key  string   // "name arg1 arg2 ..."
+	Dir  string   // working directory (set by RunInDir/RunInDirWithEnv, empty otherwise)
+	Env  []string // extra KEY=VALUE entries (set by RunInDirWithEnv, nil otherwise)
 }
 
 // NewMockCommandRunner creates a mock that fails on unexpected commands.
@@ -120,9 +121,13 @@ func (m *MockCommandRunner) RunQuiet(ctx context.Context, name string, args ...s
 // RunInDir implements CommandRunner.
 // Records the dir in the call's Args[0] position for test assertions.
 func (m *MockCommandRunner) RunInDir(ctx context.Context, dir string, name string, args ...string) error {
-	// Record dir as part of the call for assertions.
-	// The call key is still based on name+args (same as Run) so that
-	// ExpectSuccess/ExpectFailure work without needing dir in the key.
+	return m.RunInDirWithEnv(ctx, dir, nil, name, args...)
+}
+
+// RunInDirWithEnv implements CommandRunner. Records dir and env on the call.
+// The call key is still based on name+args so ExpectSuccess/ExpectFailure work
+// without needing dir or env in the key.
+func (m *MockCommandRunner) RunInDirWithEnv(_ context.Context, dir string, env []string, name string, args ...string) error {
 	key := name
 	if len(args) > 0 {
 		key = name + " " + strings.Join(args, " ")
@@ -132,6 +137,7 @@ func (m *MockCommandRunner) RunInDir(ctx context.Context, dir string, name strin
 		Args: args,
 		Key:  key,
 		Dir:  dir,
+		Env:  env,
 	})
 
 	if seq, ok := m.commandSequences[key]; ok && len(seq) > 0 {

@@ -24,6 +24,9 @@ type MockFirewall struct {
 
 	// CleanupCalls records all Cleanup() invocations
 	CleanupCalls []CleanupCall
+
+	// CleanupForProjectCalls counts all CleanupForProject() invocations
+	CleanupForProjectCalls int
 }
 
 // ApplyRulesCall records a call to ApplyRules()
@@ -56,6 +59,11 @@ func (m *MockFirewall) Cleanup(containerID string) (*PostCommitAction, error) {
 	m.CleanupCalls = append(m.CleanupCalls, CleanupCall{
 		ContainerID: containerID,
 	})
+	return &PostCommitAction{}, m.ReturnCleanupError
+}
+
+func (m *MockFirewall) CleanupForProject(_ context.Context) (*PostCommitAction, error) {
+	m.CleanupForProjectCalls++
 	return &PostCommitAction{}, m.ReturnCleanupError
 }
 
