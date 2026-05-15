@@ -13,7 +13,11 @@ from pathlib import Path
 AGENTS_DIR = '.agents'
 DECISIONS_DIR = 'decisions'
 AGD_PATTERN = 'AGD-*.md'
-REF_FIELDS = ['obsoleted_by', 'updated_by', 'updates', 'obsoletes']
+RELATION_FIELDS = [('obsoletes', 'o'), ('updates', 'u'), ('related', 'r')]
+REVERSE_REF_FIELDS = {'obsoletes': 'obsoleted_by', 'updates': 'updated_by'}
+FORWARD_REF_FIELDS = [field for field, _ in RELATION_FIELDS]
+MANAGED_REVERSE_REF_FIELDS = list(REVERSE_REF_FIELDS.values())
+REF_FIELDS = MANAGED_REVERSE_REF_FIELDS + FORWARD_REF_FIELDS
 
 
 def get_agd_id(filename: str) -> str | None:

@@ -19,9 +19,8 @@ import sys
 from pathlib import Path
 
 from utils import (
-    AGENTS_DIR,
     AGD_PATTERN,
-    REF_FIELDS,
+    FORWARD_REF_FIELDS,
     find_agd_file,
     get_agents_dir,
     get_decisions_dir,
@@ -43,10 +42,14 @@ def validate_tags(tags_str: str, allowed_tags: list[str], filename: str) -> list
 
 
 def validate_references(frontmatter: dict, decisions_dir: Path, filename: str) -> list[str]:
-    """Validate that all AGD references point to existing files."""
+    """Validate user-authored AGD references point to existing files.
+
+    Auto-managed reverse fields (`updated_by`, `obsoleted_by`) are intentionally
+    excluded here because generate-index.py rewrites them from forward links.
+    """
     errors = []
 
-    for field in REF_FIELDS:
+    for field in FORWARD_REF_FIELDS:
         if field not in frontmatter or not frontmatter[field]:
             continue
 

@@ -25,7 +25,13 @@ AGD (Agent-centric Governance Decision) is a decision record mechanism, similar 
 
 AGD covers **any important decision**, not just architecture - including design patterns, conventions, tool choices, process decisions, etc.
 
-Decisions can be **updated** (extended) or **obsoleted** (replaced) by later decisions, but original files are preserved, forming a complete decision history for future reference.
+AGD follows the RFC archival model: original files are preserved, and later decisions express how earlier ones evolve.
+
+- **updates**: extends or modifies an earlier decision; the earlier decision remains partially valid
+- **obsoletes**: completely replaces an earlier decision; the earlier decision is no longer current
+- **related**: reference-only connection, similar to RFC `see-also`; does not change validity of either decision
+
+AGD exists to give the project stable references for important decisions and durable rationale that survives code evolution. It should let us trace from today's implementation back to why it was chosen, and then judge whether that decision still stands, has been updated, or has been replaced.
 
 ### When to Create an AGD
 
@@ -39,14 +45,13 @@ Create an AGD file when:
 
 ### Creating AGD Files
 
-**ALWAYS use the Write tool** to create AGD files. This ensures:
-1. PreToolUse hook validates tags before creation
-2. Invalid AGD creation is blocked automatically
+**Use the Write tool** to create AGD files.
 
 Before creating an AGD:
 1. Read `.agents/config.json` to check available tags
 2. If you need a new tag, add it to config.json first
 3. Then create the AGD file using Write tool
+4. PostToolUse validation will check references and regenerate indexes automatically
 
 ### AGD File Format
 
@@ -61,6 +66,7 @@ description: "Brief description"
 tags: tag1, tag2
 updates: AGD-XXX, AGD-XXXX         # decisions this one updates (optional)
 obsoletes: AGD-XXX, AGD-XXXX       # decisions this one obsoletes (optional)
+related: AGD-XXX, AGD-XXXX         # related/reference-only decisions (optional)
 ---
 
 ## Context
@@ -73,12 +79,13 @@ What was decided.
 Impact of this decision.
 ```
 
-**Note:** The `obsoleted_by` and `updated_by` fields are automatically managed by `generate-index.py`. When you specify `updates: AGD-001` or `obsoletes: AGD-001` in your new AGD, the system will automatically add the reverse reference to AGD-001's frontmatter.
+**Note:** The `obsoleted_by` and `updated_by` fields are fully managed by `generate-index.py`. When you specify `updates: AGD-001` or `obsoletes: AGD-001` in your new AGD, the system will automatically add, normalize, or remove the reverse reference in AGD-001's frontmatter as needed. `related` is intentionally not reverse-synced; use the relations index to discover incoming related links.
 
 ### Relationship Semantics
 
 - **updates**: Extends or modifies the original decision. Original is still partially valid.
 - **obsoletes**: Completely replaces the original. Original decision is no longer valid.
+- **related**: Reference-only connection. It does not replace or modify either decision's validity.
 
 ### Searching Decisions
 
@@ -128,6 +135,7 @@ Index files are auto-generated. Search them with `grep`, do not read entirely.
 - `INDEX-AGD-RELATIONS.md`:
   - `decisions/AGD-005_new.md -(o)-> decisions/AGD-001_old.md` (obsoletes)
   - `decisions/AGD-003_update.md -(u)-> decisions/AGD-001_original.md` (updates)
+  - `decisions/AGD-006_related.md -(r)-> decisions/AGD-001_reference.md` (related)
 
 <!-- USER CONTENT BELOW - Your customizations will be preserved during sync -->
 
