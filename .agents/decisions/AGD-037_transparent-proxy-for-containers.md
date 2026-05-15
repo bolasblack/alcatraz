@@ -45,7 +45,7 @@ For TCP, `getsockopt(SO_ORIGINAL_DST)` walks the conntrack table and returns the
 
 2. **TPROXY — the destination-preserving alternative — doesn't deliver packets across Linux bridges.** TPROXY steals packets to a local `IP_TRANSPARENT` listener without modifying the IP header, so `IP_RECVORIGDSTADDR` would read the correct destination. But when a packet traverses a Linux bridge with `br_netfilter` enabled (the topology Docker, OrbStack, and Docker Desktop universally use), the TPROXY expression fires but the socket lookup silently fails and the packet continues through bridge forwarding. Verified empirically on kernel 6.17 by comparing a direct-veth topology (TPROXY delivers to the listener) against an otherwise-identical bridge topology (TPROXY does not deliver). This is a kernel-level composition issue between bridge forwarding and TPROXY's socket delivery with no configuration-level workaround we could find.
 
-Everything else we considered has its own blocker — see Alternatives B, C, E, F below. None is obviously worth taking on *today*, so we scope down to TCP and record the UDP work as open.
+Everything else we considered has its own blocker — see Alternatives B, C, E, F below. None was obviously worth taking on as the default `network.proxy` path, so the first-class feature scopes down to TCP. After initial shipping, an additional path — Alternative **G** (Sidecar TUN via shared netns) — was verified to cover both TCP and UDP in userspace with no changes to the alca container's privileges. G is *not* the default because it shifts a sidecar-lifecycle contract onto the user, but it is a fully working alternative and is shipped as a cookbook recipe for users who need UDP.
 
 ## Alternatives Considered
 
@@ -135,6 +135,24 @@ At `alca up`, create a veth pair with one end in the alca container's netns and 
 
 **Deferred** — second viable future direction for UDP. Lower ongoing maintenance burden than Alternative E once in place, but higher up-front complexity.
 
+### G. Sidecar TUN via shared netns — **working alternative for UDP, ships as cookbook**
+
+Run sing-box (or any TUN-capable proxy) in a sidecar container that joins the alca container's network namespace via `--network container:<alca>`. The sidecar creates a TUN device visible inside the shared netns, and the proxy's auto-routing policy diverts container traffic to TUN while pinning its own egress to the physical interface via `bind_interface`. Because interception happens at L3 (raw packets, pre-socket), the proxy sees the real destination directly — no `SO_ORIGINAL_DST`, no `IP_RECVORIGDSTADDR`, no conntrack dependency, no DNAT header rewrite.
+
+**Pros:**
+- Covers TCP **and** UDP uniformly — sing-box logs inbound connections and packet connections with the true destination address intact
+- Alca container remains unprivileged: `NET_ADMIN` and `/dev/net/tun` live only on the sidecar
+- Works on every container runtime we can reach without reworking Docker's networking (OrbStack verified; Docker Desktop and native Linux expected to work, not yet verified)
+- Teardown is clean: destroying the sidecar removes the TUN device and the auto-installed policy rules; the main routing table was never touched
+
+**Cons:**
+- Every packet is copied into userspace — measurable throughput overhead vs. in-kernel redirect
+- Adds a sidecar-lifecycle contract the user has to wire up (via `[hooks.post_up]` / `[hooks.pre_down]`)
+- `process_name` routing in sing-box doesn't work in this topology — the sidecar's `/proc` is its own PID namespace, so loop-prevention must be done via `bind_interface` pinning (documented in the recipe)
+- Only IPv4 exercised; IPv6 path untested
+
+**Chosen** as the supported UDP path, delivered as a cookbook recipe ([Transparent TCP+UDP Proxy with sing-box (sidecar TUN)](../../docs/cookbook/transparent-tcp-udp-proxy-sing-box.md)) rather than as a first-class `network.proxy` mode. Keeping it in the cookbook means users opt into the sidecar contract explicitly; promoting it to built-in would require alcatraz to take over the sidecar's image/config/lifecycle — a large scope expansion better driven by real demand than by assumption.
+
 ## How It Works
 
 Alcatraz generates nftables DNAT rules in a separate `ip` table (orthogonal to the existing `inet` isolation table). Outbound TCP traffic from the container is redirected to the configured proxy address. Key details:
@@ -155,15 +173,19 @@ Alcatraz operates purely at the network layer (nftables DNAT) — it does not pa
 ## Consequences
 
 - Users can transparently proxy all container TCP traffic with a single config line
-- UDP is explicitly out of scope — documentation and the cookbook recipe make this visible and guide users to workarounds (DoT/DoH resolvers, disabling QUIC, per-app SOCKS5 UDP ASSOCIATE)
+- UDP is explicitly out of scope for the first-class `network.proxy` feature. The supported UDP path is Alternative G, delivered as a cookbook recipe ([Transparent TCP+UDP Proxy with sing-box (sidecar TUN)](../../docs/cookbook/transparent-tcp-udp-proxy-sing-box.md)); users who don't need UDP can still use DoT/DoH resolvers, disable QUIC, or configure per-app SOCKS5 UDP ASSOCIATE
 - The proxy can be local or remote — any address reachable from the container
 - Requires a redirect-mode TCP proxy running at the configured address
 - Proxy rules use a separate nftables table, orthogonal to existing network isolation
 - Implementation reuses the existing nftables infrastructure (rule generation, network helper reload, platform abstraction)
-- The TCP-only scope is a design decision, not a bug. Changing it requires taking on one of Alternative E, F, or a meaningful upstream change
+- The TCP-only scope of `network.proxy` is a design decision, not a bug. Users who need UDP have a documented, verified path via Alternative G; promoting that path to a first-class mode requires alcatraz to take over sidecar lifecycle/image/config and is not justified by current evidence
 
 ## Future Work
 
-UDP transparent proxying remains open. The two alcatraz-side paths we would pursue if user demand justifies the cost are Alternative **E** (embedded conntrack-aware UDP relay) and Alternative **F** (point-to-point veth bypassing Docker's bridge). A third path is purely upstream: if a mainstream proxy (sing-box et al.) adopts `getsockopt(SO_ORIGINAL_DST)` for UDP, DNAT'd UDP becomes viable with no alcatraz changes.
+The UDP gap in `network.proxy` is covered in practice by the Alternative G cookbook recipe. Promoting sidecar TUN to a first-class `network.proxy` mode would mean alcatraz owns the sidecar's image selection, lifecycle, and configuration — a meaningful scope expansion that is only worth doing if the cookbook path proves too heavy for typical users.
 
-This AGD should be revisited when one of those paths is pursued.
+The previously-considered alcatraz-side UDP paths — Alternative **E** (embedded conntrack-aware UDP relay) and Alternative **F** (point-to-point veth bypassing Docker's bridge) — are downgraded from "viable future directions" to "only worth reconsidering if G's sidecar constraint is actually too heavy for users who need UDP". They both re-assume a significant amount of data-plane responsibility that G sidesteps entirely.
+
+A third path is still purely upstream: if a mainstream proxy (sing-box et al.) adopts `getsockopt(SO_ORIGINAL_DST)` for UDP, DNAT'd UDP becomes viable with no alcatraz changes — but with G available, this is no longer blocking anything user-visible.
+
+This AGD should be revisited when one of those paths is pursued, or when evidence accumulates that the cookbook path is impractical at scale.

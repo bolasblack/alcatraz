@@ -40,7 +40,8 @@ Alcatraz (CLI: `alca`) lets you run AI coding agents like Claude Code, Codex, or
 ## Cookbook
 
 - [Cookbook Index](./cookbook/_index.md): Ready-to-adapt recipes for common setups
-- [Transparent Proxy with sing-box](./cookbook/transparent-proxy-sing-box.md): Route all container TCP/UDP traffic through a sing-box sidecar forwarding to an upstream proxy
+- [Transparent TCP Proxy with sing-box](./cookbook/transparent-proxy-sing-box.md): Route all container TCP traffic through a sing-box sidecar forwarding to an upstream proxy (first-class via `[network.proxy]`)
+- [Transparent TCP+UDP Proxy with sing-box (sidecar TUN)](./cookbook/transparent-tcp-udp-proxy-sing-box.md): Route both TCP and UDP through a sing-box TUN sidecar that shares the alca container's network namespace
 
 ## Optional
 
