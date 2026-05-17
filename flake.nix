@@ -102,7 +102,7 @@
           src = ./.;
 
           # First build with empty hash to get the correct one
-          vendorHash = "sha256-BqcdENlkvx6l0IBlHi7EZhDnTj9om0sHJbgvtPMViDk=";
+          vendorHash = "sha256-9tx6Y2qiQGy/mb9ajtJ7pUAEiABP2B3yVWd76ZEXj/M=";
 
           # Disable default build, use Makefile instead
           buildPhase = ''
