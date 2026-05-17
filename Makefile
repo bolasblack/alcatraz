@@ -93,16 +93,16 @@ vendor-clean:
 	rm -rf vendor
 	go clean -modcache
 
-# Update vendorHash in flake.nix after go.mod changes
+# Update alca vendorHash in flake.nix after go.mod changes
 vendor-hash-update: vendor
-	@echo "Calculating new vendorHash..."
-	@OLD_HASH=$$(grep 'vendorHash' flake.nix | sed 's/.*"\(.*\)".*/\1/'); \
-	sed -i.bak 's|vendorHash = ".*"|vendorHash = ""|' flake.nix; \
-	NEW_HASH=$$(nix build 2>&1 | grep "got:" | awk '{print $$2}'); \
+	@echo "Calculating new alca vendorHash..."
+	@cp flake.nix flake.nix.bak
+	@perl -0pi -e 's/(pname = "alca";.*?vendorHash = ")[^"]*(";)/$${1}$${2}/s or die "failed to clear alca vendorHash\n"' flake.nix
+	@NEW_HASH=$$(nix build .#alca --no-link 2>&1 | awk '/got:/ { print $$2 }' | tail -n1); \
 	if [ -n "$$NEW_HASH" ]; then \
-		sed -i.bak "s|vendorHash = \"\"|vendorHash = \"$$NEW_HASH\"|" flake.nix; \
+		NEW_HASH="$$NEW_HASH" perl -0pi -e 's/(pname = "alca";.*?vendorHash = ")[^"]*(";)/$${1}$$ENV{NEW_HASH}$${2}/s or die "failed to update alca vendorHash\n"' flake.nix; \
 		rm -f flake.nix.bak; \
-		echo "Updated vendorHash: $$NEW_HASH"; \
+		echo "Updated alca vendorHash: $$NEW_HASH"; \
 	else \
 		mv flake.nix.bak flake.nix; \
 		echo "Failed to get new hash, restored original"; \

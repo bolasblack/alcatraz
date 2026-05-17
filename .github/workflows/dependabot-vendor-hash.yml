@@ -1,0 +1,80 @@
+name: Dependabot Vendor Hash
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: read
+
+jobs:
+  update:
+    if: >
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR file scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh pr diff "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --name-only > changed-files.txt
+          disallowed_files=$(grep -Ev '^(go\.mod|go\.sum|flake\.nix)$' changed-files.txt || true)
+          if [ -n "$disallowed_files" ]; then
+            echo "Dependabot vendor hash updates only run for Go module PRs:"
+            echo "$disallowed_files"
+            exit 1
+          fi
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.DEPENDABOT_UPDATE_TOKEN || github.token }}
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+
+      - name: Update vendor hash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE_REF" --depth=1
+          git checkout "origin/$BASE_REF" -- Makefile
+          make vendor-hash-update
+          git checkout HEAD -- Makefile
+
+      - name: Commit updated hash
+        id: commit
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- flake.nix go.mod go.sum; then
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add flake.nix go.mod go.sum
+          git commit -m "chore(deps): update Nix vendor hash"
+          git push origin "HEAD:$HEAD_REF"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch integration tests
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DEPENDABOT_UPDATE_TOKEN || github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: gh workflow run integration-test.yml --ref "$HEAD_REF"
