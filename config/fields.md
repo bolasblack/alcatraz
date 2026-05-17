@@ -488,7 +488,31 @@ Use this to clean up host-side services started by `post_up` so they don't outli
 
 Changes to either hook are reported by `alca status` drift detection.
 
-For a complete, working pairing of `hooks` with [`network.proxy`](#networkproxy), see the [Transparent Proxy with sing-box](../cookbook/transparent-proxy-sing-box.md) recipe.
+### Injected environment variables
+
+Both hooks receive the following variables in their environment, on top of whatever the calling shell already exports:
+
+| Variable              | Value                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| `ALCA_CONTAINER_NAME` | User-visible container name (e.g. `alca-abc123def456`) — matches what `docker ps` / `podman ps` show    |
+| `ALCA_CONTAINER_ID`   | Full container SHA ID as returned by `docker inspect --format '{{.Id}}'`                                |
+
+These let hooks target the sandbox container without hard-coding or guessing the name. Example — starting a sidecar that shares the sandbox's network namespace:
+
+```toml
+[hooks]
+post_up = """
+docker run -d --name alca-sidecar \
+  --network container:"$ALCA_CONTAINER_NAME" \
+  --cap-add NET_ADMIN \
+  my-sidecar:latest
+"""
+pre_down = "docker rm -f alca-sidecar >/dev/null 2>&1 || true"
+```
+
+If the runtime can't resolve the container (e.g. transient `docker inspect` failure during `pre_down`), the corresponding variable is unset rather than empty-string. Hooks that require one of these should guard with `[ -n "$ALCA_CONTAINER_NAME" ]`.
+
+For a complete, working pairing of `hooks` with [`network.proxy`](#networkproxy), see the [Transparent Proxy with sing-box](../cookbook/transparent-proxy-sing-box.md) recipe. For a UDP-capable sidecar variant that uses these env vars, see [Transparent TCP+UDP Proxy with sing-box (sidecar TUN)](../cookbook/transparent-tcp-udp-proxy-sing-box.md).
 
 ## extends
 
