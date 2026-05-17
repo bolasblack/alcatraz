@@ -19,6 +19,7 @@ source "$SCRIPT_DIR/test_subdir.sh"
 source "$SCRIPT_DIR/test_restart_policy.sh"
 source "$SCRIPT_DIR/test_proxy.sh"
 source "$SCRIPT_DIR/test_hooks.sh"
+source "$SCRIPT_DIR/test_singbox_tun.sh"
 
 # Prerequisites
 if [[ ! -x "$ALCA_BIN" ]]; then
@@ -195,9 +196,15 @@ if container_runtime_available; then
     test_hooks_run
     test_hooks_container_env
   fi
+
+  if should_run_group 14; then
+    echo ""
+    echo "=== Group 14: sing-box TUN Sidecar ==="
+    test_singbox_tun_sidecar
+  fi
 elif [[ -z "${TEST_GROUP:-}" ]]; then
   echo ""
-  skip "No container runtime (Docker/Podman) available — skipping Groups 2-13"
+  skip "No container runtime (Docker/Podman) available — skipping Groups 2-14"
 fi
 
 # Summary

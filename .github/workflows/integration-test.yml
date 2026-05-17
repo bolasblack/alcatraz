@@ -26,8 +26,18 @@ jobs:
         run: |
           sudo modprobe nf_tables
           sudo modprobe br_netfilter
+          sudo modprobe tun || true
+          sudo mkdir -p /dev/net
+          if [[ ! -c /dev/net/tun ]]; then
+            sudo mknod /dev/net/tun c 10 200
+          fi
+          sudo chmod 666 /dev/net/tun
+
+      - name: Pull sing-box image
+        run: docker pull ghcr.io/sagernet/sing-box:v1.11.0
 
       - name: Run integration tests
         env:
           CONTAINER_RUNTIME: docker
+          ALCA_TEST_SINGBOX_IMAGE: ghcr.io/sagernet/sing-box:v1.11.0
         run: nix develop .#integration --command bash test_integration/run.sh
